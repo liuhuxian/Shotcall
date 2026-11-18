@@ -773,6 +773,7 @@ class Handler(BaseHTTPRequestHandler):
                 "total": len(same),
                 "done": sum(1 for j in same if j["status"] == "done"),
                 "failed": sum(1 for j in same if j["status"] == "failed"),
+                "cancelled": sum(1 for j in same if j["status"] == "cancelled"),
                 "running": sum(1 for j in same if j["status"] in ("running", "starting")),
                 "queued": sum(1 for j in same if j["status"] == "queued"),
                 "draining": sorted(CARDS["draining"]),
@@ -936,6 +937,19 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/img/cancel":
+            try:
+                body = self._json_body()
+                if body.get("batch"):
+                    out = imgjobs.cancel_batch(body["batch"])
+                else:
+                    out = imgjobs.cancel(list(body.get("ids") or []))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/cards/confirm":

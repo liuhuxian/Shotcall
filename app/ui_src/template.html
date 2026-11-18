@@ -1075,18 +1075,27 @@ function progHtml(){
   const jobs = IMGST.jobs || [];
   const active = jobs.filter(j=>['starting','running'].includes(j.status));
   const waiting = jobs.filter(j=>j.status==='queued');
+  const failed = jobs.filter(j=>j.status==='failed');
+  const cancelled = jobs.filter(j=>j.status==='cancelled');
   const now = Date.now()/1000;
-  const pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
+  const pct = p.total ? Math.round((p.done + p.failed + (p.cancelled||0)) / p.total * 100) : 0;
 
   const row = (j, idx) => {
     const secs = j.startedAt ? Math.round(now - j.startedAt) : null;
+    const st = j.status;
+    const badge = st==='running' ? '<span class="badge b-acc" style="font-size:10px">生成中</span>'
+      : st==='starting' ? '<span class="badge b-warn" style="font-size:10px">启动中</span>'
+      : st==='failed' ? '<span class="badge b-bad" style="font-size:10px">失败</span>'
+      : st==='cancelled' ? '<span class="badge b-mut" style="font-size:10px">已取消</span>'
+      : '<span class="badge b-mut" style="font-size:10px">排队</span>';
     return `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid #1b2028">
-      <span class="mono dim" style="font-size:10.5px;width:36px">${idx}</span>
-      <span class="badge ${j.status==='running'?'b-acc':j.status==='starting'?'b-warn':'b-mut'}" style="font-size:10px">
-        ${j.status==='running'?'生成中':j.status==='starting'?'启动中':'排队'}</span>
-      <span class="mono dim" style="font-size:10.5px;width:44px">卡${j.card}</span>
+      <span class="mono dim" style="font-size:10.5px;width:32px">${idx}</span>
+      ${badge}
+      <span class="mono dim" style="font-size:10.5px;width:42px">卡${j.card}</span>
       <span style="flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.dir||j.asset)}</span>
+      ${st==='failed'?`<span class="dim" style="font-size:10.5px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.error||'')}">${esc((j.error||'').slice(0,60))}</span>`:''}
       <span class="dim mono" style="font-size:11px">${secs!==null?secs+'s':''}</span>
+      ${st==='queued'?`<button class="btn ghost" style="font-size:10.5px;padding:1px 8px" onclick="cancelJob('${esc(j.id)}')">取消</button>`:''}
     </div>`;
   };
 
@@ -1096,15 +1105,39 @@ function progHtml(){
       ${p.total?`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <div class="bar" style="flex:1;margin:0"><i style="width:${pct}%"></i></div>
         <span class="mono" style="font-size:12px">${p.done}/${p.total} 完成</span>
-        ${p.failed?`<span class="badge b-warn" style="font-size:10px">失败 ${p.failed}</span>`:''}
+        ${p.failed?`<span class="badge b-bad" style="font-size:10px">失败 ${p.failed}</span>`:''}
+        ${p.cancelled?`<span class="badge b-mut" style="font-size:10px">已取消 ${p.cancelled}</span>`:''}
       </div>`:''}
       ${active.length?active.map((j,i)=>row(j,i+1)).join(""):'<div class="dim" style="font-size:12px;padding:4px 0">当前没有正在生成的任务</div>'}
-      ${waiting.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">排队 ${waiting.length} 项</div>
+      ${waiting.length?`<div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+          <span class="dim" style="font-size:11px">排队 ${waiting.length} 项</span>
+          <button class="btn ghost" style="font-size:10.5px;padding:1px 8px" onclick="cancelAllQueued()">全部取消</button>
+        </div>
         ${waiting.map((j,i)=>row(j, active.length+i+1)).join("")}`:''}
+      ${failed.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">失败 ${failed.length} 项</div>
+        ${failed.map((j,i)=>row(j, active.length+waiting.length+i+1)).join("")}`:''}
+      ${cancelled.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">已取消 ${cancelled.length} 项</div>
+        ${cancelled.map((j,i)=>row(j, active.length+waiting.length+failed.length+i+1)).join("")}`:''}
       <div style="margin-top:10px">${(p.cards||[]).map(c=>
         `<span class="mono" style="font-size:11px;margin-right:14px;color:${c.running?'var(--acc)':c.pending?'var(--warn)':'var(--dim)'}">
           卡${c.index} ${c.online?(c.running?`队列 ${c.running}`:c.pending?`排队 ${c.pending}`:'空闲'):'离线'}</span>`).join("")}</div>
     </div></div>`;
+}
+
+async function cancelJob(id){
+  const r = await fetch('/api/img/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ids:[id]})});
+  if(r.ok) toast("已取消 1 项");
+  pollProg();
+}
+async function cancelAllQueued(){
+  const batch = IMGST.prog && IMGST.prog.batch;
+  if(!batch) return;
+  const r = await fetch('/api/img/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({batch})});
+  const j = await r.json();
+  toast("已取消 " + (j.count||0) + " 项排队");
+  pollProg();
 }
 
 async function pollProg(){

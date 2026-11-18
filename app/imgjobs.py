@@ -48,6 +48,24 @@ def list_jobs(batch: str = None) -> list:
     return items
 
 
+def cancel(ids: list) -> dict:
+    """取消排队中的任务；已开始的不动。"""
+    done = []
+    with _lock:
+        for jid in ids:
+            j = _jobs.get(jid)
+            if j and j["status"] == "queued":
+                j["status"] = "cancelled"
+                done.append(jid)
+    return {"cancelled": done, "count": len(done)}
+
+
+def cancel_batch(batch: str) -> dict:
+    with _lock:
+        ids = [j for j in _order if _jobs[j]["batch"] == batch and _jobs[j]["status"] == "queued"]
+    return cancel(ids)
+
+
 def clear_finished() -> int:
     with _lock:
         kill = [j for j in _order if _jobs[j]["status"] in ("done", "failed")]
@@ -88,6 +106,8 @@ def _run(project: Path, ep: str, job_ids: list):
     for jid in job_ids:
         with _lock:
             job = dict(_jobs.get(jid) or {})
+        if job.get("status") == "cancelled":
+            continue
         if not job or not job.get("port"):
             with _lock:
                 if jid in _jobs:
