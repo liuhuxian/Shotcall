@@ -246,6 +246,25 @@ function verdictBadge(v){
   return `<span class="badge b-mut" style="opacity:.65">未审</span>`;
 }
 
+function reviewDot(tab){
+  if(!D || !D.workflow) return "";
+  const wf = D.workflow.find(w=>w.episode===D.episode);
+  if(!wf) return "";
+  const keyMap = {r1:"review1", r1a:"review2", r2:"review3", pick:"review4"};
+  const key = keyMap[tab]; if(!key) return "";
+  const idx = wf.steps.findIndex(s=>s.key===key);
+  if(idx < 0) return "";
+  const st = wf.steps[idx];
+  let color, tip;
+  if(st.status === "done"){ color = "var(--ok)"; tip = "已完成"; }
+  else {
+    const blocked = wf.steps.slice(0, idx).some(s => s.status === "pending");
+    color = blocked ? "#3a4655" : "var(--warn)";
+    tip = blocked ? "还没到这一步" : "可以审了，尚未完成";
+  }
+  return `<i class="dot" title="${tip}" style="background:${color};margin-left:6px"></i>`;
+}
+
 function nav(){
   const items=[
     ["overview","总览"],["workflow","工作流"],["dev","开发"],
@@ -253,9 +272,7 @@ function nav(){
     ["r2","审核三 · 分镜"],["img2","出图 · 分镜"],["shot","单镜详情"],["checks","检查"],
     ["batch","视频生成"],["pick","审核四 · 挑片"],["export","修改单"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
-    let dot="";
-    if(k==="checks") dot=`<i class="dot" style="background:var(--bad)"></i>`;
-    if(k==="pick") dot=`<i class="dot" style="background:var(--dim)"></i>`;
+    const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
@@ -1010,7 +1027,8 @@ async function loadImg(){
 }
 
 function cardState(c){
-  const map = {free:["var(--ok)","空闲"], loadable:["var(--warn)","可加载"], busy:["var(--bad)","忙碌"]};
+  const map = {free:["var(--ok)","空闲"], loadable:["var(--warn)","可加载"],
+               busy:["var(--bad)","忙碌"], offline:["#3a4655","未启动"]};
   const [color,label] = map[c.state]||["var(--dim)","未知"];
   return {color,label};
 }
@@ -1020,6 +1038,10 @@ function toggleCard(i){
   render();
 }
 function resetCards(){ IMGST.sel = new Set(IMGST.defCards); render(); }
+function selectAllFree(){
+  IMGST.sel = new Set((IMGST.cards||[]).filter(c=>c.state==='free'||c.state==='loadable').map(c=>c.index));
+  render();
+}
 
 function addDraft(id, n){
   IMGST.draft[id] = (IMGST.draft[id]||0) + (n||1);
@@ -1112,13 +1134,16 @@ function sImg(){
 
   const cardChips = cards.length ? cards.map(c=>{
     const {color,label} = cardState(c);
-    const on = sel.has(c.index);
-    return `<div onclick="toggleCard(${c.index})" title="${esc(c.name)} · 空闲 ${c.vramFreeGB}GB / ${c.vramTotalGB}GB"
-      style="cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
-      border:1px solid ${on?color:'var(--line)'};background:${on?'rgba(255,255,255,.03)':'transparent'}">
+    const off = c.state === "offline";
+    const on = sel.has(c.index) && !off;
+    return `<div ${off?'':`onclick="toggleCard(${c.index})"`}
+      title="${off?'该卡没有运行 ComfyUI 实例':esc(c.name)+' · 空闲 '+c.vramFreeGB+'GB / '+c.vramTotalGB+'GB'}"
+      style="cursor:${off?'not-allowed':'pointer'};display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
+      border:1px solid ${on?color:'var(--line)'};background:${on?'rgba(255,255,255,.03)':'transparent'};
+      opacity:${off?'.45':'1'}">
       <i class="dot" style="background:${color}"></i>
       <b style="font-size:12.5px">卡 ${c.index}</b>
-      <span class="dim" style="font-size:11px">${label} · ${c.usedPct}% · ${c.vramFreeGB}G</span>
+      <span class="dim" style="font-size:11px">${label}${off?'':` · ${c.usedPct}% · ${c.vramFreeGB}G`}</span>
     </div>`;
   }).join("") : `<span class="dim" style="font-size:12px">没有可用实例</span>`;
 
@@ -1176,6 +1201,7 @@ function sImg(){
       <div style="display:flex;flex-wrap:wrap;gap:8px">${cardChips}</div>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="resetCards()">恢复默认</button>
+        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="selectAllFree()">全选可用</button>
         <span class="dim" style="font-size:11.5px">已选 ${sel.size} 张 · 占比低于 10% 为绿，能装下模型为橙，装不下为红</span>
       </div>
     </div>

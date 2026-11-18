@@ -56,7 +56,15 @@ def probe() -> list:
                 "vramTotalGB": round(total / 2 ** 30, 1),
                 "vramFreeGB": free_gb, "usedPct": used_pct, "queue": qlen,
             }
-    return [found[k] for k in sorted(found)]
+    # 8 张卡全部返回，没有实例的标 offline
+    out = []
+    for idx in range(8):
+        out.append(found.get(idx) or {
+            "index": idx, "port": PORTS[0] + idx, "state": "offline",
+            "name": "（无实例）", "vramTotalGB": 0, "vramFreeGB": 0,
+            "usedPct": 0, "queue": 0,
+        })
+    return out
 
 
 def is_night(now=None) -> bool:
