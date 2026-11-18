@@ -22,6 +22,9 @@ from pathlib import Path
 import os
 
 import dataset
+import gpus
+import imagegen
+import imgjobs
 import planner
 import preflight as pf
 import runner
@@ -682,6 +685,39 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/gpus":
+            cards = gpus.probe()
+            body = json.dumps({"cards": cards, "night": gpus.is_night(),
+                               "default": gpus.default_selection(cards),
+                               "loadMinGB": gpus.LOAD_MIN_GB},
+                              ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/prompts":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            ep = q.get("ep", [current_episode()])[0]
+            f = PROJECT / "剧集" / ep / "图片提示词.md"
+            items = imagegen.parse_prompts(f)
+            for it in items:
+                it["hasRef"] = bool(it.get("ref")) and (PROJECT / it["ref"]).exists()
+            body = json.dumps({"episode": ep, "exists": f.exists(), "items": items},
+                              ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/jobs":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            body = json.dumps({"jobs": imgjobs.list_jobs(q.get("batch", [None])[0])},
+                              ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/file":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            raw = q.get("p", [""])[0]
+            cands = [(store.state_dir(PROJECT) / raw).resolve(), (PROJECT / raw).resolve()]
+            f = next((c for c in cands
+                      if (str(c).startswith(str(store.state_dir(PROJECT).resolve()))
+                          or str(c).startswith(str((PROJECT / "剧集").resolve()))) and c.is_file()), None)
+            if not f:
+                self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
+                return
+            self._send(200, f.read_bytes(), "image/png")
         elif path == "/api/batch":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             bid = q.get("id", [""])[0]
@@ -770,12 +806,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
 
+    def _json_body(self):
+        if getattr(self, "_cached_body", None) is None:
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(n) if n else b"{}"
+                self._cached_body = json.loads(raw or b"{}")
+            except Exception:
+                self._cached_body = {}
+        return self._cached_body
+
     def do_POST(self):
+        self.query_path = self.path
         path = self.path.split("?")[0]
         if path == "/api/preflight":
             try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n) or b"{}")
+                body = self._json_body()
                 out = preflight(body)
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
@@ -783,10 +829,56 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/img/preflight":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            ep = q.get("ep", [current_episode()])[0]
+            items = imagegen.parse_prompts(PROJECT / "剧集" / ep / "图片提示词.md")
+            self._send(200, json.dumps(imagegen.preflight(items, PROJECT), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+            return
+        if path == "/api/img/execute":
+            try:
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+                ep = q.get("ep", [current_episode()])[0]
+                body = self._json_body()
+                n = int(body.get("n") or 4)
+                want = body.get("items") or []
+                cards = [int(c) for c in (body.get("cards") or [])]
+                allp = imagegen.parse_prompts(PROJECT / "剧集" / ep / "图片提示词.md")
+                by = {p["id"]: p for p in allp}
+                items = []
+                for w in want:
+                    base = by.get(w.get("id") if isinstance(w, dict) else w)
+                    if not base:
+                        continue
+                    x = dict(base)
+                    x["n"] = int((w or {}).get("n") or n) if isinstance(w, dict) else n
+                    items.append(x)
+                pf = imagegen.preflight(items, PROJECT)
+                probes = gpus.probe()
+                ports = {c["index"]: c["port"] for c in probes}
+                if pf["blockers"]:
+                    self._send(400, json.dumps({"error": "预检未通过", "detail": pf["blockers"]},
+                                               ensure_ascii=False).encode("utf-8"),
+                               "application/json; charset=utf-8")
+                    return
+                use = [c for c in cards if c in ports]
+                if not use:
+                    self._send(400, json.dumps({"error": "没有可用显卡"}, ensure_ascii=False).encode("utf-8"),
+                               "application/json; charset=utf-8")
+                    return
+                res = imgjobs.submit_batch(PROJECT, ep, items, use, ports)
+                store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
+                             notes=[{"text": f"{ep} 图片批次：{len(items)} 项 × {n} 张，卡 {use}"}])
+                self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/execute":
             try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n) or b"{}")
+                body = self._json_body()
                 out = execute_batch(body)
                 self._send(200 if out.get("ok") else 400,
                            json.dumps(out, ensure_ascii=False).encode("utf-8"),
@@ -823,8 +915,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b'{"ok":false,"error":"not found"}', "application/json; charset=utf-8")
             return
         try:
-            n = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(n) or b"{}")
+            body = self._json_body()
             rec = store.append(
                 PROJECT,
                 gate=int(body.get("gate", 1)),
