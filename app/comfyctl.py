@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """按需拉起 / 关闭 ComfyUI 实例。
 
-约定：端口 8188 + 卡号；卡 7 常驻，永不自动关闭。
-夜间（21:00–09:00）跑完不关，白天跑完关闭本次拉起的 0–6 卡实例。
+约定：端口 8188 + 卡号。卡 7 是默认常驻卡，随批次按需拉起，
+但可以手动关闭；夜间（21:00–09:00）跑完不自动关，白天跑完自动关闭 0–6 卡。
 """
 import json
 import os
@@ -71,8 +71,6 @@ def start(card: int, wait: float = 90.0) -> dict:
 
 
 def stop(card: int) -> dict:
-    if card == ALWAYS_ON:
-        return {"card": card, "stopped": False, "reason": "卡7常驻，不自动关闭"}
     port = BASE_PORT + card
     pids = _pids_on(port)
     for pid in pids:
@@ -89,8 +87,8 @@ def stop(card: int) -> dict:
 
 
 def ensure(cards: list) -> list:
-    """提交前把所有需要的卡拉起来。"""
-    return [start(c) for c in cards if c != ALWAYS_ON]
+    """提交前把所有需要的卡拉起来（含卡 7）。"""
+    return [start(c) for c in cards]
 
 
 def shutdown_after_batch(cards: list, night: bool) -> list:

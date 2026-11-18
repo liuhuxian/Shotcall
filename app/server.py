@@ -41,7 +41,6 @@ CARDS = {"enabled": None, "draining": set()}   # enabled=None 表示按默认初
 def _cards_enabled() -> set:
     if CARDS["enabled"] is None:
         CARDS["enabled"] = set(gpus.default_selection(gpus.probe()))
-    CARDS["enabled"].add(comfyctl.ALWAYS_ON)      # 卡 7 常驻
     return CARDS["enabled"]
 
 
@@ -947,8 +946,6 @@ class Handler(BaseHTTPRequestHandler):
                 probes = {c["index"]: c for c in gpus.probe()}
                 stopped, draining = [], []
                 for idx in cur - want:
-                    if idx == comfyctl.ALWAYS_ON:      # 常驻卡不可关闭
-                        continue
                     c = probes.get(idx)
                     if c and c["state"] != "offline":
                         q = gpus.queue_of(c["port"])
