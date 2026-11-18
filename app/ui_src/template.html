@@ -379,6 +379,11 @@ function sWorkflow(){
         下面这些"已完成"来自旧编号，不能直接当作新大纲的进度。
       </div></div>
   </div>`:""}
+  ${(window.__STATE_WARN?`<div class="alert" style="margin-bottom:14px;cursor:default;border-color:#5c4a1f;background:#1e1a10">
+    <div class="ic" style="background:#2a2312;color:var(--warn)">!</div>
+    <div><b>决策记录存在备选目录</b>
+      <div class="dim" style="font-size:12px">${esc(window.__STATE_WARN)}</div></div>
+  </div>`:"")}
   <div class="panel" style="margin-bottom:14px">
     <div class="ph"><span>${wf.episode} 创作流程</span>
       <span class="dim">${done}/${wf.steps.length} 步完成${wf.exists?"":" · 本集尚未建立目录"}</span></div>

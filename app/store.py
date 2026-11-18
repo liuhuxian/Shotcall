@@ -7,6 +7,7 @@
 - state 目录默认 项目根/制作运行/，可用 WORKBENCH_STATE 覆盖（测试用）
 """
 import json
+import json
 import os
 import time
 import uuid
@@ -19,23 +20,75 @@ UNIT_TYPES = {"scene", "shot", "asset", "music", "batch"}
 FALLBACK = Path(__file__).resolve().parent / "run"
 
 
+def _has_records(d: Path) -> bool:
+    return d.is_dir() and any(x.suffix == ".jsonl" and x.stat().st_size > 0 for x in d.glob("*.jsonl"))
+
+
+def _migrate(src: Path, dst: Path) -> None:
+    """把旧位置的记录合并进新位置（按 id 去重），成功后旧文件改名留底。"""
+    dst.mkdir(parents=True, exist_ok=True)
+    for f in sorted(src.glob("*.jsonl")):
+        seen = set()
+        target = dst / f.name
+        if target.exists():
+            for line in target.read_text(encoding="utf-8").splitlines():
+                try:
+                    seen.add(json.loads(line).get("id"))
+                except Exception:
+                    pass
+        with open(target, "a", encoding="utf-8") as out:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if rec.get("id") in seen:
+                    continue
+                seen.add(rec.get("id"))
+                out.write(line + "\n")
+        f.rename(f.with_suffix(f.suffix + ".migrated"))
+
+
 def state_dir(project: Path) -> Path:
-    """优先写项目的 制作运行/；不可写时退化到工作台自己的 run/（并说明原因）。"""
+    """决策存哪儿，只看"哪里已经有记录"，不随当前进程的写权限漂移。
+
+    顺序：
+      1. WORKBENCH_STATE 显式指定
+      2. 项目 制作运行/ 已有记录 → 就用它（只读也认）
+      3. 旧位置有记录、项目可写 → 迁移过去再用项目
+      4. 都不满足 → 能写项目就写项目，否则退回旧位置
+    """
     env = os.environ.get("WORKBENCH_STATE")
     if env:
         d = Path(env)
         d.mkdir(parents=True, exist_ok=True)
         return d
-    d = project / "制作运行"
+
+    proj_dir = project / "制作运行"
+    if _has_records(proj_dir):
+        return proj_dir
+
+    if proj_dir.is_dir() and _has_records(FALLBACK):
+        try:
+            _migrate(FALLBACK, proj_dir)
+            print(f"[info] 已把 {FALLBACK} 的记录迁移到 {proj_dir}")
+            return proj_dir
+        except OSError:
+            print(f"[warn] 迁移失败，继续使用 {FALLBACK}")
+            return FALLBACK
+
     try:
-        d.mkdir(parents=True, exist_ok=True)
-        probe = d / ".write_probe"
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        probe = proj_dir / ".write_probe"
         probe.write_text("ok", encoding="utf-8")
         probe.unlink()
-        return d
+        return proj_dir
     except OSError:
         FALLBACK.mkdir(parents=True, exist_ok=True)
-        print(f"[warn] 无法写入 {d}，决策改存 {FALLBACK}")
+        print(f"[warn] 无法写入 {proj_dir}，决策改存 {FALLBACK}")
         return FALLBACK
 
 

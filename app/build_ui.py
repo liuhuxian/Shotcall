@@ -29,7 +29,15 @@ const loadEp=async(ep)=>{
   });
   render();
 };
-const BOOT=async()=>{ await loadEp(); };"""
+const BOOT=async()=>{
+  await loadEp();
+  try{
+    const h = await fetch('/api/health').then(r=>r.json());
+    if (h.stateDir && h.project && !String(h.stateDir).startsWith(String(h.project))){
+      window.__STATE_WARN = '记录在 ' + h.stateDir + '，不在项目内；项目恢复可写后会自动迁移。';
+    }
+  }catch(e){}
+};"""
 
 PICK = r'''/* ---------- 挑片（真实候选） ---------- */
 const SELBADGE = st => st==="adopt"?'<span class="badge b-ok">采用</span>'
