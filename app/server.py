@@ -277,14 +277,16 @@ WORKFLOW_STEPS = [
     {"key": "imgprompt", "name": "图片提示词",
      "skill": "short-drama-image-prompts + minimax-image-h3-prompts",
      "doc": "图片提示词.md",
-     "prompt": "加载 short-drama-image-prompts 与 minimax-image-h3-prompts，基于 <项目根目录>/剧集/<集号>/视觉设定.md（含「光线与摄影基调」）写 <项目根目录>/剧集/<集号>/图片提示词.md。\n内容按短剧规范写，成稿按 H3 Image 的 caption 规范改写（十二维度、单帧输出、16:9、宽高 32 倍数）。\n覆盖 <资产范围>：人物定妆、地点空镜、必要道具。\n光源方向、色温、对比必须与光线圣经一致，可直接复制使用。"},
+     "prompt": "加载 short-drama-image-prompts 与 minimax-image-h3-prompts，基于 <项目根目录>/剧集/<集号>/视觉设定.md（含「光线与摄影基调」）写 <项目根目录>/剧集/<集号>/图片提示词.md。\n内容按短剧规范写，成稿按 H3 Image 的 caption 规范改写（十二维度、单帧输出、16:9、宽高 32 倍数）。"},
     {"key": "gen1", "name": "出图① 资产图", "skill": "工作台 · 图片批次", "gate": "img",
-     "prompt": "在工作台「出图」页：勾选 <资产范围> → 每项 <候选数> 张 → 签字批准 → 生成 → 挑候选 → 采用。\n出图前确认参考图与提示词就绪；耗时未标定，先出一张测时间。"},
+     "prompt": "在工作台「出图 · 资产」页：勾选 <资产范围> → 每项 <候选数> 张 → 签字批准 → 生成 → 挑候选 → 采用。\n出图前确认参考图与提示词就绪；耗时未标定，先出一张测时间。"},
     {"key": "manifest", "name": "素材清单", "skill": "asset-continuity-management",
      "note": "checksum / seed / 版本 / 派生关系 → 制作运行/manifest.jsonl",
      "prompt": "加载 asset-continuity-management，为已采用的素材建清单：asset_id、类型、文件路径、sha256、尺寸或时长、来源与派生关系。\n写入 <项目根目录>/制作运行/manifest.jsonl。审批状态以工作台记录为准，清单里不重复记。"},
-    {"key": "review1", "name": "审核一", "skill": "导演 · 场次与资产判定", "gate": 1,
-     "prompt": "（导演本人执行）在工作台「审核一 · 剧本」逐场判定，在「审核一 · 资产」逐项判定。\n通过 / 需修改 / 待定，意见绑定到具体台词或资产项。通过即定版，记录文件哈希与覆盖范围。"},
+    {"key": "review1", "name": "审核一 · 剧本", "skill": "导演 · 逐场判定", "gate": 1,
+     "prompt": "（导演本人执行）在工作台「审核 · 剧本」逐场判定。\n通过 / 需修改 / 待定，意见绑定到具体台词或段落。通过即定版，记录文件哈希与覆盖范围。"},
+    {"key": "review2", "name": "审核二 · 资产", "skill": "导演 · 逐项判定", "gate": 12,
+     "prompt": "（导演本人执行）在工作台「审核二 · 资产」逐项判定人物、地点、道具。\n结合已采用的资产图判断造型与状态是否可用；资产项全剧共享，结论跨集生效。"},
     {"key": "staging", "name": "调度方案", "skill": "directing-cinematic-storyboards",
      "note": "分镜的依据：站位 / 视线 / 轴线 / 切点理由",
      "prompt": "加载 directing-cinematic-storyboards，为 <集号> 逐场写导演调度方案：\n空间关系、人物站位与走位、视线与轴线、为什么在这里切、必须保留的动作与物件。\n输出供分镜原样继承。"},
@@ -294,19 +296,22 @@ WORKFLOW_STEPS = [
     {"key": "videoprompt", "name": "视频提示词",
      "skill": "short-drama-video-prompts + minimax-h3-video-prompts + performance-direction",
      "doc": "视频提示词.md",
-     "prompt": "加载 short-drama-video-prompts 与 minimax-h3-video-prompts，基于 <项目根目录>/剧集/<集号>/分镜.md 逐镜写 <项目根目录>/剧集/<集号>/视频提示词.md。\n按 H3 六段式（subject_definitions / summary / retention_analysis / detailed_description / overall_soundscape / non_diegetic_music），中文对白原生发声，non_diegetic_music: N/A。\n逐镜继承光源方向与色温；起止状态不得与分镜冲突。"},
+     "prompt": "加载 short-drama-video-prompts 与 minimax-h3-video-prompts，基于 <项目根目录>/剧集/<集号>/分镜.md 逐镜写 <项目根目录>/剧集/<集号>/视频提示词.md。\n按 H3 六段式（subject_definitions / summary / retention_analysis / detailed_description / overall_soundscape / non_diegetic_music）；中文对白原生发声，non_diegetic_music: N/A。\n逐镜继承光源方向与色温；起止状态不得与分镜冲突。"},
     {"key": "gen2", "name": "出图② 分镜图", "skill": "工作台 · 图片批次", "gate": "img",
-     "prompt": "在工作台「出图」页：选 <场次范围> 的首帧 → 每镜 <候选数> 张 → 签字批准 → 生成 → 采用。\n必须先定人物资产图，再出分镜图。"},
+     "prompt": "在工作台「出图 · 分镜」页：选 <场次范围> 的首帧 → 每镜 <候选数> 张 → 签字批准 → 生成 → 采用。\n必须先定人物资产图，再出分镜图。"},
     {"key": "test", "name": "试做", "skill": "工作台 · 视频生成（草稿档）", "gate": "vid",
      "prompt": "在工作台「视频生成」页：选 <代表镜头>（3–5 个）→ 草稿档 → 签字提交 → 回片 → 挑片。\n试做只判断拍法、动作、视线、对白完整性、衔接与节奏。"},
-    {"key": "review2", "name": "审核二", "skill": "导演 · 逐镜判定", "gate": 2,
-     "prompt": "（导演本人执行）在工作台「审核二 · 分镜」逐镜判定：看分镜图、试做片、视频提示词。\n通过 / 需修改 / 待定；通过后可单独批准生成批次。"},
+    {"key": "review3", "name": "审核三 · 分镜", "skill": "导演 · 逐镜判定", "gate": 2,
+     "prompt": "（导演本人执行）在工作台「审核三 · 分镜」逐镜判定：看分镜图、试做片、视频提示词。\n通过 / 需修改 / 待定；通过后可单独批准生成批次。"},
     {"key": "batch", "name": "批次生成", "skill": "工作台 · 视频生成", "gate": 3,
-     "prompt": "在工作台「视频生成」页：确认预检无阻断 → 构造任务 → 批准并提交（会记一条批次授权）→ 回片后在「挑片」采用 / 备选 / 重做。\n授权只覆盖本批范围与上限，不含整集或超额。"},
+     "prompt": "在工作台「视频生成」页：确认预检无阻断 → 构造任务 → 批准并提交（会记一条批次授权）→ 回片后进入审核四。"},
+    {"key": "review4", "name": "审核四 · 挑片", "skill": "导演 · 采用 / 备选 / 重做", "gate": "pick",
+     "prompt": "（导演本人执行）在工作台「审核四 · 挑片」逐镜看候选，采用 / 备选 / 重做，并标注原因。\n采用不覆盖原文件；生成成功不等于采用。"},
 ]
 
 
 def _script_title(ep_dir: Path):
+    """从 剧本.md 的第一行标题里取出集名，用于与大纲比对。"""
     f = ep_dir / "剧本.md"
     if not f.exists():
         return None
@@ -345,6 +350,7 @@ def render_prompt(tpl: str, ep_id: str) -> str:
 
 def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -> dict:
     ep_dir = PROJECT / "剧集" / ep_id
+    sels = sels or []
     titles = next((e for e in payload()["data"]["episodes"] if e["id"] == ep_id), {})
     map_title = titles.get("title")
     script_title = _script_title(ep_dir)
@@ -380,14 +386,20 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -
             basis = "无独立文件；是否做到体现在下游文档内容里"
         if s.get("gate") == 1:
             n = sum(1 for d in decision if d["gate"] == 1 and d["unit"]["type"] == "scene")
-            # 资产项是全剧共享，不按集过滤
-            asset_n = sum(1 for d in decisions
-                          if d["gate"] == 1 and d["unit"]["type"] == "asset")
-            st = "done" if (n or asset_n) else ("progress" if (ep_dir / "剧本.md").exists() else "pending")
+            st = "done" if n else ("progress" if (ep_dir / "剧本.md").exists() else "pending")
             detail = (f"已审 {n}/{cur_scenes} 场" if cur_scenes else f"已审 {n} 场") if n else "未审"
-            if asset_n:
-                detail += f" · 全剧资产 {asset_n}"
-            basis = f"本集场景判定 {n} 条；全剧资产判定 {asset_n} 条"
+            basis = f"本集场景判定记录 {n} 条"
+        elif s.get("gate") == 12:
+            n = sum(1 for d in decisions
+                    if d["gate"] == 1 and d["unit"]["type"] == "asset")
+            st = "done" if n else ("progress" if (ep_dir / "视觉设定.md").exists() else "pending")
+            detail = f"已审 {n} 项（全剧）" if n else "未审"
+            basis = f"全剧资产判定记录 {n} 条（资产项跨集共享）"
+        elif s.get("gate") == "pick":
+            n = sum(1 for x in sels if ep_id in (x.get("shot") or ""))
+            st = "done" if n else "pending"
+            detail = f"已采用 {n} 条" if n else "未挑"
+            basis = f"本集挑片记录 {n} 条"
         elif s.get("gate") == 2:
             n = sum(1 for d in decision if d["gate"] == 2)
             st = "done" if n else "pending"

@@ -73,7 +73,7 @@ def main():
     import server
     dec, cands = store.latest(PROJECT), server.list_candidates()
     wf = server.workflow_of("EP001", dec, cands)
-    check("步骤含 17 步", len(wf["steps"]) == 17, len(wf["steps"]))
+    check("步骤含 19 步", len(wf["steps"]) == 19, len(wf["steps"]))
     check("挂上 performance-direction",
           any("performance-direction" in (s.get("skill") or "") for s in wf["steps"]))
     check("挂上 production-design-direction",
@@ -82,8 +82,9 @@ def main():
           any(s.get("skill") == "novel-analyzer" for s in wf["steps"]))
     check("挂上 asset-continuity-management",
           any(s["name"] == "素材清单" for s in wf["steps"]))
-    check("未开始集不显示审核完成", all(s["status"] != "done" for s in wf["steps"]
-                                        if s["key"].startswith("review")))
+    names = [s["name"] for s in wf["steps"]]
+    check("四级审核齐全", all(f"审核{n} · " in " ".join(names) for n in ("一", "二", "三", "四")),
+          [x for x in names if "审核" in x])
 
     print("\n= 预检与任务构造 =")
     if has_content:
