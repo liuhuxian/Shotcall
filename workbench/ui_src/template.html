@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>导演工作台 · 原型 v0.1</title>
+<style>
+:root{
+  --bg:#0c0e11; --panel:#14171c; --panel2:#191d24; --line:#242a33;
+  --tx:#e7eaf0; --mut:#8b93a3; --dim:#5c6474;
+  --acc:#4a9eff; --ok:#3ecf8e; --warn:#f5a524; --bad:#f05252; --draft:#a78bfa;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--tx);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2c333d;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+
+.banner{background:linear-gradient(90deg,#1b2230,#141a24);border-bottom:1px solid var(--line);
+  padding:7px 18px;font-size:12px;color:var(--mut);display:flex;gap:14px;align-items:center}
+.banner b{color:var(--warn);font-weight:600}
+header{display:flex;align-items:center;gap:16px;padding:14px 20px 0}
+h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
+.sub{color:var(--dim);font-size:12px}
+nav{display:flex;gap:2px;padding:12px 20px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{padding:9px 14px;border-radius:8px 8px 0 0;color:var(--mut);font-size:13px;white-space:nowrap;border:1px solid transparent;border-bottom:none}
+nav button:hover{color:var(--tx);background:var(--panel)}
+nav button.on{color:var(--tx);background:var(--panel);border-color:var(--line);position:relative;top:1px}
+nav button .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:6px;vertical-align:1px}
+
+main{padding:18px 20px 60px;max-width:1560px;margin:0 auto}
+.epsel{position:relative;display:inline-block}
+.epbtn{display:flex;align-items:center;gap:7px;padding:2px 7px 2px 0;border:none;
+  background:none;font-size:12.5px;color:var(--mut);border-radius:6px}
+.epbtn:hover{color:var(--tx)}
+.epbtn:hover .cur{text-decoration:underline;text-underline-offset:3px}
+.epbtn .proj{color:var(--dim)}
+.epbtn .sep{color:var(--dim)}
+.epbtn .cur{color:var(--tx)}
+.epbtn .car{color:var(--dim);font-size:10px;margin-left:1px}
+.st{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block}
+.epmenu{position:absolute;left:0;top:calc(100% + 8px);width:330px;max-height:430px;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:40;
+  box-shadow:0 16px 40px rgba(0,0,0,.55);padding:5px}
+.epitem{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.epitem:hover{background:var(--panel2)}
+.epitem.on{background:#1b2430}
+.epitem .n{font-family:ui-monospace,monospace;font-size:11px;color:var(--dim);min-width:42px}
+.epitem.on .n{color:var(--acc)}
+.epitem .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.epitem .s{font-size:10.5px;color:var(--dim)}
+.muted{color:var(--mut)} .dim{color:var(--dim)} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;line-height:18px;border:1px solid}
+.b-ok{color:var(--ok);border-color:#1e5b43;background:#0f2a20}
+.b-warn{color:var(--warn);border-color:#5c421a;background:#2a1f0d}
+.b-bad{color:var(--bad);border-color:#5c2323;background:#2a1212}
+.b-mut{color:var(--mut);border-color:var(--line);background:#12151a}
+.b-acc{color:var(--acc);border-color:#1c3f66;background:#0f1c2b}
+.b-draft{color:var(--draft);border-color:#3b2f63;background:#1a1630}
+
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi{font-size:26px;font-weight:600;letter-spacing:.5px}
+.kpi small{font-size:12px;color:var(--mut);font-weight:400;margin-left:4px}
+
+.row{display:flex;gap:12px}
+.col{display:flex;flex-direction:column}
+.grow{flex:1}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.ph{padding:9px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mut);
+  display:flex;justify-content:space-between;align-items:center;letter-spacing:.4px}
+.pb{padding:12px 14px}
+
+list,.bare{list-style:none;margin:0;padding:0}
+.sitem{padding:9px 12px;border-bottom:1px solid #1b2028;cursor:pointer;display:flex;gap:10px;align-items:flex-start}
+.sitem:hover{background:var(--panel2)}
+.sitem.on{background:#1b2430;box-shadow:inset 3px 0 0 var(--acc)}
+.sitem .n{font-size:11px;color:var(--dim);min-width:26px;font-family:ui-monospace,monospace}
+.sitem .t{flex:1;min-width:0}
+.sitem .t div:first-child{font-size:13px}
+.sitem .t div:last-child{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.read{max-width:640px;font-size:15px;line-height:1.85}
+.read .act{color:#cfd6e2;margin:0 0 14px}
+.read .line{display:flex;gap:10px;margin:0 0 9px;padding:5px 10px;border-radius:6px;cursor:text}
+.read .line:hover{background:#161a21}
+.read .spk{color:var(--acc);min-width:44px;flex-shrink:0;font-size:13px;padding-top:2px}
+.read .spk.q{color:#e0a458}
+.read .spk.w{color:#b98cd6}
+.read .txt{color:#eef1f6}
+.read .line:hover::after{content:"＋意见";font-size:11px;color:var(--dim);align-self:center;margin-left:auto}
+
+.kv{display:grid;grid-template-columns:76px 1fr;gap:3px 10px;font-size:12.5px}
+.kv dt{color:var(--dim)} .kv dd{margin:0;color:#cbd3df}
+
+.verdict{display:flex;gap:8px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);background:#101318}
+.btn{padding:7px 14px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);font-size:13px}
+.btn:hover{border-color:#38414e}
+.btn.ok{color:#0b1a12;background:var(--ok);border-color:var(--ok);font-weight:600}
+.btn.warn{color:#241703;background:var(--warn);border-color:var(--warn);font-weight:600}
+.btn.acc{color:#04121f;background:var(--acc);border-color:var(--acc);font-weight:600}
+.btn.ghost{background:transparent}
+.btn[disabled]{opacity:.42;cursor:not-allowed}
+
+.wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.cell{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:pointer;position:relative}
+.cell:hover{border-color:#3a4655;transform:translateY(-1px)}
+.cell .ci{padding:8px 9px 7px}
+.cell .cid{font-size:11px;font-family:ui-monospace,monospace;color:#aab3c2;letter-spacing:.2px}
+.cell .cd{font-size:17px;font-weight:600;line-height:1.25}
+.cell .cd small{font-size:11px;color:var(--dim);font-weight:400}
+.cell .cb{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.cell .noimg{height:34px;background:repeating-linear-gradient(45deg,#12151a,#12151a 6px,#161b22 6px,#161b22 12px);border-bottom:1px solid var(--line)}
+.sect{margin:0 0 10px;font-size:12px;color:var(--mut);display:flex;gap:10px;align-items:center;letter-spacing:.4px}
+.sect:before{content:"";width:3px;height:12px;background:var(--acc);border-radius:2px}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.chip{padding:5px 11px;border-radius:20px;border:1px solid var(--line);font-size:12px;color:var(--mut);cursor:pointer}
+.chip.on{color:var(--tx);border-color:#3a4a5e;background:#1b2430}
+
+.refrow{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #1b2028}
+.refrow img{width:72px;height:48px;object-fit:cover;border-radius:5px;border:1px solid var(--line)}
+.miss{width:72px;height:48px;border-radius:5px;border:1px dashed #5c2323;background:#1e1212;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bad);text-align:center;line-height:1.3}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--mut);font-weight:500;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid #1b2028;vertical-align:top}
+tr:hover td{background:#12161c}
+
+.cand{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:1;min-width:0}
+.cand .poster{position:relative;aspect-ratio:16/10;background:#000}
+.cand .poster img{width:100%;height:100%;object-fit:cover;opacity:.92}
+.cand .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.cand .play span{width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.5);
+  display:flex;align-items:center;justify-content:center;font-size:15px}
+.cand .meta{padding:10px 12px;font-size:12px;color:var(--mut)}
+.cand.sel{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
+.cand .acts{display:flex;gap:6px;padding:0 12px 12px}
+.cand .acts .btn{flex:1;padding:6px 0;text-align:center;font-size:12.5px}
+
+.modal{position:fixed;inset:0;background:rgba(4,6,9,.72);display:flex;align-items:center;justify-content:center;z-index:50}
+.modal .box{width:min(560px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1d2531;border:1px solid #33415a;
+  padding:10px 18px;border-radius:8px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+
+.alert{display:flex;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);margin-bottom:8px;cursor:pointer}
+.alert:hover{border-color:#3a4655}
+.alert .ic{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.bar{height:6px;background:#1d222a;border-radius:4px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:4px}
+.bar.ok i{background:var(--ok)}
+</style>
+</head>
+<body>
+<div class="banner">
+  <span><b>静态原型</b> · 只读演示</span>
+  <span>数据<b>真实</b>（从项目文件解析）</span>
+  <span>交互为<b>模拟</b>，不会保存任何修改</span>
+  <span style="margin-left:auto" class="dim" id="bannerStat"></span>
+</div>
+<header>
+  <div>
+    <h1>导演工作台</h1>
+    <div class="epsel" id="epsel"></div>
+  </div>
+</header>
+<nav id="nav"></nav>
+<main id="app"></main>
+<div id="toastHost"></div>
+
+<script>
+const D = __DATA__;
+const IMG = __IMG_JSON__;
+const S = D.stats;
+
+/* ---- 原型内的模拟状态（仅内存） ---- */
+const state = {
+  tab:"overview", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
+  filter:"all", verdicts:{}, picks:{}, candModal:null, batchModal:null, reasonChips:[], drafts:{}, preflight:null, plan:null, exec:null
+};
+const vkey=(t,id)=>t+"::"+id;
+const vget=(t,id)=>state.verdicts[vkey(t,id)];
+const vset=(t,id,v)=>{ state.verdicts[vkey(t,id)]=v; };
+
+const SPKCLASS = {"陈铭":"", "秦淮":"q", "妻子":"w"};
+const mmss = sec => {
+  if(sec==null || isNaN(sec)) return "—";
+  const m = Math.floor(sec/60), s = Math.round(sec%60);
+  return m + ":" + String(s).padStart(2,"0");
+};
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const fmt = n => (n>=60 ? (n/60).toFixed(1)+" 分" : n+" 秒");
+const shotById = id => D.shots.find(s=>s.id===id);
+const sceneById = id => D.scenes.find(s=>s.id===id);
+
+function toast(msg){
+  const h=document.getElementById("toastHost");
+  h.innerHTML = `<div class="toast">${esc(msg)}</div>`;
+  clearTimeout(window.__t); window.__t=setTimeout(()=>h.innerHTML="",2200);
+}
+function go(tab, opts){
+  Object.assign(state, opts||{}, {tab});
+  render();
+}
+
+/* ---------- 通用组件 ---------- */
+function selOf(shotId){
+  return (D.selections||[]).find(s=>s.shot===shotId) || null;
+}
+function selBadge(shotId){
+  const s=selOf(shotId);
+  if(!s) return "";
+  if(s.status==="adopt") return '<span class="badge b-ok">已采用</span>';
+  if(s.status==="backup") return '<span class="badge b-acc">备选</span>';
+  return '<span class="badge b-warn">重做</span>';
+}
+function staleOf(type,id){
+  const d=(D.decisions||[]).find(x=>x.unit.type===type&&x.unit.id===id);
+  return d&&d.stale ? (d.staleFiles||[]) : null;
+}
+function staleBadge(type,id){
+  const f=staleOf(type,id);
+  return f?`<span class="badge b-warn" title="依据文件已变更：${esc(f.join("、"))}">文件已变更·需复核</span>`:"";
+}
+function verdictBadge(v){
+  if(v==="pass") return `<span class="badge b-ok">通过</span>`;
+  if(v==="revise") return `<span class="badge b-warn">需修改</span>`;
+  if(v==="hold") return `<span class="badge b-mut">待定</span>`;
+  return `<span class="badge b-mut" style="opacity:.65">未审</span>`;
+}
+
+function nav(){
+  const items=[
+    ["overview","总览"],["workflow","工作流"],["r1","审核一 · 剧本"],["r1a","审核一 · 资产"],
+    ["r2","审核二 · 分镜"],["shot","单镜详情"],["checks","检查"],["pick","挑片"],["img","出图"],["batch","视频生成"],["export","修改单"]
+  ];
+  document.getElementById("nav").innerHTML = items.map(([k,label])=>{
+    let dot="";
+    if(k==="checks") dot=`<i class="dot" style="background:var(--bad)"></i>`;
+    if(k==="pick") dot=`<i class="dot" style="background:var(--dim)"></i>`;
+    return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
+  }).join("");
+}
+
+const TAB_LABEL = {overview:"总览", workflow:"工作流", r1:"审核一 · 剧本", r1a:"审核一 · 资产",
+  r2:"审核二 · 分镜", shot:"单镜详情", checks:"检查", pick:"挑片", batch:"视频生成",
+  img:"出图", export:"修改单"};
+
+function emptyPanel(key){
+  const label = TAB_LABEL[key] || key;
+  return `<div class="panel" style="max-width:760px">
+    <div class="ph"><span><b>${esc(state.ep)}</b> · ${esc(label)}</span><span class="badge b-mut">空白</span></div>
+    <div class="pb">
+      <div class="dim" style="font-size:13px;line-height:1.9">
+        本集还没有对应的创作文档，所以这一页是空的。<br>
+        这不是加载失败，也不是卡住——${esc(state.ep)} 目前只有大纲。
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn acc" onclick="go('workflow')">看这一集的流程</button>
+        <button class="btn ghost" onclick="go('overview')">回全剧总览</button>
+      </div>
+      <div class="dim mono" style="font-size:11px;margin-top:16px">当前页面：${esc(key)}</div>
+    </div></div>`;
+}
+
+/* ---------- 工作流 ---------- */
+function sWorkflow(){
+  const wf = (D.workflow||[]).find(x=>x.episode===state.ep);
+  if(!wf) return `<div class="panel"><div class="pb dim">没有这一集的流程数据。</div></div>`;
+  const S2 = {
+    done:['b-ok','已完成'], progress:['b-acc','进行中'], manual:['b-acc','随文档写入'], pending:['b-mut','未开始']
+  };
+  const gates = {"review1":1,"review2":1,"batch":1,"gen1":1,"gen2":1,"test":1};
+  const rows = wf.steps.map(s=>{
+    const [cls,label] = S2[s.status]||S2.pending;
+    const isGate = gates[s.key];
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-bottom:1px solid #1b2028;
+        ${isGate?'background:#101318;box-shadow:inset 3px 0 0 '+(s.key.startsWith('review')?'var(--acc)':'var(--draft)'):''}">
+      <div class="mono dim" style="min-width:22px;font-size:12px;padding-top:1px">${String(s.no).padStart(2,"0")}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px${isGate?';font-weight:600':''}">${esc(s.name)}</div>
+        <div class="dim mono" style="font-size:11px;margin-top:2px">${esc(s.skill||"")}</div>
+        ${s.note?`<div class="dim" style="font-size:11.5px;margin-top:2px">${esc(s.note)}</div>`:""}
+        ${s.basis?`<div class="mono" style="font-size:10.5px;color:#5c6474;margin-top:3px">${s.status==="done"?"✓":"·"} ${esc(s.basis)}</div>`:""}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <span class="badge ${cls}">${label}</span>
+        ${s.detail?`<div class="dim" style="font-size:11px;margin-top:4px">${esc(s.detail)}</div>`:""}
+      </div>
+    </div>`;
+  }).join("");
+  const done = wf.steps.filter(s=>s.status==="done").length;
+  return `
+  ${wf.titleMismatch?`<div class="alert" style="margin-bottom:14px;border-color:#5c2323;background:#1d1212;cursor:default">
+    <div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+    <div><b>目录内容与新大纲不一致</b>
+      <div class="dim" style="font-size:12.5px;margin-top:3px">
+        大纲第 ${wf.episode} 集是《${esc(wf.mapTitle||"")}》，但 剧集/${wf.episode}/剧本.md 写的是《${esc(wf.scriptTitle||"")}》。
+        下面这些"已完成"来自旧编号，不能直接当作新大纲的进度。
+      </div></div>
+  </div>`:""}
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>${wf.episode} 创作流程</span>
+      <span class="dim">${done}/${wf.steps.length} 步完成${wf.exists?"":" · 本集尚未建立目录"}</span></div>
+    <div class="pb dim" style="font-size:12px">
+      写作由 DSH 技能产出文档；出图/出片由工作台批次授权后执行；两个蓝色节点是导演审核。
+    </div>
+    <div>${rows}</div>
+  </div>`;
+}
+
+/* ---------- 总览 ---------- */
+function sOverview(){
+  const sceneV = D.scenes.map(s=>vget("scene",s.id));
+  const shotDone = D.shots.filter(s=>vget("shot",s.id)).length;
+  const aKeys = [
+    ...D.assets.people.map(p=>"人物·"+p.name),
+    ...D.assets.places.map(p=>"地点·"+p.name),
+    ...D.assets.props.map(p=>"道具·"+p.name)];
+  const assetDone = aKeys.filter(k=>state.verdicts["asset::"+k]).length;
+  const pass = sceneV.filter(v=>v==="pass").length;
+  const revise = sceneV.filter(v=>v==="revise").length;
+  const withScript = D.episodes.filter(e=>e.hasScript).length;
+  return `
+  <div style="display:flex;gap:18px;align-items:center;padding:9px 14px;border:1px solid var(--line);
+              border-radius:9px;background:var(--panel2);margin-bottom:14px;font-size:12.5px;flex-wrap:wrap">
+    ${D.assets.people.length
+      ? `<span class="dim">共享资产：${D.assets.people.length} 人物 · ${D.assets.places.length} 地点 · ${D.assets.props.length} 道具</span>`
+      : `<span class="dim">资产设定尚未建立${(S.assetFiles)?`（资产目录已有 ${S.assetFiles} 张图）`:""}</span>`}
+    <span class="dim">已成片 0 集</span>
+    <span style="margin-left:auto" class="dim">当前查看 ${state.ep} · 大纲共 ${D.episodes.length} 集</span>
+  </div>
+  ${(()=>{
+    const wfs = D.workflow||[];
+    const total = wfs.length;
+    const totalSec = wfs.reduce((a,w)=>a+(w.target||0),0);
+    const scripts = wfs.filter(w=>(w.steps||[]).some(s=>s.key==="script"&&s.status==="done")).length;
+    const boards  = wfs.filter(w=>(w.steps||[]).some(s=>s.key==="board"&&s.status==="done")).length;
+    const cands = wfs.reduce((a,w)=>a+(w.candidates||0),0);
+    const picks = wfs.reduce((a,w)=>a+(w.picks||0),0);
+    return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">全剧</div>
+      <div class="kpi">${total}<small>集</small></div>
+      <div class="dim" style="font-size:11.5px;margin-top:4px">单集 ${mmss((D.episodes[0]||{}).target)}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">总目标时长</div>
+      <div class="kpi">${Math.round(totalSec/60)}<small>分钟</small></div>
+      <div class="dim" style="font-size:11.5px;margin-top:4px">${totalSec} 秒</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已写剧本</div>
+      <div class="kpi">${scripts}<small>/${total} 集</small></div>
+      <div class="dim" style="font-size:11.5px;margin-top:4px">已出分镜 ${boards} 集</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已采用</div>
+      <div class="kpi">${picks}<small>条</small></div>
+      <div class="dim" style="font-size:11.5px;margin-top:4px">候选 ${cands} 条</div></div>
+  </div>`;
+  })()}
+
+  <div class="row" style="align-items:flex-start">
+    <div class="grow col" style="gap:14px;min-width:0">
+
+      <div class="panel">
+        <div class="ph"><span>三个决策门</span><span class="dim">只统计本集</span></div>
+        <div class="pb" style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:13px">
+              <b>审核一 · 剧本/资产</b><span class="muted">${S.scenes?`${pass+revise}/${S.scenes}`:"未开始"}</span>
+            </div>
+            <div class="bar ${pass===S.scenes?'ok':''}"><i style="width:${((pass+revise)/S.scenes*100)|0}%"></i></div>
+            <div class="dim" style="font-size:11.5px;margin-top:7px">通过 ${pass} · 需修改 ${revise} · 待审 ${S.scenes-pass-revise}</div>
+            <div class="dim" style="font-size:11.5px;margin-top:4px">${aKeys.length?`资产已判 ${assetDone}/${aKeys.length}`:"资产未建立"}</div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:13px">
+              <b>审核二 · 分镜/提示词</b><span class="muted">${S.shots?`${shotDone}/${S.shots}`:"未开始"}</span>
+            </div>
+            <div class="bar ${shotDone===S.shots?'ok':''}"><i style="width:${(shotDone/S.shots*100)|0}%"></i></div>
+            <div class="dim" style="font-size:11.5px;margin-top:7px">${S.shots?`视频提示词 ${S.promptShots}/${S.shots} 镜${shotDone?` · 已判 ${shotDone} 镜`:""}`:"本集尚未分镜"}</div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:13px">
+              <b>挑片</b><span class="muted">${S.shots?`0/${S.shots}`:"未开始"}</span>
+            </div>
+            <div class="bar"><i style="width:0%"></i></div>
+            <div class="dim" style="font-size:11.5px;margin-top:7px">${S.shots?"0 条候选；服务器上另有 29 条测试片未归集":"本集尚未分镜"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span>检查与告警</span><span class="badge ${S.brokenOcc?"b-bad":"b-mut"}">${S.brokenOcc?4:3} 项</span></div>
+        <div class="pb">
+          ${(S.refTotal||0)===0?`<div class="alert" onclick="go('checks')" style="cursor:default">
+            <div class="ic" style="background:#0f1c2b;color:var(--acc)">i</div>
+            <div style="flex:1"><b>本集尚无镜头，无参考图可校验</b>
+              <div class="dim" style="font-size:12px">写完分镜后这里会列出断链、帧数、提示词覆盖等检查项。</div></div>
+          </div>`:S.brokenOcc?`<div class="alert" onclick="go('checks')">
+            <div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+            <div style="flex:1">
+              <div><b>参考图引用失效 ${S.brokenOcc} 处</b>，涉及 ${S.brokenShots}/${S.shots} 镜</div>
+              <div class="dim" style="font-size:12px">分镜引用了不存在的文件</div>
+            </div>
+            <div class="dim" style="font-size:12px">查看 →</div>
+          </div>`:`<div class="alert" onclick="go('img')">
+            <div class="ic" style="background:#0f2a20;color:var(--ok)">✓</div>
+            <div style="flex:1">
+              <div><b>参考图引用已全部修复</b>——${S.refTotal} 处引用均指向现存文件</div>
+              <div class="dim" style="font-size:12px">人物改用 6 视图（陈铭6视图.png / 秦淮6视图.png），与资产采用图一致</div>
+            </div>
+            <div class="dim" style="font-size:12px">查看 →</div>
+          </div>`}
+          <div class="alert" onclick="go('r2')">
+            <div class="ic" style="background:#2a1f0d;color:var(--warn)">!</div>
+            <div style="flex:1">
+              <div><b>${S.shortShots.length} 个镜头低于模型训练下限</b></div>
+              <div class="dim" style="font-size:12px">${S.shortShots.join("、")} 为 4 秒（吸附后 107 帧），H3 训练区间从 124 帧起</div>
+            </div>
+            <div class="dim" style="font-size:12px">查看 →</div>
+          </div>
+          <div class="alert" onclick="go('r2')">
+            <div class="ic" style="background:#2a1f0d;color:var(--warn)">!</div>
+            <div style="flex:1">
+              <div><b>视频提示词覆盖 ${S.promptShots}/${S.shots}</b></div>
+              <div class="dim" style="font-size:12px">只有 SC001 的 03A、03B、03C 有 H3 六段式提示词</div>
+            </div>
+            <div class="dim" style="font-size:12px">查看 →</div>
+          </div>
+          <div class="alert" onclick="go('r1a')">
+            <div class="ic" style="background:#0f1c2b;color:var(--acc)">i</div>
+            <div style="flex:1">
+              <div><b>${S.placesNoRef} 处地点尚无美术参考</b></div>
+              <div class="dim" style="font-size:12px">视觉设定中标注"具体美术参考尚未生成"，不能视为已定资产</div>
+            </div>
+            <div class="dim" style="font-size:12px">查看 →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="width:340px;gap:14px;flex-shrink:0">
+      <div class="panel">
+        <div class="ph"><span>最近决策</span><span class="dim">原型模拟</span></div>
+        <div class="pb" style="font-size:12.5px;line-height:1.75">
+          ${(D.decisions&&D.decisions.length)
+            ? D.decisions.slice().reverse().slice(0,6).map(d=>{
+                const note=(d.notes||[]).map(n=>n.text).filter(Boolean).join("；");
+                return `<div style="margin-bottom:10px">${verdictBadge(d.verdict)} <b>${esc(String(d.unit.id).replace("EP002-",""))}</b>
+                  <span class="dim" style="font-size:11px">${d.unit.type==="scene"?"场次":d.unit.type==="shot"?"镜头":"资产"}</span><br>
+                  ${note?`<span class="dim">"${esc(note)}"</span>`:`<span class="dim" style="opacity:.6">无意见</span>`}</div>`;
+              }).join("")
+            : '<div class="dim">还没有任何判定。左边审完一场，这里就会出现记录。</div>'}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span>台词基线</span></div>
+        <div class="pb" style="font-size:12.5px">
+          <div>剧本 ${S.dialogue} 句 · 分镜 ${S.dialogue+9} 段</div>
+          <div style="margin-top:6px">拼接 <b>${S.dialogueChars}</b> 字，<span style="color:var(--ok)">逐字一致</span></div>
+          <div class="dim" style="margin-top:8px">跨镜拆句 ${S.chainGroups} 组 → 挑片时需连看</div>
+          <div style="margin-top:8px">原著原句 <b>${S.origLines}/${S.dialogue}</b>${S.adapted.length?` · <span style="color:var(--warn)">${S.adapted.length} 句改编已声明</span>`:''}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${epsTable()}`;
+}
+
+/* ---------- 全剧进度表 ---------- */
+function epsTable(){
+  const wfs = D.workflow || [];
+  const stepOf = (wf,key) => (wf.steps||[]).find(s=>s.key===key) || {};
+  const dashes = v => v ? v : '<span style="opacity:.35">—</span>';
+  const rows = wfs.map(wf=>{
+    const sc = stepOf(wf,"script"), r1 = stepOf(wf,"review1"),
+          bd = stepOf(wf,"board"), r2 = stepOf(wf,"review2"),
+          gt = stepOf(wf,"test");
+    const done = wf.steps.filter(s=>s.status==="done").length;
+    const cur = wf.episode === state.ep;
+    return `<tr style="cursor:pointer" onclick="pickEp('${wf.episode}')">
+      <td class="mono" style="color:${cur?'var(--acc)':'var(--dim)'}">${wf.episode}</td>
+      <td style="white-space:nowrap;max-width:250px;overflow:hidden;text-overflow:ellipsis">${esc(wf.mapTitle||"")}</td>
+      <td class="dim" style="text-align:center">${wf.chapters?wf.chapters[0]+"–"+wf.chapters[1]:"—"}</td>
+      <td class="dim mono" style="text-align:center">${mmss(wf.target)}</td>
+      <td style="text-align:center" class="dim">${dashes(sc.detail)}</td>
+      <td style="text-align:center" class="dim">${dashes(r1.detail)}</td>
+      <td style="text-align:center" class="dim">${dashes(bd.detail)}</td>
+      <td style="text-align:center" class="dim">${dashes(r2.detail)}</td>
+      <td style="text-align:center" class="dim">${wf.candidates?wf.candidates+" 条":dashes("")}</td>
+      <td style="text-align:center" class="dim">${wf.picks?wf.picks+" 条":dashes("")}</td>
+      <td style="text-align:right">${done>=wf.steps.length
+        ? '<span class="badge b-ok">完成</span>'
+        : done>2 ? `<span class="badge b-acc">进行中 ${done}/${wf.steps.length}</span>`
+        : '<span class="badge b-mut">仅大纲</span>'}</td>
+    </tr>`;
+  }).join("");
+
+  const started = wfs.filter(w=>w.exists).length;
+  return `
+  <div class="panel" style="margin-top:14px">
+    <div class="ph"><span>全剧进度</span><span class="dim">${wfs.length} 集 · 已建立目录 ${started} 集 · 各集独立推进</span></div>
+    <table>
+      <thead><tr>
+        <th style="width:60px">集</th><th>集名</th><th style="width:66px;text-align:center">原著</th>
+        <th style="width:60px;text-align:center">目标</th>
+        <th style="width:70px;text-align:center">剧本</th>
+        <th style="width:80px;text-align:center">审核一</th>
+        <th style="width:70px;text-align:center">分镜</th>
+        <th style="width:74px;text-align:center">审核二</th>
+        <th style="width:66px;text-align:center">候选</th>
+        <th style="width:60px;text-align:center">采用</th>
+        <th style="width:96px"></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- 审核一 · 剧本 ---------- */
+function sR1(){
+  if(!D.scenes || !D.scenes.length) return emptyPanel("r1");
+  const sc = sceneById(state.scene) || D.scenes[0];
+  const v = vget("scene",sc.id);
+  const list = D.scenes.map(s=>{
+    const st=vget("scene",s.id);
+    const dot = st==="pass"?'<i class="dot" style="background:var(--ok)"></i>'
+      : st==="revise"?'<i class="dot" style="background:var(--warn)"></i>'
+      : st==="hold"?'<i class="dot" style="background:var(--dim)"></i>':'';
+    return `<div class="sitem ${s.id===sc.id?'on':''}" onclick="go('r1',{scene:'${s.id}'})">
+      <div class="n">${s.id.slice(-3)}</div>
+      <div class="t"><div>${esc(s.place)}${dot}</div>
+        <div>${s.shotCount} 镜 · ${s.dur}s · ${s.dialogue.length} 句</div></div>
+    </div>`;
+  }).join("");
+
+  const body = sc.blocks.map(b=>{
+    if(b.t==="act") return `<p class="act">${esc(b.text)}</p>`;
+    return `<div class="line" onclick="toast('原型：点这里会锚定到这句台词，让他写意见')">
+      <span class="spk ${SPKCLASS[b.spk]||''}">${b.spk}</span>
+      <span class="txt">${esc(b.text)}</span>${b.orig===false?'<span class="badge b-warn" style="align-self:center;white-space:nowrap">改编 · 已声明</span>':''}</div>`;
+  }).join("");
+
+  const refs = {};
+  D.shots.filter(s=>s.scene===sc.id).forEach(s=>s.refs.forEach(r=>{
+    if(!refs[r.key]) refs[r.key]={...r, n:0}; refs[r.key].n++;
+  }));
+  const refHtml = Object.values(refs).map(r=>
+    `<div class="refrow" style="border:none;padding:4px 0">
+      ${r.exists?`<span class="badge b-ok">✓</span>`:`<span class="badge b-bad">断链</span>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px" class="mono">${r.key}</div>
+        <div class="dim" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.path)}</div>
+      </div><div class="dim" style="font-size:11px">${r.n} 处</div>
+    </div>`).join("");
+
+  return `
+  <div class="row" style="align-items:flex-start;gap:14px">
+    <div class="panel" style="width:250px;flex-shrink:0">
+      <div class="ph"><span>场次</span><span class="dim">${S.scenes} 场</span></div>
+      <div style="max-height:calc(100vh - 250px);overflow:auto">${list}</div>
+    </div>
+
+    <div class="panel grow" style="min-width:0">
+      <div class="ph">
+        <span><b>${sc.id}</b> · ${esc(sc.kind)} · ${esc(sc.place)} · ${esc(sc.time)}</span>
+        <span>${verdictBadge(v)}${staleBadge("scene",sc.id)}</span>
+      </div>
+      <div class="pb" style="max-height:calc(100vh - 330px);overflow:auto">
+        <div class="read">${body}</div>
+      </div>
+      <div class="verdict">
+        <input placeholder="这条意见会随判定一起落账" value="${esc(draftOf('scene',sc.id))}"
+          oninput="setDraft('scene','${sc.id}',this.value)"
+          style="flex:1;min-width:160px;background:#0f1216;border:1px solid var(--line);
+                 border-radius:6px;padding:6px 10px;color:var(--tx);font-size:12.5px">
+        <button class="btn ok" onclick="setV('${sc.id}','pass')">通过本场</button>
+        <button class="btn warn" onclick="setV('${sc.id}','revise')">需修改</button>
+        <button class="btn ghost" onclick="setV('${sc.id}','hold')">待定</button>
+        <span class="dim" style="margin-left:auto;font-size:11.5px">
+          本次通过仅覆盖 ${sc.id.slice(-3)} 场，不含其余 ${S.scenes-1} 场，也不含生成授权
+        </span>
+      </div>
+    </div>
+
+    <div class="col" style="width:300px;flex-shrink:0;gap:14px">
+      <div class="panel">
+        <div class="ph"><span>依据</span></div>
+        <div class="pb">
+          <dl class="kv">
+            <dt>台词</dt><dd>${sc.dialogue.length} 句（逐字保留）</dd>
+            <dt>原著</dt><dd>${sc.dialogue.filter(d=>d.orig).length}/${sc.dialogue.length} 句为原句${sc.dialogue.some(d=>!d.orig)?' · <span style="color:var(--warn)">含改编（已声明）</span>':''}</dd>
+            <dt>出处</dt><dd>${sc.src?`原文第 ${sc.src[0]}–${sc.src[1]} 行`:'—（本场无原句）'}</dd>
+            <dt>下游</dt><dd>${sc.shotCount} 镜 · ${sc.dur} 秒</dd>
+            <dt>断链</dt><dd>${sc.broken?`<span style="color:var(--bad)">${sc.broken} 处</span>`:`<span style="color:var(--ok)">无</span>`}</dd>
+          </dl>
+          <div class="dim" style="font-size:11.5px;margin-top:12px;border-top:1px solid var(--line);padding-top:10px">引用资产</div>
+          ${refHtml}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span>这场之后</span></div>
+        <div class="pb" style="font-size:12.5px;line-height:1.8">
+          <div><span class="badge b-acc">审核二</span> ${sc.shotCount} 镜待确认</div>
+          <div style="margin-top:6px"><span class="badge ${sc.hasPrompt?'b-ok':'b-warn'}">提示词</span> ${sc.hasPrompt}/${sc.shotCount}</div>
+          <div style="margin-top:10px" class="dim">通过后生成定版清单，记录文件哈希与覆盖范围。</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function setV(id,v){ setU("scene",id,v); }
+function draftOf(type,id){ return (state.drafts||{})[type+"::"+id] || ""; }
+function setDraft(type,id,v){ state.drafts=state.drafts||{}; state.drafts[type+"::"+id]=v; }
+function setU(type,id,v){
+  vset(type,id,v);
+  const gate = type==="shot" ? 2 : 1;
+  const note = draftOf(type,id).trim();
+  const body = {gate, unit:{type, id}, verdict:v,
+    notes: note ? [{anchor:"", text:note.trim()}] : [],
+    scope:{covers:[id], excludes:["其余单元","生成授权"]}};
+  render();
+  return fetch("/api/decision",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)})
+    .then(r=>r.json())
+    .then(j=>{
+      if(j.ok){ setDraft(type,id,""); toast(`已落账 ${j.record.id} · ${({pass:"通过",revise:"需修改",hold:"待定"})[v]}`); render(); }
+      else toast("落账失败："+(j.error||""));
+    })
+    .catch(e=>toast("落账失败："+e.message));
+}
+
+/* ---------- 审核一 · 资产 ---------- */
+function sR1a(){
+  if(!D.assets || (!D.assets.people.length && !D.assets.places.length)) return emptyPanel("r1a");
+  const people = D.assets.people.map(p=>{
+    const isChen = p.name==="陈铭", isQin = p.name==="秦淮";
+    const img = isChen?IMG.chen:isQin?IMG.qin:"";
+    return `<div class="card" style="padding:12px">
+      ${img?`<img src="${img}" style="width:100%;border-radius:7px;border:1px solid var(--line);display:block">`
+           :`<div style="height:150px;border-radius:7px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center" class="dim">尚无参考图</div>`}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px">
+        <b>${esc(p.name)}</b>
+        ${isChen?`<span class="badge b-warn">已采用 · 引用不一致</span>`:isQin?`<span class="badge b-ok">已定</span>`:`<span class="badge b-mut">未定</span>`}
+      </div>
+      <div class="dim" style="font-size:11.5px;margin-top:6px;line-height:1.7">
+        ${p.bullets.slice(0,2).map(b=>esc(b.v.slice(0,44))+(b.v.length>44?"…":"")).join("<br>")}
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;margin-top:8px">
+        ${verdictBadge(vget("asset","人物·"+p.name))}
+        <button class="btn ok" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','人物·${esc(p.name)}','pass')">通过</button>
+        <button class="btn warn" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','人物·${esc(p.name)}','revise')">改</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  const places = D.assets.places.map(p=>{
+    const noRef = p.bullets.some(b=>b.v.includes("尚未生成"));
+    return `<div style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <span style="font-size:13px">${esc(p.name)}</span>
+        <span style="display:flex;gap:5px;align-items:center;flex-shrink:0">
+          ${verdictBadge(vget("asset","地点·"+p.name))}
+          ${noRef?`<span class="badge b-mut">未就绪</span>`:`<span class="badge b-ok">有参考</span>`}
+        </span>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:7px">
+        <button class="btn" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','地点·${esc(p.name)}','pass')">通过</button>
+        <button class="btn" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','地点·${esc(p.name)}','revise')">改</button>
+      </div></div>`;
+  }).join("");
+
+  return `
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>人物资产 · 身份 → 造型 → 状态 <span class="badge b-acc">全剧共享</span></span><span class="dim">换装与受伤状态必须单独判定</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">${people}</div>
+  </div>
+  <div class="row" style="align-items:flex-start;gap:14px">
+    <div class="panel grow">
+      <div class="ph"><span>地点 <span class="badge b-acc">全剧共享</span></span><span class="dim">${S.placesNoRef} 处尚无美术参考</span></div>
+      <div class="pb" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${places}</div>
+    </div>
+    <div class="panel" style="width:340px;flex-shrink:0">
+      <div class="ph"><span>道具状态</span><span class="dim">${D.assets.props.length} 项</span></div>
+      <div class="pb" style="font-size:12.5px;line-height:1.9">
+        ${D.assets.props.map(p=>`<div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0"><b>${esc(p.name)}</b><br>
+            <span class="dim">${esc((p.bullets[0]||{}).v||"").slice(0,34)}</span></div>
+          ${verdictBadge(vget("asset","道具·"+p.name))}
+          <button class="btn ok" style="font-size:11px;padding:2px 7px" onclick="setU('asset','道具·${esc(p.name)}','pass')">通过</button>
+        </div>`).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 审核二 · 分镜墙 ---------- */
+function sR2(){
+  if(!D.shots || !D.shots.length) return emptyPanel("r2");
+  const groups = D.scenes.map(sc=>{
+    let list = D.shots.filter(s=>s.scene===sc.id);
+    if(state.filter==="broken") list=list.filter(s=>s.broken.length);
+    if(state.filter==="noprompt") list=list.filter(s=>!s.motion);
+    if(state.filter==="short") list=list.filter(s=>s.short);
+    if(state.filter==="pending") list=list.filter(s=>!vget("shot",s.id));
+    if(state.filter==="judged") list=list.filter(s=>!!vget("shot",s.id));
+    if(state.filter==="revise") list=list.filter(s=>vget("shot",s.id)==="revise");
+    if(state.filter==="picked") list=list.filter(s=>!!selOf(s.id));
+    if(!list.length) return "";
+    const cells = list.map(s=>{
+      const sid = s.id.replace("SHOT-EP002-","");
+      const badges=[
+        s.broken.length?`<span class="badge b-bad">断链</span>`:"",
+        s.short?`<span class="badge b-warn">短</span>`:"",
+        !s.motion?`<span class="badge b-mut">无词</span>`:`<span class="badge b-acc">有词</span>`,
+        D.chain[s.id]?`<span class="badge b-draft">链</span>`:"",
+        selBadge(s.id)
+      ].join("");
+      const fr = (s.fields["景别/机位"]||"").split(/[，,。；]/)[0].slice(0,14);
+      const chainStyle = D.chain[s.id] ? "border-left:3px solid var(--draft)" : "";
+      return `<div class="cell" style="${chainStyle}" title="${esc(s.fields["景别/机位"]||"")}"
+        onclick="go('shot',{shot:'${s.id}'})">
+        <div class="noimg"></div>
+        <div class="ci">
+          <div class="cid">${sid}</div>
+          <div class="cd">${s.dur}<small>s</small></div>
+          <div class="dim" style="font-size:10.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(fr)}</div>
+          <div class="cb">${badges}</div>
+        </div></div>`;
+    }).join("");
+    return `<div class="sect">${sc.id} · ${esc(sc.place)} <span class="dim">${list.length} 镜 · ${list.reduce((a,b)=>a+b.dur,0)}s</span></div>
+      <div class="wall" style="margin-bottom:18px">${cells}</div>`;
+  }).join("");
+
+  const f=(k,label)=>`<div class="chip ${state.filter===k?'on':''}" onclick="go('r2',{filter:'${k}'})">${label}</div>`;
+  return `
+  <div class="chips">
+    ${f("all","全部 90")}${f("pending",`未审 ${D.shots.filter(s=>!vget("shot",s.id)).length}`)}
+    ${f("judged",`已判 ${D.shots.filter(s=>vget("shot",s.id)).length}`)}
+    ${f("revise",`需修改 ${D.shots.filter(s=>vget("shot",s.id)==="revise").length}`)}
+    ${f("picked",`已选 ${D.shots.filter(s=>!!selOf(s.id)).length}`)}
+    ${f("noprompt",`无提示词 ${S.shots-S.promptShots}`)}${f("short",`短镜 ${S.shortShots.length}`)}
+  </div>
+  ${groups||'<div class="dim">没有符合条件的镜头</div>'}`;
+}
+
+/* ---------- 单镜 ---------- */
+function sShot(){
+  if(!D.shots || !D.shots.length) return emptyPanel("shot");
+  const s = shotById(state.shot) || D.shots[0];
+  const f = s.fields;
+  const kv=(k,label)=> f[k]?`<dt>${label}</dt><dd>${esc(f[k])}</dd>`:"";
+  const refs = s.refs.map(r=>{
+    const img = r.key==="REF-CHEN"?IMG.chen:r.key==="REF-QIN"?IMG.qin:IMG.office;
+    return `<div class="refrow">
+      ${r.exists?`<img src="${img}">`:`<div class="miss">文件<br>缺失</div>`}
+      <div style="flex:1;min-width:0">
+        <div class="mono" style="font-size:12px">${r.key} <span class="dim">顺序 ${r.order}</span>
+          ${r.exists?'<span class="badge b-ok">✓</span>':'<span class="badge b-bad">断链</span>'}</div>
+        <div class="dim" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.path)}</div>
+      </div></div>`;
+  }).join("");
+
+  const six = s.motion ? Object.entries(s.motion.six) : [];
+  const sixHtml = six.map(([k,v])=>`<div style="margin-bottom:10px">
+      <div class="dim mono" style="font-size:11px">${k}</div>
+      <div style="font-size:12.5px;color:#c9d2e0;white-space:pre-wrap">${esc(v)}</div></div>`).join("");
+
+  const chain = D.chain[s.id];
+  return `
+  <div class="row" style="align-items:flex-start;gap:14px">
+    <div class="panel grow" style="min-width:0">
+      <div class="ph"><span><b>${s.id}</b> · ${esc(s.title)} ${verdictBadge(vget("shot",s.id))}${staleBadge("shot",s.id)}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          ${(()=>{const i=D.shots.findIndex(x=>x.id===s.id);
+            return `${i>0?`<button class="btn ghost" style="padding:2px 8px;font-size:12px" onclick="go('shot',{shot:'${D.shots[i-1].id}'})">‹ 上一镜</button>`:""}
+                    <span class="dim" style="font-size:11.5px">${i+1}/${D.shots.length}</span>
+                    ${i<D.shots.length-1?`<button class="btn ghost" style="padding:2px 8px;font-size:12px" onclick="go('shot',{shot:'${D.shots[i+1].id}'})">下一镜 ›</button>`:""}`;})()}
+        </span>
+        <span>剪辑 ${s.dur}s · 生成 ${s.frames} 帧 = ${s.genSec.toFixed(2)}s${s.trim>0.02?` · 裁 ${s.trim.toFixed(2)}s`:""}</span></div>
+      <div class="pb" style="max-height:calc(100vh - 300px);overflow:auto">
+        ${chain?`<div class="alert" style="cursor:default;margin-bottom:12px">
+          <div class="ic" style="background:#1a1630;color:var(--draft)">链</div>
+          <div><b>台词链组 ${chain.group}</b>：本镜与 ${chain.shots.join(" + ")} 共用同一句台词
+          <div class="dim" style="font-size:12px">"${esc(chain.text.slice(0,40))}…" — 挑片时必须连看，否则会误判"少了半句"</div></div>
+        </div>`:""}
+        ${s.short?`<div class="alert" style="cursor:default;margin-bottom:12px">
+          <div class="ic" style="background:#2a1f0d;color:var(--warn)">!</div>
+          <div><b>时长低于模型训练下限</b>：${s.dur}s → 吸附 ${s.frames} 帧 = ${s.genSec.toFixed(2)}s，H3 训练区间从 124 帧（5.17s）起
+          <div class="dim" style="font-size:12px">按 124 帧生成再裁到 ${s.dur}s（裁 1.17s），或把本镜写到 5s 以上</div></div>
+        </div>`:""}
+        <dl class="kv">
+          ${kv("来源","来源")}${kv("目的","目的")}${kv("景别/机位","景别/机位")}${kv("运镜","运镜")}
+          ${kv("起点","起点")}${kv("动作","动作")}${kv("终点","终点")}${kv("声音","声音")}
+        </dl>
+      </div>
+      ${selOf(s.id)?`<div class="pb" style="border-top:1px solid var(--line);background:#0f1f19">
+        <div style="display:flex;align-items:center;gap:10px;font-size:12.5px">
+          ${selBadge(s.id)}
+          <span class="mono dim" style="font-size:11.5px;flex:1;word-break:break-all">${esc(selOf(s.id).candidate)}</span>
+          <button class="btn ghost" style="font-size:12px;padding:3px 9px" onclick="go('pick')">去挑片</button>
+        </div>
+        ${(selOf(s.id).reason||[]).length?`<div class="dim" style="font-size:11.5px;margin-top:4px">原因：${esc(selOf(s.id).reason.join("、"))}</div>`:""}
+      </div>`:""}
+      <div class="verdict">
+        <input placeholder="本镜意见" value="${esc(draftOf('shot',s.id))}" oninput="setDraft('shot','${s.id}',this.value)"
+          style="flex:1;min-width:140px;background:#0f1216;border:1px solid var(--line);
+                 border-radius:6px;padding:6px 10px;color:var(--tx);font-size:12.5px">
+        <button class="btn ok" onclick="setU('shot','${s.id}','pass')">通过本镜</button>
+        <button class="btn warn" onclick="setU('shot','${s.id}','revise')">需修改</button>
+        <button class="btn ghost" onclick="setU('shot','${s.id}','hold')">待定</button>
+        <span class="dim" style="margin-left:auto;font-size:11.5px">仅本镜，不含同场其余 ${sceneById(s.scene).shotCount-1} 镜</span>
+      </div>
+    </div>
+
+    <div class="col" style="width:520px;flex-shrink:0;gap:14px">
+      <div class="panel">
+        <div class="ph"><span>首帧提示词</span><span class="dim">${s.firstFrame?"已编写":"缺失"}</span></div>
+        <div class="pb" style="font-size:12.5px;color:#c9d2e0;max-height:170px;overflow:auto">${esc(s.firstFrame||"—")}</div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span>视频提示词（H3 六段式）</span>
+          <span>${s.motion?'<span class="badge b-acc">已编写</span>':'<span class="badge b-warn">未编写</span>'}</span></div>
+        <div class="pb" style="max-height:300px;overflow:auto">
+          ${s.motion?sixHtml:`<div class="dim" style="font-size:12.5px">本镜尚无视频提示词。按流程，90 镜中只有 3 镜已编写，其余不能视为可投产。</div>`}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span>参考图</span><span class="dim">${s.refs.filter(r=>!r.exists).length} 处断链</span></div>
+        <div class="pb">${refs}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 检查 ---------- */
+function sChecks(){
+  if(!D.files || !Object.keys(D.files).length) return emptyPanel("checks");
+  const rows=[
+    ...(S.brokenOcc?[["bad","参考图存在性",`${S.brokenOcc} 处引用失效，${S.brokenShots}/${S.shots} 镜受影响`,"全片","r2"]]
+       :[["ok","参考图存在性",`${S.refTotal} 处引用全部指向现存文件`,"全片","r2"]]),
+    ["warn","帧数合规",`${S.shortShots.length} 镜低于 124 帧（${S.shortShots.join("、")}）`,"3 镜","r2"],
+    ["info","生成 vs 剪辑时长",`帧数只能落在 17n+5 格点：标注 ${S.totalDur}s，实际生成 ${Math.round(S.genTotal)}s，多出 ${Math.round(S.genTotal-S.totalDur)}s 需在剪辑裁掉`,"77/90 镜","r2"],
+    ["warn","视频提示词覆盖",`${S.promptShots}/${S.shots} 镜已编写`,"87 镜","r2"],
+    ["ok","台词逐字一致",`${S.dialogue} 句 / ${S.dialogueChars} 字，拼接完全一致`,"12 场","r1"],
+    (S.refPaths["REF-CHEN"][0]==="资产/定妆照/陈铭6视图.png"
+      ?["ok","引用与采用一致","分镜与提示词均引用 6 视图，与资产采用图相同","REF-CHEN","img"]
+      :["bad","引用与采用一致",`采用图为 6 视图；分镜仍引用 ${S.refPaths["REF-CHEN"][0]}`,"REF-CHEN","img"]),
+    ["ok","原著对白优先",`原句 ${S.origLines}/${S.dialogue}；改编 ${S.adapted.length} 句，与「改编说明」声明 ${S.declaredAdapt} 句一致`,"SC011/SC012","r1"],
+    ["ok","出处行号可核",`${S.srcScenes} 场声明了原文行号；各场原句均落在声明区间内（SC012 仅 1 句原句，其余 4 句属已声明改编）`,"8 场","r1"],
+    ["warn","台词跨镜拆句",`${S.chainGroups} 组，需在挑片时连看`,"9 镜","pick"],
+    ["info","画幅",`本剧 16:9；现有 R2V 实测为 800×1056 竖屏，横屏未验证`,"全片","batch"],
+    ["warn","地点资产",`${S.placesNoRef}/${S.places} 处尚无美术参考`,"8 处","r1a"],
+    ["warn","镜号规范",`两套体系并存：${(S.idScheme?S.idScheme.scFormat:5)} 镜用 SC 格式、${(S.idScheme?S.idScheme.rFormat:85)} 镜用 R 格式`,"90 镜","r2"],
+    ["ok","提示词规范",`已写的 ${(S.promptFormat?S.promptFormat.checked:0)} 条六段齐全、Picture 编号未越界`,"3 镜","r2"],
+    ...(S.wardrobe && S.wardrobe.issues.length
+      ? [["warn","服装状态落进提示词",
+          `声明 ${S.wardrobe.declared.length} 处，其中 ${S.wardrobe.issues.length} 场未写进首帧提示词：${S.wardrobe.issues.map(x=>"SC"+x.split("：")[0].slice(-3)).join("、")}`,"2 场","r1"]]
+      : [["ok","服装状态落进提示词",`${S.wardrobe?S.wardrobe.declared.length:0} 处服装声明均已体现在提示词中`,"—","r1"]]),
+    ["ok","场次覆盖",`12 场均有镜头`,"—","r2"],
+    ["ok","版本漂移",`当前无已通过项，暂无失效`,"—","overview"],
+  ];
+  const sev=s=>s==="bad"?'<span class="badge b-bad">阻断</span>':s==="warn"?'<span class="badge b-warn">警告</span>':s==="ok"?'<span class="badge b-ok">通过</span>':'<span class="badge b-acc">提示</span>';
+  const files = D.files||{};
+  return `
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>当前依据文件版本</span><span class="dim">判定会绑定这组哈希；文件一变，旧判定标「需复核」</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px;font-size:12.5px">
+      ${Object.entries(files).map(([k,v])=>`<div style="display:flex;justify-content:space-between;gap:10px">
+        <span>${esc(k)}</span><span class="mono dim" style="font-size:11px">${esc(String(v).replace("sha256:","").slice(0,16))}…</span></div>`).join("")}
+    </div>
+  </div>
+  ${(S.keywordMatrix)?`<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>服装 / 道具出现矩阵</span><span class="dim">按场次统计，供你核对连戏；不自动判定对错</span></div>
+    <div class="pb" style="font-size:12.5px">
+      ${Object.entries(S.keywordMatrix).map(([k,v])=>`<div style="display:flex;gap:12px;padding:3px 0;border-bottom:1px solid #1b2028">
+        <span style="min-width:56px;color:#c9d2e0">${esc(k)}</span>
+        <span class="dim" style="flex:1">${v.length?v.map(x=>"SC"+x).join(" · "):"未出现"}</span></div>`).join("")}
+      <div class="dim" style="font-size:11.5px;margin-top:8px">例：外套只出现在 SC001（挂椅背）与 SC004（搭肩），SC002 的"离开前穿上"需要你确认是否漏检。</div>
+    </div></div>`:""}
+  <div class="panel">
+    <div class="ph"><span>机械检查</span><span class="dim">只报可机械判定的事实，不等于艺术判断</span></div>
+    <table>
+      <thead><tr><th style="width:110px">等级</th><th>检查项</th><th>结果</th><th style="width:90px">范围</th><th style="width:60px"></th></tr></thead>
+      <tbody>${rows.map(([s,name,res,scope,tab])=>`<tr>
+        <td>${sev(s)}</td><td>${name}</td><td>${res}</td>
+        <td class="dim">${scope}</td>
+        <td><button class="btn ghost" style="padding:3px 8px;font-size:12px" onclick="go('${tab}')">定位</button></td>
+      </tr>`).join("")}</tbody>
+    </table>
+  </div>`;
+}
+
+
+/* ---------- 出图（资产图 · 分镜图） ---------- */
+const ADOPTED={"陈铭":"资产/定妆照/陈铭6视图.png","秦淮":"资产/定妆照/秦淮6视图.png","妻子":null,"技术员":null,"同事":null};
+function sImg(){
+  const people = D.assets.people.map(p=>{
+    const isChen=p.name==="陈铭", isQin=p.name==="秦淮";
+    const img = isChen?IMG.chen:isQin?IMG.qin:"";
+    const adopted = ADOPTED[p.name];
+    const refKey = isChen?"REF-CHEN":isQin?"REF-QIN":null;
+    const refPath = refKey && S.refPaths[refKey] ? S.refPaths[refKey][0] : null;
+    const mismatch = refPath && refPath !== adopted;
+    const st = adopted
+      ? (mismatch?'<span class="badge b-warn">已采用 · 分镜引用不一致</span>':'<span class="badge b-ok">已采用</span>')
+      : '<span class="badge b-mut">未定</span>';
+    return `<div class="panel" style="overflow:hidden">
+      ${img?`<img src="${img}" style="width:100%;display:block;border-bottom:1px solid var(--line)">`
+           :`<div style="height:120px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line)" class="dim">尚无图</div>`}
+      <div style="padding:10px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(p.name)}</b>${st}</div>
+        <div class="dim mono" style="font-size:10.5px;margin:5px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">采用 ${adopted||"—"}</div>
+        ${refPath&&mismatch?`<div class="mono" style="font-size:10.5px;color:var(--bad);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">引用 ${refPath}</div>`:''}
+        <div style="height:6px"></div>
+        <button class="btn" style="width:100%;font-size:12px;padding:5px 0;margin-bottom:6px"
+          onclick="toast('原型：会以当前造型为参考出 4 张候选')">出 4 张候选</button>
+        <div style="display:flex;gap:4px">
+          <button class="btn ok" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','人物·${esc(p.name)}','pass')">通过</button>
+          <button class="btn warn" style="flex:1;font-size:11px;padding:3px 0" onclick="setU('asset','人物·${esc(p.name)}','revise')">改</button>
+          <span style="flex:1;text-align:center">${verdictBadge(vget("asset","人物·"+p.name))}</span>
+        </div>
+      </div></div>`;
+  }).join("");
+
+  const places = D.assets.places.map(p=>{
+    const noRef=p.bullets.some(b=>b.v.includes("尚未生成"));
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)">
+      ${noRef?'<div style="width:42px;height:30px;border-radius:4px;border:1px dashed #3a4655;flex-shrink:0"></div>'
+             :`<img src="${IMG.office}" style="width:42px;height:30px;object-fit:cover;border-radius:4px;flex-shrink:0">`}
+      <div style="flex:1;min-width:0"><div style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
+      <div class="dim" style="font-size:11px">${noRef?"尚无参考":"已有参考"}</div></div>
+      <button class="btn ghost" style="font-size:11.5px;padding:3px 8px" onclick="toast('原型：会按指定机位出 ${noRef?4:2} 张候选')">出图</button>
+    </div>`;
+  }).join("");
+
+  const nPeople=5, nPlaces=D.assets.places.length;
+  const noRefPlaces=S.placesNoRef;
+  const withScript = D.episodes.filter(e=>e.hasScript).length;
+  return `
+  <div style="display:flex;gap:18px;align-items:center;padding:9px 14px;border:1px solid var(--line);
+              border-radius:9px;background:var(--panel2);margin-bottom:14px;font-size:12.5px;flex-wrap:wrap">
+    ${D.assets.people.length
+      ? `<span class="dim">共享资产：${D.assets.people.length} 人物 · ${D.assets.places.length} 地点 · ${D.assets.props.length} 道具</span>`
+      : `<span class="dim">资产设定尚未建立${(S.assetFiles)?`（资产目录已有 ${S.assetFiles} 张图）`:""}</span>`}
+    <span class="dim">已成片 0 集</span>
+    <span style="margin-left:auto" class="dim">当前查看 ${state.ep} · 大纲共 ${D.episodes.length} 集</span>
+  </div>
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">资产图 · 人物</div>
+      <div class="kpi">2<small>/5 已采用 · 1 张断链</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">资产图 · 地点</div>
+      <div class="kpi">${nPlaces-noRefPlaces}<small>/${nPlaces} 有参考</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">分镜图</div>
+      <div class="kpi" style="color:var(--bad)">0<small>/${S.shots} 镜</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">首帧提示词</div>
+      <div class="kpi" style="color:var(--ok)">${S.shots}<small>/${S.shots} 已齐</small></div></div>
+  </div>
+
+  <div class="row" style="gap:14px;align-items:flex-start;margin-bottom:14px">
+    <div class="panel grow">
+      <div class="ph"><span>资产图 · 人物</span><span class="dim">身份 → 造型 → 状态，采用前不能当正式参考</span></div>
+      <div class="pb" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">${people}</div>
+    </div>
+  </div>
+
+  <div class="row" style="gap:14px;align-items:flex-start">
+    <div class="panel" style="width:44%">
+      <div class="ph"><span>资产图 · 地点</span><span class="badge b-warn">${noRefPlaces} 处未就绪</span></div>
+      <div class="pb" style="display:flex;flex-direction:column;gap:7px;max-height:430px;overflow:auto">${places}</div>
+    </div>
+
+    <div class="col grow" style="gap:14px;min-width:0">
+      <div class="panel">
+        <div class="ph"><span>分镜图 · 按场出图</span><span class="dim">审核一通过后才排；提示词已齐</span></div>
+        <div class="pb">
+          <div class="bar" style="margin:0 0 12px"><i style="width:0%"></i></div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${D.scenes.map(sc=>`<div class="chip" onclick="toast('原型：会为 ${sc.id.slice(-3)} 场 ${sc.shotCount} 镜各出 2 张首帧候选')">
+              ${sc.id.slice(-3)} · ${sc.shotCount} 镜</div>`).join("")}
+          </div>
+          ${S.brokenOcc?`<div class="alert" style="margin-top:12px;cursor:default">
+            <div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+            <div><b>出图前必须先修参考图</b>
+              <div class="dim" style="font-size:12px">${S.brokenShots} 镜引用的人像图不存在。</div></div>
+          </div>`:`<div class="alert" style="margin-top:12px;cursor:default">
+            <div class="ic" style="background:#0f2a20;color:var(--ok)">✓</div>
+            <div><b>参考图已就绪</b>
+              <div class="dim" style="font-size:12px">人物采用 6 视图，${S.refTotal} 处引用全部有效，可以排分镜图批次。</div></div>
+          </div>`}
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span>图片批次 · BATCH-EP002-IMG-001</span><span class="badge b-mut">未批准</span></div>
+        <div class="pb">
+          <table>
+            <tr><th style="width:96px">范围</th><td>SC001 前五镜首帧 <span class="dim">（5 镜）</span> + 地点 2 处</td></tr>
+            <tr><th>每项候选</th><td>4 张 · 共 <b>28</b> 张</td></tr>
+            <tr><th>工作流</th><td>H3 Image T2I <span class="dim">2048×2048 · 6 步（4MP 编辑走 H3 Image Edit）</span></td></tr>
+            <tr><th>耗时</th><td class="dim">未实测——本机只跑过视频基准，出图耗时没有记录，不编数字</td></tr>
+            <tr><th>参考图</th><td>人物 2 张（其一断链）+ 场景 1 张</td></tr>
+            <tr><th>输出</th><td class="mono" style="font-size:12px">剧集/EP002/制作成果/图片候选/SC001/</td></tr>
+          </table>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn acc" disabled>批准并出 28 张</button>
+            <button class="btn ghost" onclick="toast('原型：会先跑 1 张测耗时，再报批次')">先出 1 张测时间</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${(D.batches||[]).filter(b=>/IMG/.test(b.file)).length?`<div class="panel" style="margin-top:14px">
+    <div class="ph"><span>图片批次单</span><span class="dim">签字只是批准范围与上限，不代表设定定稿</span></div>
+    <div class="pb">${(D.batches||[]).filter(b=>/IMG/.test(b.file)).map(b=>{
+      const signed=(D.decisions||[]).find(d=>d.unit.type==="batch"&&d.unit.id===b.file.replace(/\.md$/,""));
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)">
+        <div style="flex:1;min-width:0"><div style="font-size:13px">${esc(b.title)}</div>
+        <div class="dim" style="font-size:11.5px">${esc(b.file)} · ${b.bytes} bytes</div></div>
+        ${signed?`<span class="badge b-ok">已签字 ${signed.id}</span>`
+               :`<button class="btn acc" style="font-size:12px;padding:5px 12px" onclick="signBatch('${esc(b.file.replace(/\.md$/,""))}')">签字批准</button>`}
+      </div>`;}).join("")}</div></div>`:""}
+  <div class="panel" style="margin-top:14px">
+    <div class="ph"><span>图片候选挑选（示意）</span><span class="dim">选定图 / 候选图 / 废弃图 分开存放</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${[["IMG.chen","候选 1"],["IMG.qin","候选 2"],["IMG.office","候选 3"],[null,"候选 4"]].map(([k,n],i)=>{
+        const src = k==="IMG.chen"?IMG.chen:k==="IMG.qin"?IMG.qin:k==="IMG.office"?IMG.office:"";
+        return `<div class="cand">
+          <div class="poster" style="aspect-ratio:4/3">${src?`<img src="${src}">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%" class="dim">空位</div>`}</div>
+          <div class="meta"><div class="mono">${n}</div></div>
+          <div class="acts">
+            <button class="btn ok" style="flex:1" onclick="toast('原型：已采用为正式参考')">采用</button>
+            <button class="btn" style="flex:1" onclick="toast('原型：已留作候选')">候选</button>
+            <button class="btn" style="flex:1" onclick="toast('原型：已移入废弃')">废弃</button>
+          </div></div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+/* ---------- 挑片 ---------- */
+const CANDS=[
+  {id:"c1",tier:"draft",label:"草稿 · turbo6",seed:8841,dur:"6.02",audio:true,idn:0.53,img:"v1",note:"开头脸部略漂，第 3 秒后收敛"},
+  {id:"c2",tier:"draft",label:"草稿 · turbo6",seed:8842,dur:"6.00",audio:true,idn:0.51,img:"v2",note:"构图更松，前景肩部偏大"},
+  {id:"c3",tier:"final",label:"定稿 · base20",seed:8841,dur:"6.01",audio:true,idn:0.61,img:"v0",note:"身份稳定，音量正常"}
+];
+function sPick(){
+  const shot = shotById(state.shot) && shotById(state.shot).motion ? shotById(state.shot) : shotById("SHOT-EP002-SC001-03A");
+  const pick = state.picks[shot.id];
+  const cards = CANDS.map(c=>{
+    const sel = pick===c.id;
+    return `<div class="cand ${sel?'sel':''}">
+      <div class="poster">
+        <img src="${IMG[c.img]||""}" alt="">
+        <div class="play"><span>▶</span></div>
+        <div style="position:absolute;left:8px;top:8px">
+          <span class="badge ${c.tier==='draft'?'b-draft':'b-ok'}">${c.label}</span></div>
+      </div>
+      <div class="meta">
+        <div style="display:flex;justify-content:space-between">
+          <span class="mono">${c.dur}s</span>
+          <span>${c.audio?'<span style="color:var(--ok)">✓ 有音轨</span>':'<span style="color:var(--bad)">缺声</span>'}</span>
+        </div>
+        <div style="margin-top:4px">seed <span class="mono">${c.seed}</span> · 身份 <b style="color:${c.idn>=0.55?'var(--ok)':'var(--warn)'}">${c.idn.toFixed(2)}</b></div>
+        <div class="dim" style="margin-top:4px;font-size:11.5px">${c.note}</div>
+      </div>
+      <div class="acts">
+        <button class="btn ok" style="flex:1" onclick="pick('${shot.id}','${c.id}','${c.tier}')">采用</button>
+        <button class="btn" style="flex:1" onclick="toast('原型：已标为备选')">备选</button>
+        <button class="btn" style="flex:1" onclick="redo('${shot.id}')">重做</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph">
+      <span><b>${shot.id}</b> · ${esc(shot.title)} · ${shot.dur}s</span>
+      <span class="dim">候选 3 条 · 全部来自真实测试片帧</span>
+    </div>
+    <div class="pb" style="display:flex;gap:14px;align-items:flex-start">
+      <div style="width:150px;flex-shrink:0">
+        <div class="dim" style="font-size:11px;margin-bottom:5px">对应分镜</div>
+        <div style="border:1px solid var(--line);border-radius:7px;overflow:hidden">
+          <img src="${IMG.office}" style="width:100%;display:block;opacity:.8"></div>
+        <div class="dim" style="font-size:11.5px;margin-top:8px;line-height:1.6">${esc(shot.fields["声音"]||"")}</div>
+      </div>
+      <div style="flex:1;display:flex;gap:10px">${cards}</div>
+    </div>
+  </div>
+
+  <div class="row" style="gap:14px;align-items:flex-start">
+    <div class="panel grow">
+      <div class="ph"><span>重做原因（结构化）</span><span class="dim">生成成功 ≠ 采用</span></div>
+      <div class="pb" style="display:flex;gap:6px;flex-wrap:wrap">
+        ${["眼神/视线","缺字/念错","动作幅度","停顿节奏","人脸漂移","口型不同步","闪烁伪影","构图/景别"]
+          .map(x=>`<div class="chip" onclick="toast('原型：已选中原因「${x}」')">${x}</div>`).join("")}
+        <div class="chip" style="border-style:dashed">＋ 自由描述</div>
+      </div>
+    </div>
+    <div class="panel" style="width:340px;flex-shrink:0">
+      <div class="ph"><span>本镜状态</span></div>
+      <div class="pb" style="font-size:12.5px">
+        ${pick?`<div><span class="badge b-ok">已采用</span> ${pick}</div>
+          <div class="dim" style="margin-top:8px">采用不覆盖原文件，只记指针；候选全部保留。</div>`
+        :`<div><span class="badge b-mut">未审</span></div>
+          <div class="dim" style="margin-top:8px">默认永远是"未审"，生成成功不会自动采用。</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+function planTasks(ids){
+  return fetch("/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({shots:ids,candidates:3,tier:"draft"})})
+    .then(r=>r.json()).then(j=>{ state.plan=j; render();
+      toast(j.ok?`已构造 ${j.count} 条任务（未提交）`:`构造被拒：${(j.blockers||[]).length} 项阻断`); })
+    .catch(e=>toast("构造失败："+e.message));
+}
+function runPreflight(ids){
+  const items = ids.map(id=>({shot:id}));
+  return fetch("/api/preflight",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({kind:"video",items})})
+    .then(r=>r.json()).then(j=>{ state.preflight=j; render(); })
+    .catch(e=>toast("预检失败："+e.message));
+}
+function openBatch(id){
+  return fetch("/api/batch?id="+encodeURIComponent(id)).then(r=>r.json())
+    .then(j=>{ state.batchModal=j; render(); })
+    .catch(e=>toast("读取失败："+e.message));
+}
+function closeBatch(){ state.batchModal=null; render(); }
+function batchModalHtml(){
+  const b=state.batchModal; if(!b) return "";
+  const d=b.decision||{};
+  const dec=d.notes&&d.notes.length?d.notes.map(n=>esc(n.text)).join("；"):"—";
+  const rows=(b.tasks||[]).map(t=>`<tr>
+    <td class="mono" style="font-size:11.5px">${esc(t.id)}</td>
+    <td class="mono" style="font-size:11.5px">${esc(t.shot.replace("SHOT-EP002-",""))}</td>
+    <td class="dim">${esc(t.tier||"")} · seed ${t.params?t.params.seed:"—"} · ${t.params?t.params.frames:"—"} 帧</td>
+    <td>${esc(t.status||"")}</td></tr>`).join("");
+  const runs=(b.runs||[]).map(r=>`<div style="display:flex;gap:10px;font-size:12px;padding:2px 0">
+    <span class="dim mono" style="min-width:70px">${esc((r.at||"").slice(11,19))}</span>
+    <span style="min-width:80px;color:${r.event==="succeeded"?"var(--ok)":r.event==="failed"?"var(--bad)":"var(--mut)"}">${esc(r.event||"")}</span>
+    <span class="dim">${esc(r.task||"")}${r.seconds?` · ${Math.round(r.seconds)}s`:""}${r.error?" · "+esc(String(r.error).slice(0,50)):""}</span>
+  </div>`).join("");
+  const files=(b.candidates||[]).map(c=>`<div style="display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #1b2028">
+    <span class="mono" style="font-size:11.5px;flex:1;word-break:break-all">${esc(c.file)}</span>
+    <span class="dim" style="font-size:11px">${(c.bytes/1048576).toFixed(1)} MB</span>
+  </div>`).join("");
+  return `<div class="modal" onclick="if(event.target===this)closeBatch()">
+    <div class="box" style="width:min(760px,94vw);max-height:86vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><div style="font-size:15px;font-weight:600">${esc(b.id)}</div>
+          <div class="dim" style="font-size:12px;margin-top:3px">${d.id?`签字记录 ${esc(d.id)} · ${esc((d.created_at||"").slice(0,16))}`:"批次单文件"}</div></div>
+        <button class="btn ghost" onclick="closeBatch()">关闭</button>
+      </div>
+      ${b.markdown?`<div class="pb" style="margin-top:12px"><pre class="mono" style="white-space:pre-wrap;font-size:11.5px;max-height:200px;overflow:auto;color:#c9d2e0;margin:0">${esc(b.markdown)}</pre></div>`:""}
+      <table style="margin-top:14px">
+        <tr><th style="width:90px">覆盖</th><td>${(b.covers||[]).map(x=>esc(String(x).replace("SHOT-EP002-",""))).join("、")||"—"}</td></tr>
+        <tr><th>不含</th><td class="dim">${((d.scope||{}).excludes||[]).map(esc).join("；")||"—"}</td></tr>
+        <tr><th>备注</th><td>${dec}</td></tr>
+        <tr><th>依据</th><td class="dim mono" style="font-size:11px">${Object.entries(d.evidence||{}).map(([k,v])=>k+" "+String(v).replace("sha256:","").slice(0,8)).join(" · ")||"—"}</td></tr>
+      </table>
+      ${rows?`<div class="dim" style="font-size:12px;margin:14px 0 6px">任务 ${b.tasks.length} 条</div>
+        <table><thead><tr><th>任务</th><th>镜头</th><th>参数</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table>`:""}
+      ${runs?`<div class="dim" style="font-size:12px;margin:14px 0 6px">运行事件</div>${runs}`:""}
+      ${files?`<div class="dim" style="font-size:12px;margin:14px 0 6px">产出文件</div>${files}`:""}
+      ${(!b.tasks.length&&!b.markdown)?'<div class="dim" style="margin-top:14px;font-size:12px">这条记录只有授权，没有关联任务（可能是手工签字或早期记录）。</div>':""}
+    </div></div>`;
+}
+
+function signBatch(id){
+  if(!confirm('确认批准批次 '+id+' ？\n\n签字只代表同意该批次的范围与上限，不代表创作内容定稿。')) return Promise.resolve();
+  return fetch("/api/decision",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({gate:3,unit:{type:"batch",id:id},verdict:"pass",
+      notes:[{anchor:id,text:"导演签字批准该批次"}],
+      scope:{covers:[id],excludes:["创作内容定稿","超出本批的数量"]}})})
+    .then(r=>r.json()).then(j=>{
+      if(j.ok){ toast(`已签字 ${j.record.id}`); return fetch("/api/data").then(r=>r.json()).then(x=>{ D=x.data; render(); }); }
+      toast("落账失败："+(j.error||""));
+    }).catch(e=>toast("落账失败："+e.message));
+}
+function pick(shotId,cid,tier){
+  if(tier==="draft"){
+    state.candModal={shotId,cid};
+    render(); return;
+  }
+  state.picks[shotId]=cid; toast("原型：已采用（不会保存）"); render();
+}
+function confirmDraft(){
+  const m=state.candModal;
+  state.picks[m.shotId]=m.cid+" · 草稿";
+  state.candModal=null; toast("原型：已采用草稿，但需定稿后才算完成"); render();
+}
+function redo(shotId){ toast("原型：已标重做，会生成新任务并保留旧候选"); }
+
+/* ---------- 批次 ---------- */
+function sBatch(){
+  if(!D.scenes || !D.scenes.length) return emptyPanel("batch");
+  const batches = (D.batches||[]).filter(b=>!/IMG/.test(b.file)).map(b=>{
+    const signed = (D.decisions||[]).find(d=>d.unit.type==="batch" && d.unit.id===b.file.replace(/\.md$/,""));
+    return `<div onclick="openBatch('${esc(b.file.replace(/\.md$/,""))}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+        border-radius:8px;background:var(--panel);margin-bottom:8px;cursor:pointer">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px">${esc(b.title)}</div>
+        <div class="dim" style="font-size:11.5px">${esc(b.file)} · ${b.bytes} bytes · ${esc(b.status||"—")}</div>
+      </div>
+      ${signed?`<span class="badge b-ok">已签字 ${signed.id}</span>`
+              :`<button class="btn acc" style="font-size:12px;padding:5px 12px"
+                 onclick="signBatch('${esc(b.file.replace(/\.md$/,""))}')">签字批准</button>`}
+    </div>`;
+  }).join("") + (D.decisions||[]).filter(d=>d.unit.type==="batch" && /VID/.test(d.unit.id)
+      && !(D.batches||[]).some(b=>b.file.replace(/\.md$/,"")===d.unit.id))
+    .map(d=>`<div onclick="openBatch('${esc(d.unit.id)}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #1e5b43;border-radius:8px;background:#0f1f19;margin-bottom:8px;cursor:pointer">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-family:ui-monospace,monospace">${esc(d.unit.id)}</div>
+        <div class="dim" style="font-size:11.5px">已批准 · ${esc((d.scope&&d.scope.covers||[]).join("、")||"—")} · ${esc((d.created_at||"").slice(0,16))}</div>
+      </div>
+      <span class="badge b-ok">已批准</span>
+    </div>`).join("") || '<div class="dim">还没有视频批次。</div>';
+
+  const IDS=["SHOT-EP002-SC001-01","SHOT-EP002-SC001-02","SHOT-EP002-SC001-03A",
+             "SHOT-EP002-SC001-03B","SHOT-EP002-SC001-03C"];
+  const shots = IDS.map(shotById).filter(Boolean);
+  const broken = shots.reduce((a,s)=>a+s.broken.length,0);
+  const tasks = shots.length*3;
+  const framesSum = shots.reduce((a,s)=>a+s.frames,0);
+  const mins = Math.round(framesSum*3*106/124/60);
+  return `
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>视频批次单</span><span class="dim">签字即写入一条 gate=3 的记录；图片批次在「出图」页</span></div>
+    <div class="pb">${batches}
+      ${state.preflight?`<div class="alert" style="margin:0;border-color:${state.preflight.ok?'#1e5b43':'#5c2323'};background:${state.preflight.ok?'#0f1f19':'#1d1212'};cursor:default">
+        <div class="ic" style="background:${state.preflight.ok?'#0f2a20':'#2a1212'};color:${state.preflight.ok?'var(--ok)':'var(--bad)'}">${state.preflight.ok?'✓':'✕'}</div>
+        <div style="flex:1"><b>预检${state.preflight.ok?'通过':'未通过'} · ${state.preflight.items} 项 · 预计 ${state.preflight.estMinutes==null?'—':state.preflight.estMinutes} 分钟</b>
+          <div class="dim" style="font-size:12px;margin-top:3px">${esc(state.preflight.estNote||"")}</div>
+          ${state.preflight.blockers.length?`<div style="font-size:12px;color:var(--bad);margin-top:6px">阻断 ${state.preflight.blockers.length} 项：<br>${state.preflight.blockers.map(x=>esc(x)).join("<br>")}</div>`:""}
+          ${state.preflight.warnings.length?`<div style="font-size:12px;color:var(--warn);margin-top:6px">警告 ${state.preflight.warnings.length} 项：<br>${state.preflight.warnings.map(x=>esc(x)).join("<br>")}</div>`:""}
+        </div></div>`:""}
+      ${state.exec?`<div class="alert" style="margin:10px 0 0;border-color:#1c3f66;background:#0f1c2b;cursor:default">
+        <div class="ic" style="background:#0f1c2b;color:var(--acc)">▶</div>
+        <div style="flex:1"><b>${state.exec.running?"生成中":"批次结束"} · ${state.exec.done||0}/${state.exec.total||0} 完成${state.exec.failed?` · ${state.exec.failed} 失败`:""}</b>
+          <div class="dim" style="font-size:12px;margin-top:3px">授权：${esc(state.exec.batch||"—")}${state.exec.startedAt?` · 开始 ${esc(state.exec.startedAt)}`:""}</div>
+          ${(state.exec.log||[]).length?`<div class="mono" style="font-size:11px;color:#8b93a3;margin-top:6px;max-height:90px;overflow:auto">${state.exec.log.map(x=>esc(x)).join("<br>")}</div>`:""}
+        </div></div>`:""}
+      ${state.plan?`<div class="alert" style="margin:10px 0 0;border-color:${state.plan.ok?'#1e5b43':'#5c2323'};background:${state.plan.ok?'#0f1f19':'#1d1212'};cursor:default">
+        <div class="ic" style="background:${state.plan.ok?'#0f2a20':'#2a1212'};color:${state.plan.ok?'var(--ok)':'var(--bad)'}">${state.plan.ok?'✓':'✕'}</div>
+        <div style="flex:1"><b>${state.plan.ok?`已构造 ${state.plan.count} 条任务 · 预估 ${state.plan.estMinutes} 分钟`:'构造被拒'}</b>
+          <div class="dim" style="font-size:12px;margin-top:3px;word-break:break-all">${state.plan.ok?`任务记录：${esc(state.plan.file)} · 状态「待执行」，未提交任何任务`:state.plan.blockers.map(x=>esc(x)).join("<br>")}</div>
+        </div></div>`:""}
+    </div>
+  </div>
+  ${(D.runs&&D.runs.length)?`<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>运行记录</span><span class="dim">追加式 · 最新 ${Math.min(D.runs.length,40)} 条</span></div>
+    <div class="pb" style="max-height:220px;overflow:auto;font-size:12px">
+      ${D.runs.slice().reverse().map(r=>`<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px solid #1b2028">
+        <span class="mono dim" style="min-width:74px">${esc((r.at||"").slice(11,19))}</span>
+        <span class="mono" style="min-width:92px;color:#aab3c2">${esc(r.task||"—")}</span>
+        <span style="min-width:74px;color:${r.event==="succeeded"?"var(--ok)":r.event==="failed"?"var(--bad)":"var(--mut)"}">${esc(r.event||"")}</span>
+        <span class="dim" style="flex:1;word-break:break-all">${esc(r.shot||"")}${r.files&&r.files.length?` · ${r.files.length} 个文件`:""}${r.error?" · "+esc(String(r.error).slice(0,60)):""}${r.simulated?" · 模拟":""}</span>
+      </div>`).join("")}
+    </div></div>`:""}
+  <div class="row" style="gap:14px;align-items:flex-start">
+    <div class="panel grow">
+      <div class="ph"><span>待起草 · 视频批次</span><span class="badge b-warn">1 项阻断</span></div>
+      <div class="pb">
+        <table>
+          <tr><th style="width:110px">镜头范围</th><td>${shots.map(s=>s.id.replace("SHOT-EP002-","")).join("、")} <span class="dim">（前 ${shots.length} 镜，本场共 ${sceneById("EP002-SC001").shotCount} 镜）</span></td></tr>
+          <tr><th>档位</th><td><span class="badge b-draft">草稿 turbo6</span> <span class="dim">先定拍法，再出定稿</span></td></tr>
+          <tr><th>每镜候选</th><td>3 条 · 共 <b>${tasks}</b> 条任务</td></tr>
+          <tr><th>预估耗时</th><td><b>${framesSum*3} 帧 ≈ ${mins} 分钟</b> <span class="dim">（按实测 106s/124 帧 线性外推）</span></td></tr>
+          <tr><th>输入版本</th><td class="mono" style="font-size:12px">分镜 sha256:ab12… · 提示词 sha256:cd34… · 参考图 3 张</td></tr>
+          <tr><th>参数</th><td class="mono" style="font-size:12px">1344×768 · 124–192 帧 · res_multistep + simple · cfg=1 · seed 记录</td></tr>
+          <tr><th>输出</th><td class="mono" style="font-size:12px">剧集/EP002/制作成果/候选/SC001/</td></tr>
+          <tr><th>上限</th><td>GPU ${mins*2} 分钟（含重试）· 网络/损坏 ≤2 次 · 内容不满意不自动重抽</td></tr>
+          <tr><th>停止</th><td>连续失败 3 次 / 达上限 / 手动</td></tr>
+        </table>
+        <div class="alert" style="margin-top:14px;border-color:${broken?'#5c2323':'#1e5b43'};background:${broken?'#1d1212':'#0f1f19'};cursor:default">
+          <div class="ic" style="background:${broken?'#2a1212':'#0f2a20'};color:${broken?'var(--bad)':'var(--ok)'}">${broken?'✕':'✓'}</div>
+          <div><b>${broken?`无法提交：${broken} 处参考图缺失`:'参考图校验通过'}</b>
+            <div class="dim" style="font-size:12px">${broken?'补齐后才能批准':'5 镜 × 3 张引用全部指向现存文件（6 视图 / 办公室场景图）'}</div></div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px">
+          <button class="btn" onclick='runPreflight(${JSON.stringify(IDS)})'>预检本批</button>
+          <button class="btn" onclick='planTasks(${JSON.stringify(IDS)})'>构造任务（不提交）</button>
+          <button class="btn acc" onclick='executeBatch(${JSON.stringify(IDS)})'
+            title="会记录一条 gate=3 授权，并在后台提交">批准并提交 ${tasks} 条</button>
+          <a class="btn ghost" href="/api/export" download style="text-decoration:none">导出修改单</a>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="width:330px;flex-shrink:0">
+      <div class="ph"><span>提交前校验</span></div>
+      <div class="pb" style="font-size:12.5px;line-height:2">
+        <div><span class="badge ${broken?"b-bad":"b-ok"}">${broken?"✕":"✓"}</span> 参考图存在且可解码</div>
+        <div><span class="badge b-warn">!</span> 画幅 16:9 未验证（现有实测为竖屏）</div>
+        <div><span class="badge b-ok">✓</span> 帧数区间合法</div>
+        <div><span class="badge b-ok">✓</span> 提示词六段齐全（3/5 镜）</div>
+        <div><span class="badge b-ok">✓</span> 批次六要素齐全</div>
+      </div>
+      <div class="ph" style="border-top:1px solid var(--line)"><span>说明</span></div>
+      <div class="pb dim" style="font-size:12px">
+        创作通过与生成授权是两条独立记录。批准此处只代表同意这 15 条任务，不代表整场/整集通过。
+      </div>
+    </div>
+  </div>`;
+}
+
+
+/* ---------- 修改单 ---------- */
+const NOTES={
+  "EP002-SC001":"招呼之后再给一个陈铭抬头的反应，别在同一句里抢拍。",
+  "EP002-SC003":"第一杯酒之后，陈铭难受的反应不要切成喜剧节拍。"
+};
+function sExport(){
+  const LABEL={pass:"通过",revise:"需修改",hold:"待定",na:"不适用"};
+  const scn = (D.decisions||[]).filter(d=>d.unit&&d.unit.type==="scene");
+  const sht = (D.decisions||[]).filter(d=>d.unit&&d.unit.type==="shot");
+  const ast = (D.decisions||[]).filter(d=>d.unit&&d.unit.type==="asset");
+  const row=(d)=>{
+    const note=(d.notes||[]).map(n=>n.text).filter(Boolean).join("；");
+    return `- [${d.unit.id}] ${LABEL[d.verdict]||d.verdict}${note?`\n  意见：${note}`:""}\n  记录：${d.id} · ${d.created_at||""}`;
+  };
+  const lines = [...scn,...sht,...ast].map(row).join("\n") || "- （尚未有任何判定）";
+  const md = `## 审核一 第 1 轮（2026-11-18）
+
+${lines}
+
+### 待导演确认的原著改编（${S.adapted.length} 句，剧本「本版改编说明」已声明）
+${S.adapted.map(a=>`- [${a.scene.slice(-3)}] ${a.spk}："${a.text}" — 原著为叙述，本稿转为对白`).join("\n")}
+
+### 机械检查附带（不由导演判定）
+- 参考图引用失效 89 处，涉及 89/90 镜：陈铭5视图4.png 不存在
+- 3 镜低于 124 帧下限：SC001-02、R025、R068
+- 视频提示词覆盖 3/90
+
+影响范围：SC001 剧本与分镜；90 镜中 89 镜的参考图；SC001 前五镜的生成授权仍为「未批准」
+`;
+  return `
+  <div class="row" style="gap:14px;align-items:flex-start">
+    <div class="panel grow">
+      <div class="ph"><span>给 Agent 的修改单</span><span class="dim">由当前判定实时生成</span></div>
+      <div class="pb">
+        <pre class="mono" style="margin:0;white-space:pre-wrap;font-size:12.5px;line-height:1.75;color:#c9d2e0">${esc(md)}</pre>
+      </div>
+      <div class="verdict">
+        <a class="btn acc" href="/api/export" download style="text-decoration:none">下载 .md</a>
+        <button class="btn" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.querySelector('pre').innerText).then(()=>toast('已复制'),()=>toast('复制失败'))">复制</button>
+        <button class="btn ghost" onclick="toast('原型：会写入 制作运行/decisions.jsonl')">落账为决策记录</button>
+        <span class="dim" style="margin-left:auto;font-size:11.5px">工作台不直接改稿，只给指令</span>
+      </div>
+    </div>
+    <div class="panel" style="width:330px;flex-shrink:0">
+      <div class="ph"><span>为什么这样设计</span></div>
+      <div class="pb dim" style="font-size:12.5px;line-height:1.9">
+        创作文件由 Agent 维护，工作台只读。<br>
+        导演的意见带着锚点和范围出去，Agent 改完回写，工作台比对哈希、只让你复核受影响项。<br><br>
+        这样不会出现"两份剧本"。
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 路由 ---------- */
+function sEpSel(){
+  const cur = D.episodes.find(e=>e.id===state.ep) || D.episodes[0];
+  const dot = cur.hasScript ? "var(--acc)" : "var(--dim)";
+  return `
+  <button class="epbtn" onclick="state.epOpen=!state.epOpen;render()">
+    <span class="proj">有谁共鸣2</span>
+    <span class="sep">·</span>
+    <i class="st" style="background:${dot}"></i>
+    <span class="cur">${cur.id} ${esc(cur.title)}</span>
+    <span class="car">▾</span>
+  </button>
+  ${state.epOpen?`<div class="epmenu">${D.episodes.map(e=>`
+    <div class="epitem ${e.id===cur.id?'on':''}" onclick="pickEp('${e.id}')">
+      <i class="st" style="background:${e.hasScript?'var(--acc)':'var(--dim)'}"></i>
+      <span class="n">${e.id}</span>
+      <span class="t">${esc(e.title)}</span>
+      <span class="s">${e.hasScript?'制作中':'仅大纲'}</span>
+    </div>`).join("")}</div>`:''}`;
+}
+function pickEp(id){ state.ep=id; state.epOpen=false; render(); }
+
+function sEmptyEp(){
+  const e = D.episodes.find(x=>x.id===state.ep);
+  return `
+  <div class="panel" style="max-width:860px">
+    <div class="ph"><span><b>${e.id}</b> · ${esc(e.title)}</span><span class="badge b-mut">仅大纲</span></div>
+    <div class="pb">
+      <dl class="kv">
+        <dt>原著</dt><dd>第 ${e.chapters?e.chapters[0]:""}–${e.chapters?e.chapters[1]:""} 章</dd>
+        <dt>目标时长</dt><dd class="mono">${mmss(e.target)}</dd>
+        <dt>钩子</dt><dd>${esc(e.hook||"—")}</dd>
+        <dt>目标</dt><dd>${esc(e.objective||"—")}</dd>
+      </dl>
+      <div class="alert" style="margin-top:16px;cursor:default">
+        <div class="ic" style="background:#2a1f0d;color:var(--warn)">!</div>
+        <div><b>本集尚无 剧本.md / 视觉设定.md / 分镜.md</b>
+          <div class="dim" style="font-size:12px">工作台不会凭空生成创作内容。需要先由 Agent 按大纲产出剧本草案，才能进入审核一。</div></div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px">
+        <button class="btn ghost" onclick="go('overview')">回到全剧总览</button>
+        <button class="btn ghost" onclick="toast('原型：会导出一份「本集待编写」任务单给 Agent')">导出编写任务单</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render(){
+  nav();
+  document.getElementById("epsel").innerHTML = sEpSel();
+  document.getElementById("bannerStat").textContent =
+    `${S.scenes} 场 · ${S.shots} 镜 · ${(S.totalDur/60).toFixed(1)} 分 · 断链 ${S.brokenOcc} 处`;
+  const map={overview:sOverview,workflow:sWorkflow,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,export:sExport};
+  const epScoped = ["r1","r2","shot","pick","batch","img","export","checks","workflow"];
+  let html;
+  if (state.tab === "overview") {
+    html = sOverview();
+  } else if (state.tab === "workflow") {
+    html = sWorkflow();
+  } else if (D && D.empty) {
+    html = emptyPanel(state.tab);
+  } else if (state.ep !== "EP002") {
+    html = sEmptyEp();
+  } else {
+    html = (map[state.tab] || sOverview)();
+  }
+  document.getElementById("app").innerHTML = html;
+  if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
+  if(state.candModal) showDraftModal();
+  else {
+    const m=document.querySelector(".modal"); if(m && !state.candModal) m.remove();
+  }
+}
+function showDraftModal(){
+  const m=document.createElement("div");
+  m.className="modal";
+  m.innerHTML=`<div class="box">
+    <div style="font-size:15px;font-weight:600;margin-bottom:8px">这是草稿，不建议直接采用</div>
+    <div class="muted" style="font-size:13px;line-height:1.8">
+      实测：草稿（turbo）的身份相似度从 0.61 掉到 0.53，且呈时间漂移；音量比定稿高约 27 dB。<br>
+      草稿适合判断构图、表演、口型；正式采用前应同 seed 出定稿。
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+      <button class="btn ghost" onclick="state.candModal=null;render()">取消</button>
+      <button class="btn ok" onclick="confirmDraft()">仍然采用（标记待定稿）</button>
+    </div></div>`;
+  document.body.appendChild(m);
+}
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && state.candModal){ state.candModal=null; render(); }});
+render();
+</script>
+</body>
+</html>
