@@ -1072,19 +1072,38 @@ async function loadImg(){
 function progHtml(){
   const p = IMGST.prog;
   if(!p) return "";
+  const jobs = IMGST.jobs || [];
+  const active = jobs.filter(j=>['starting','running'].includes(j.status));
+  const waiting = jobs.filter(j=>j.status==='queued');
+  const now = Date.now()/1000;
   const pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
-  const cardRows = (p.cards||[]).map(c=>
-    `<span class="mono" style="font-size:11px;margin-right:14px;color:${c.running?'var(--acc)':c.pending?'var(--warn)':'var(--dim)'}">
-      卡${c.index} ${c.online? (c.running? `运行中 ${c.running}`:c.pending? `排队 ${c.pending}`:'空闲') : '离线'}</span>`).join("");
+
+  const row = (j, idx) => {
+    const secs = j.startedAt ? Math.round(now - j.startedAt) : null;
+    return `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid #1b2028">
+      <span class="mono dim" style="font-size:10.5px;width:36px">${idx}</span>
+      <span class="badge ${j.status==='running'?'b-acc':j.status==='starting'?'b-warn':'b-mut'}" style="font-size:10px">
+        ${j.status==='running'?'生成中':j.status==='starting'?'启动中':'排队'}</span>
+      <span class="mono dim" style="font-size:10.5px;width:44px">卡${j.card}</span>
+      <span style="flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.dir||j.asset)}</span>
+      <span class="dim mono" style="font-size:11px">${secs!==null?secs+'s':''}</span>
+    </div>`;
+  };
+
   return `<div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>出图进度</span><span class="dim">${p.batch?esc(p.batch):'暂无批次'}</span></div>
+    <div class="ph"><span>生成队列</span><span class="dim">${p.batch?esc(p.batch):'暂无批次'}</span></div>
     <div class="pb">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      ${p.total?`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <div class="bar" style="flex:1;margin:0"><i style="width:${pct}%"></i></div>
-        <span class="mono" style="font-size:12px">${p.done}/${p.total||0}</span>
+        <span class="mono" style="font-size:12px">${p.done}/${p.total} 完成</span>
         ${p.failed?`<span class="badge b-warn" style="font-size:10px">失败 ${p.failed}</span>`:''}
-      </div>
-      <div>${cardRows||'<span class="dim" style="font-size:11.5px">没有启用的卡</span>'}</div>
+      </div>`:''}
+      ${active.length?active.map((j,i)=>row(j,i+1)).join(""):'<div class="dim" style="font-size:12px;padding:4px 0">当前没有正在生成的任务</div>'}
+      ${waiting.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">排队 ${waiting.length} 项</div>
+        ${waiting.map((j,i)=>row(j, active.length+i+1)).join("")}`:''}
+      <div style="margin-top:10px">${(p.cards||[]).map(c=>
+        `<span class="mono" style="font-size:11px;margin-right:14px;color:${c.running?'var(--acc)':c.pending?'var(--warn)':'var(--dim)'}">
+          卡${c.index} ${c.online?(c.running?`队列 ${c.running}`:c.pending?`排队 ${c.pending}`:'空闲'):'离线'}</span>`).join("")}</div>
     </div></div>`;
 }
 
@@ -1092,9 +1111,13 @@ async function pollProg(){
   try{
     const p = await fetch('/api/comfy/progress').then(r=>r.json());
     IMGST.prog = p;
+    try{
+      const j = await fetch('/api/img/jobs').then(r=>r.json());
+      IMGST.jobs = j.jobs||[];
+    }catch(e){}
     if(p.draining) IMGST.draining = new Set(p.draining);
     if(state.tab==='img') render();
-    const busy = (p.running||0) + (p.queued||0) + (p.cards||[]).some(c=>c.running||c.pending);
+    const busy = (p.total - p.done - p.failed) > 0 || (p.cards||[]).some(c=>c.running||c.pending);
     if(busy) IMGST.progTimer = setTimeout(pollProg, 2500);
     else IMGST.progTimer = null;
   }catch(e){ IMGST.progTimer = null; }
@@ -1350,24 +1373,6 @@ function sImg(){
           <button class="btn acc" ${sel.size?'':'disabled'} onclick="runImgBatch()">确认并生成</button>
           <span class="dim" style="font-size:11.5px">共 ${total} 张 · 卡 ${[...sel].join(', ')||'（未选）'} · 16:9 · 2048×1152</span>
         </div>`:'<div class="dim">候选单是空的——在上面用「候选 − ＋」加数，或「全部候选加」批量设置</div>'}
-    </div>
-  </div>
-
-  ${jobs.length?`<div class="panel">
-    <div class="ph"><span>出图进度</span><span class="dim">本会话的任务</span></div>
-    <div class="pb">${jobRows}</div>
-  </div>`:""}
-  <div class="panel" style="margin-top:14px;margin-bottom:14px">
-    <div class="ph"><span>显卡</span>
-      <span class="dim">${IMGST.night?'夜间时段：默认全选空闲卡':'日间时段：默认卡 7'} · 可手动改</span></div>
-    <div class="pb">
-      <div style="display:flex;flex-wrap:wrap;gap:8px">${cardChips}</div>
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="resetCards()">恢复默认</button>
-        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="selectAllFree()">全选可用</button>
-        <button class="btn acc" style="font-size:11.5px;padding:4px 12px" onclick="confirmCards()">确认</button>
-        <span class="dim" style="font-size:11.5px">已选 ${sel.size} 张 · 灰卡勾选后，提交批次时自动启动实例</span>
-      </div>
     </div>
   </div>
 

@@ -68,6 +68,7 @@ def submit_batch(project: Path, ep: str, items: list, cards: list, ports: dict) 
                    "name": it.get("name", ""),
                    "card": card, "port": port, "seed": random.randint(1, 2 ** 31 - 1),
                    "status": "queued", "file": None, "promptId": None, "error": None,
+                   "queuedAt": time.time(), "startedAt": None,
                    "width": it.get("width") or imagegen.DEFAULT_W,
                    "height": it.get("height") or imagegen.DEFAULT_H,
                    "prompt": it["prompt"], "ref": it.get("ref")}
@@ -101,6 +102,7 @@ def _run(project: Path, ep: str, job_ids: list):
                     raise RuntimeError(f"卡 {job['card']} 的实例未就绪（超时）")
             with _lock:
                 _jobs[jid]["status"] = "running"
+                _jobs[jid]["startedAt"] = time.time()
             ref = None
             if job.get("ref") and (project / job["ref"]).exists():
                 ref = _stage_ref(job["port"], project / job["ref"])
