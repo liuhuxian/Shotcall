@@ -73,11 +73,13 @@ def main():
     import server
     dec, cands = store.latest(PROJECT), server.list_candidates()
     wf = server.workflow_of("EP001", dec, cands)
-    check("步骤含 16 步", len(wf["steps"]) == 16, len(wf["steps"]))
+    check("步骤含 17 步", len(wf["steps"]) == 17, len(wf["steps"]))
     check("挂上 performance-direction",
           any("performance-direction" in (s.get("skill") or "") for s in wf["steps"]))
     check("挂上 production-design-direction",
           any("production-design-direction" in (s.get("skill") or "") for s in wf["steps"]))
+    check("挂上 novel-analyzer",
+          any(s.get("skill") == "novel-analyzer" for s in wf["steps"]))
     check("挂上 asset-continuity-management",
           any(s["name"] == "素材清单" for s in wf["steps"]))
     check("未开始集不显示审核完成", all(s["status"] != "done" for s in wf["steps"]
