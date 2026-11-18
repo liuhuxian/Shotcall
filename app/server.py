@@ -258,17 +258,17 @@ WORKFLOW_STEPS = [
      "prompt": "加载 short-drama-develop，基于 <拆解目录> 与 <人物圣经>。\n重写 <项目根目录>/项目开发/episode-map.jsonl：覆盖原著正文全部章节，不跳章；集数与每集时长由内容决定。\n每集写清钩子、目标、对抗、转折、本集结果、与下一集交接。最后告诉我一共多少集。"},
     {"key": "script", "name": "剧本", "skill": "short-drama-write + performance-direction",
      "doc": "剧本.md",
-     "prompt": "加载 short-drama-write 与 performance-direction，写 <项目根目录>/剧集/<集号>/剧本.md。\n原著章节范围以 项目开发/episode-map.jsonl 中 <集号> 的 source_chapter_range 为准；原著对白优先。\n表演按 开始状态 / 触发 / 过程 / 结束状态 / 声音 写清；删改、合并、叙述转对白、新增对白逐条声明在集末。"},
+     "prompt": "加载 short-drama-write 与 performance-direction，写 <项目根目录>/剧集/<集号>/剧本.md。\n原著章节范围以 <项目根目录>/项目开发/episode-map.jsonl 中 <集号> 的 source_chapter_range 为准；原著对白优先。\n表演按 开始状态 / 触发 / 过程 / 结束状态 / 声音 写清；删改、合并、叙述转对白、新增对白逐条声明在集末。"},
     {"key": "visual", "name": "视觉设定", "skill": "short-drama-assets + production-design-direction",
      "doc": "视觉设定.md",
-     "prompt": "加载 short-drama-assets 与 production-design-direction，基于 剧集/<集号>/剧本.md 写 视觉设定.md。\n人物：身份 → 造型 → 状态；地点：地点本体 → 视角；道具：状态变化与持有人。\n场景写清空间布局、材质、时代细节与光线来源。"},
+     "prompt": "加载 short-drama-assets 与 production-design-direction，基于 <项目根目录>/剧集/<集号>/剧本.md 写 <项目根目录>/剧集/<集号>/视觉设定.md。\n人物：身份 → 造型 → 状态；地点：地点本体 → 视角；道具：状态变化与持有人。\n场景写清空间布局、材质、时代细节与光线来源。"},
     {"key": "look", "name": "光线圣经 + 摄影基调",
      "skill": "lighting-direction + cinematography",
      "note": "写入 视觉设定.md 的「光线与摄影基调」一节",
-     "prompt": "加载 lighting-direction 与 cinematography，为 <集号> 写两段约束：\n1) 光线圣经：每场时间、动机光源、方向、软硬、色温、对比、受光连续性、禁止项\n2) 摄影基调：景别策略、焦段倾向、运镜规则、构图禁忌\n追加到 剧集/<集号>/视觉设定.md 末尾，不改写已有内容。"},
+     "prompt": "加载 lighting-direction 与 cinematography，为 <集号> 写两段约束：\n1) 光线圣经：每场时间、动机光源、方向、软硬、色温、对比、受光连续性、禁止项\n2) 摄影基调：景别策略、焦段倾向、运镜规则、构图禁忌\n追加到 <项目根目录>/剧集/<集号>/视觉设定.md 末尾，不改写已有内容。"},
     {"key": "imgprompt", "name": "图片提示词", "skill": "short-drama-image-prompts",
      "doc": "图片提示词.md",
-     "prompt": "加载 short-drama-image-prompts，基于 剧集/<集号>/视觉设定.md（含「光线与摄影基调」）写 图片提示词.md。\n覆盖 <资产范围>：人物定妆、地点空镜、必要道具。\n光源方向、色温、对比必须与光线圣经一致，可直接复制使用。"},
+     "prompt": "加载 short-drama-image-prompts，基于 <项目根目录>/剧集/<集号>/视觉设定.md（含「光线与摄影基调」）写 <项目根目录>/剧集/<集号>/图片提示词.md。\n覆盖 <资产范围>：人物定妆、地点空镜、必要道具。\n光源方向、色温、对比必须与光线圣经一致，可直接复制使用。"},
     {"key": "gen1", "name": "出图① 资产图", "skill": "工作台 · 图片批次", "gate": "img",
      "prompt": "在工作台「出图」页：勾选 <资产范围> → 每项 <候选数> 张 → 签字批准 → 生成 → 挑候选 → 采用。\n出图前确认参考图与提示词就绪；耗时未标定，先出一张测时间。"},
     {"key": "manifest", "name": "素材清单", "skill": "asset-continuity-management",
@@ -281,11 +281,11 @@ WORKFLOW_STEPS = [
      "prompt": "加载 directing-cinematic-storyboards，为 <集号> 逐场写导演调度方案：\n空间关系、人物站位与走位、视线与轴线、为什么在这里切、必须保留的动作与物件。\n输出供分镜原样继承。"},
     {"key": "board", "name": "分镜", "skill": "short-drama-storyboard + performance-direction",
      "doc": "分镜.md",
-     "prompt": "加载 short-drama-storyboard 与 performance-direction，基于 剧本.md、视觉设定.md（含光线与摄影基调）与上一步的导演调度方案写 分镜.md。\n逐镜：来源/时长/目的/景别机位/运镜/起点/动作/终点/参考图/出场设定/声音/首帧提示词。\n轴线、站位、视线服从调度方案。"},
+     "prompt": "加载 short-drama-storyboard 与 performance-direction，基于 <项目根目录>/剧集/<集号>/剧本.md、<项目根目录>/剧集/<集号>/视觉设定.md（含光线与摄影基调）与上一步的导演调度方案写 <项目根目录>/剧集/<集号>/分镜.md。\n逐镜：来源/时长/目的/景别机位/运镜/起点/动作/终点/参考图/出场设定/声音/首帧提示词。\n轴线、站位、视线服从调度方案。"},
     {"key": "videoprompt", "name": "视频提示词",
      "skill": "short-drama-video-prompts + performance-direction",
      "doc": "视频提示词.md",
-     "prompt": "加载 short-drama-video-prompts 与 performance-direction，基于 分镜.md 逐镜写 视频提示词.md。\nH3 六段式，中文对白原生发声，non_diegetic_music: N/A。\n逐镜继承光源方向与色温；起止状态不得与分镜冲突。"},
+     "prompt": "加载 short-drama-video-prompts 与 performance-direction，基于 <项目根目录>/剧集/<集号>/分镜.md 逐镜写 <项目根目录>/剧集/<集号>/视频提示词.md。\nH3 六段式，中文对白原生发声，non_diegetic_music: N/A。\n逐镜继承光源方向与色温；起止状态不得与分镜冲突。"},
     {"key": "gen2", "name": "出图② 分镜图", "skill": "工作台 · 图片批次", "gate": "img",
      "prompt": "在工作台「出图」页：选 <场次范围> 的首帧 → 每镜 <候选数> 张 → 签字批准 → 生成 → 采用。\n必须先定人物资产图，再出分镜图。"},
     {"key": "test", "name": "试做", "skill": "工作台 · 视频生成（草稿档）", "gate": "vid",
@@ -309,6 +309,29 @@ def _script_title(ep_dir: Path):
     except OSError:
         return None
     return None
+
+
+def _novel_path() -> str:
+    d = PROJECT / "输入"
+    if d.exists():
+        for f in sorted(d.glob("*.txt")):
+            return f"输入/{f.name}"
+    return "输入/<原著文件>"
+
+
+def render_prompt(tpl: str, ep_id: str) -> str:
+    """把能确定的占位符换成真实值，只留下需要用户当场决定的。"""
+    mapping = {
+        "<项目根目录>": str(PROJECT),
+        "<集号>": ep_id,
+        "<原著文件>": str(PROJECT / _novel_path()),
+        "<拆解目录>": str(PROJECT / "项目开发/source-analysis"),
+        "<人物圣经>": str(PROJECT / "项目开发/source-analysis/character-bible/人物圣经.md"),
+    }
+    out = tpl
+    for k, v in mapping.items():
+        out = out.replace(k, v)
+    return out
 
 
 def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
@@ -367,7 +390,10 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
             st = "done" if n else "pending"
             detail = f"{n} 条候选" if n else "未出片"
             basis = f"本集视频候选 ≥1 条（当前 {n} 条）"
-        steps.append({**{k: s[k] for k in ("key", "name", "skill", "note", "prompt") if k in s},
+        item = {k: s[k] for k in ("key", "name", "skill", "note") if k in s}
+        if s.get("prompt"):
+            item["prompt"] = render_prompt(s["prompt"], ep_id)
+        steps.append({**item,
                       "no": i, "status": st, "detail": detail, "basis": basis})
     sels = sels or []
     return {"episode": ep_id, "exists": ep_dir.exists(), "steps": steps,
