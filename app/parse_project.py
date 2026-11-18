@@ -13,7 +13,9 @@ import json
 import re
 from pathlib import Path
 
+SPEAKER = r"([\u4e00-\u9fa5]{2,4})"
 SPK = r"(陈铭|秦淮|妻子|技术员|同事)"
+COMMENT = re.compile(r"<!--.*?-->", re.S)
 NO_REF_PLACE_MARK = "具体美术参考尚未生成"
 
 
@@ -22,13 +24,18 @@ def read(p: Path) -> str:
         return f.read()
 
 
+def read_opt(p: Path) -> str:
+    return read(p) if p.exists() else ""
+
+
 def sha(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def parse_script(text: str):
     scenes, order = {}, []
-    heads = list(re.finditer(r"(?m)^## (EP002-SC\d+) (\S+) · ([^·]+?) · ([^\n]+)$", text))
+    text = COMMENT.sub("", text)
+    heads = list(re.finditer(r"(?m)^## (EP\d{3}-SC\d+) (\S+) · ([^·]+?) · ([^\n]+)$", text))
     for i, m in enumerate(heads):
         sid = m.group(1)
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
@@ -38,10 +45,11 @@ def parse_script(text: str):
             line = raw.strip()
             if not line:
                 continue
-            dm = re.match(rf"^{SPK}：(.*)$", line)
+            dm = re.match(rf"^{SPEAKER}(?:（([^）]*)）)?：(.*)$", line)
             if dm:
-                dialogue.append({"spk": dm.group(1), "text": dm.group(2)})
-                blocks.append({"t": "line", "spk": dm.group(1), "text": dm.group(2)})
+                note = dm.group(2) or ""
+                dialogue.append({"spk": dm.group(1), "text": dm.group(3), "note": note})
+                blocks.append({"t": "line", "spk": dm.group(1), "text": dm.group(3), "note": note})
             else:
                 blocks.append({"t": "act", "text": line})
         scenes[sid] = {
@@ -62,7 +70,7 @@ def parse_script(text: str):
 def parse_storyboard(text: str):
     shots, cur = [], None
     for line in text.splitlines():
-        hm = re.match(r"^## (SHOT-EP002-[^\s]+) · (.*)$", line)
+        hm = re.match(r"^## (SHOT-EP\d{3}-[^\s]+) · (.*)$", line)
         if hm:
             cur = {"id": hm.group(1), "title": hm.group(2), "fields": {},
                    "refs": [], "firstFrame": "", "_ff": False}
@@ -154,10 +162,12 @@ def snap_frames(seconds: float) -> int:
 
 def build(project: Path, episode: str):
     ep_dir = project / "剧集" / episode
-    script_md = read(ep_dir / "剧本.md")
-    sb_md = read(ep_dir / "分镜.md")
-    vp_md = read(ep_dir / "视频提示词.md")
-    vs_md = read(ep_dir / "视觉设定.md")
+    script_md = read_opt(ep_dir / "剧本.md")
+    sb_md = read_opt(ep_dir / "分镜.md")
+    vp_md = read_opt(ep_dir / "视频提示词.md")
+    vs_md = read_opt(ep_dir / "视觉设定.md")
+    present = {name: (ep_dir / name).exists() for name in
+               ("剧本.md", "分镜.md", "视频提示词.md", "视觉设定.md")}
 
     scenes, declared = parse_script(script_md)
     shots = parse_storyboard(sb_md)
@@ -165,7 +175,8 @@ def build(project: Path, episode: str):
     assets = parse_visual(vs_md)
     episodes = parse_episodes(project / "项目开发/episode-map.jsonl")
 
-    novel = read(project / "输入/有谁共鸣2-江东-中年-书连网 (2).txt")
+    novel_path = next(iter(sorted((project / "输入").glob("*.txt"))), None)
+    novel = read(novel_path) if novel_path else ""
     novel_norm = re.sub(r"\s", "", novel)
 
     # 台词出处
@@ -175,7 +186,8 @@ def build(project: Path, episode: str):
 
     # 台词链
     seq = [(s["id"], s["scene"],
-            [(m.group(1), m.group(2).strip()) for m in re.finditer(rf"{SPK}：([^；;]+)", s["sound"])])
+            [(m.group(1), m.group(2).strip()) for m in
+             re.finditer(rf"{SPEAKER}(?:（[^）]*）)?：([^；;]+)", s["sound"])])
            for s in shots]
     chain, gid = {}, 0
     for sc in scenes:
@@ -306,10 +318,11 @@ def build(project: Path, episode: str):
 
     return {
         "project": project.name, "episode": episode, "episodes": episodes,
-        "files": {
-            "剧本.md": sha(script_md), "分镜.md": sha(sb_md),
-            "视频提示词.md": sha(vp_md), "视觉设定.md": sha(vs_md),
-        },
+        "files": {name: sha(src) for name, src, ok in (
+            ("剧本.md", script_md, present["剧本.md"]),
+            ("分镜.md", sb_md, present["分镜.md"]),
+            ("视频提示词.md", vp_md, present["视频提示词.md"]),
+            ("视觉设定.md", vs_md, present["视觉设定.md"])) if ok},
         "scenes": scenes, "shots": shots, "motion": motion,
         "assets": assets, "chain": chain, "gaps": gaps, "checks": checks,
     }
