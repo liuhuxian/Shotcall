@@ -258,9 +258,8 @@ function reviewDot(tab){
   let color, tip;
   if(st.status === "done"){ color = "var(--ok)"; tip = "已完成"; }
   else {
-    const blocked = wf.steps.slice(0, idx).some(s => s.status === "pending");
-    color = blocked ? "#3a4655" : "var(--warn)";
-    tip = blocked ? "还没到这一步" : "可以审了，尚未完成";
+    color = st.ready ? "var(--warn)" : "#3a4655";
+    tip = st.ready ? "可以审，尚未审完" : "还没到这一步";
   }
   return `<i class="dot" title="${tip}" style="background:${color};margin-left:6px"></i>`;
 }

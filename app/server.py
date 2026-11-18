@@ -365,6 +365,10 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -
     same = (cur is not None and cur.get("episode") == ep_id)
     cur_scenes = len(cur["scenes"]) if same else None
     cur_shots = len(cur["shots"]) if same else None
+    cur_assets = None
+    if same:
+        a = cur.get("assets") or {}
+        cur_assets = len(a.get("people", [])) + len(a.get("places", [])) + len(a.get("props", []))
     cands = [c for c in cands if ep_id in (c.get("shot") or "")]
     steps = []
     for i, s in enumerate(WORKFLOW_STEPS, 1):
@@ -390,25 +394,30 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -
             basis = "无独立文件；是否做到体现在下游文档内容里"
         if s.get("gate") == 1:
             n = sum(1 for d in decision if d["gate"] == 1 and d["unit"]["type"] == "scene")
-            st = "done" if n else ("progress" if (ep_dir / "剧本.md").exists() else "pending")
+            full = bool(cur_scenes) and n >= cur_scenes
+            st = "done" if full else ("progress" if n or (ep_dir / "剧本.md").exists() else "pending")
             detail = (f"已审 {n}/{cur_scenes} 场" if cur_scenes else f"已审 {n} 场") if n else "未审"
-            basis = f"本集场景判定记录 {n} 条"
+            basis = f"本集场景判定记录 {n} 条（共 {cur_scenes if cur_scenes else '?'} 场）"
         elif s.get("gate") == 12:
             n = sum(1 for d in decisions
                     if d["gate"] == 1 and d["unit"]["type"] == "asset")
-            st = "done" if n else ("progress" if (ep_dir / "视觉设定.md").exists() else "pending")
-            detail = f"已审 {n} 项（全剧）" if n else "未审"
-            basis = f"全剧资产判定记录 {n} 条（资产项跨集共享）"
+            total = cur_assets
+            full = bool(total) and n >= total
+            st = "done" if full else ("progress" if n or (ep_dir / "视觉设定.md").exists() else "pending")
+            detail = (f"已审 {n}/{total} 项" if total else f"已审 {n} 项") if n else "未审"
+            basis = f"全剧资产判定 {n} 条、本集资产项 {total if total else '?'} 项（跨集共享）"
         elif s.get("gate") == "pick":
             n = sum(1 for x in sels if ep_id in (x.get("shot") or ""))
-            st = "done" if n else "pending"
+            full = bool(cur_shots) and n >= cur_shots
+            st = "done" if full else ("progress" if n else "pending")
             detail = f"已采用 {n} 条" if n else "未挑"
             basis = f"本集挑片记录 {n} 条"
         elif s.get("gate") == 2:
             n = sum(1 for d in decision if d["gate"] == 2)
-            st = "done" if n else "pending"
+            full = bool(cur_shots) and n >= cur_shots
+            st = "done" if full else ("progress" if n else "pending")
             detail = (f"已审 {n}/{cur_shots} 镜" if cur_shots else f"已审 {n} 镜") if n else "未审"
-            basis = f"本集审核二判定记录（当前 {n} 条）"
+            basis = f"本集镜头判定 {n} 条（共 {cur_shots if cur_shots else '?'} 镜）"
         elif s.get("gate") == 3:
             n = sum(1 for d in decision if d["gate"] == 3)
             st = "done" if n else "pending"
@@ -427,6 +436,14 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -
         item = {k: s[k] for k in ("key", "name", "skill", "note") if k in s}
         if s.get("prompt"):
             item["prompt"] = render_prompt(s["prompt"], ep_id)
+        if s["key"] == "review1":
+            item["ready"] = (ep_dir / "剧本.md").exists()
+        elif s["key"] == "review2":
+            item["ready"] = (ep_dir / "视觉设定.md").exists()
+        elif s["key"] == "review3":
+            item["ready"] = (ep_dir / "分镜.md").exists()
+        elif s["key"] == "review4":
+            item["ready"] = any(ep_id in (x.get("shot") or "") for x in sels)
         steps.append({**item,
                       "no": i, "status": st, "detail": detail, "basis": basis})
     sels = sels or []
