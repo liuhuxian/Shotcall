@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """ComfyUI 实例与显卡状态探测。
 
-约定：每张卡一个 ComfyUI 实例，端口 8188 起顺序排列；
-实例自己会在 /system_stats 里报出它绑定的是哪张卡（devices[0].index）。
+约定：**端口即卡号**——8188 对应卡 0，8189 对应卡 1，……，8195 对应卡 7。
+ComfyUI 在 /system_stats 里报的 index 是相对自己可见设备的（用 CUDA_VISIBLE_DEVICES
+隔离后恒为 0），不能用来判断物理卡，所以以端口为准。
 """
 import json
 import time
@@ -36,8 +37,8 @@ def probe() -> list:
         except Exception:
             pass
         for dev in st.get("devices", []):
-            idx = dev.get("index")
-            if idx is None:
+            idx = port - PORTS[0]        # 端口即卡号
+            if idx < 0:
                 continue
             total = dev.get("vram_total") or 0
             free = dev.get("vram_free") or 0

@@ -25,7 +25,20 @@ from pathlib import Path
 from store import state_dir
 
 PROJECT = Path.home() / "short_v/有谁共鸣2"
-COMFY = "http://127.0.0.1:8188"
+
+def _comfy_base():
+    """优先用探测到的实例（端口即卡号），否则回落 8188。"""
+    try:
+        import gpus
+        cards = gpus.probe()
+        if cards:
+            return f"http://127.0.0.1:{cards[0]['port']}"
+    except Exception:
+        pass
+    return "http://127.0.0.1:8188"
+
+
+COMFY = _comfy_base()
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov")
 
 
