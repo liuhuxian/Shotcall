@@ -399,6 +399,8 @@ function sOverview(){
       ? `<span class="dim">共享资产：${D.assets.people.length} 人物 · ${D.assets.places.length} 地点 · ${D.assets.props.length} 道具</span>`
       : `<span class="dim">资产设定尚未建立${(S.assetFiles)?`（资产目录已有 ${S.assetFiles} 张图）`:""}</span>`}
     <span class="dim">已成片 0 集</span>
+    <span class="dim">审核一 <b style="color:#c9d2e0">${D.scenes.filter(s=>vget("scene",s.id)).length}/${D.scenes.length}</b> 场</span>
+    <span class="dim">审核二 <b style="color:#c9d2e0">${D.shots.filter(s=>vget("shot",s.id)).length}/${D.shots.length}</b> 镜</span>
     <span style="margin-left:auto" class="dim">当前查看 ${state.ep} · 大纲共 ${D.episodes.length} 集</span>
   </div>
   ${(()=>{

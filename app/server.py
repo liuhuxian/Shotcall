@@ -343,7 +343,7 @@ def render_prompt(tpl: str, ep_id: str) -> str:
     return out
 
 
-def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
+def workflow_of(ep_id: str, decisions: list, cands: list, sels=None, cur=None) -> dict:
     ep_dir = PROJECT / "剧集" / ep_id
     titles = next((e for e in payload()["data"]["episodes"] if e["id"] == ep_id), {})
     map_title = titles.get("title")
@@ -351,6 +351,10 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
     mismatch = bool(script_title and map_title and script_title != map_title)
     # 判定与候选都按集过滤：单元 id 里带集号才算本集；资产项是全剧共享，不参与单集进度
     decision = [d for d in decisions if ep_id in d["unit"]["id"]]
+    # 当前已解析集的场/镜总数，用于显示"已审 x/N"
+    same = (cur is not None and cur.get("episode") == ep_id)
+    cur_scenes = len(cur["scenes"]) if same else None
+    cur_shots = len(cur["shots"]) if same else None
     cands = [c for c in cands if ep_id in (c.get("shot") or "")]
     steps = []
     for i, s in enumerate(WORKFLOW_STEPS, 1):
@@ -375,15 +379,20 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
             st = "manual"
             basis = "无独立文件；是否做到体现在下游文档内容里"
         if s.get("gate") == 1:
-            n = sum(1 for d in decision if d["gate"] == 1)
-            st = "done" if n else ("progress" if (ep_dir / "剧本.md").exists() else "pending")
-            detail = f"{n} 条判定" if n else "未审"
-            basis = f"本集审核一判定记录 ≥1 条（当前 {n} 条）"
+            n = sum(1 for d in decision if d["gate"] == 1 and d["unit"]["type"] == "scene")
+            # 资产项是全剧共享，不按集过滤
+            asset_n = sum(1 for d in decisions
+                          if d["gate"] == 1 and d["unit"]["type"] == "asset")
+            st = "done" if (n or asset_n) else ("progress" if (ep_dir / "剧本.md").exists() else "pending")
+            detail = (f"已审 {n}/{cur_scenes} 场" if cur_scenes else f"已审 {n} 场") if n else "未审"
+            if asset_n:
+                detail += f" · 全剧资产 {asset_n}"
+            basis = f"本集场景判定 {n} 条；全剧资产判定 {asset_n} 条"
         elif s.get("gate") == 2:
             n = sum(1 for d in decision if d["gate"] == 2)
             st = "done" if n else "pending"
-            detail = f"{n} 条判定" if n else "未审"
-            basis = f"本集审核二判定记录 ≥1 条（当前 {n} 条）"
+            detail = (f"已审 {n}/{cur_shots} 镜" if cur_shots else f"已审 {n} 镜") if n else "未审"
+            basis = f"本集审核二判定记录（当前 {n} 条）"
         elif s.get("gate") == 3:
             n = sum(1 for d in decision if d["gate"] == 3)
             st = "done" if n else "pending"
@@ -412,10 +421,10 @@ def workflow_of(ep_id: str, decisions: list, cands: list, sels=None) -> dict:
             "chapters": titles.get("chapters"), "target": titles.get("target")}
 
 
-def workflow_all() -> list:
+def workflow_all(cur=None) -> list:
     dec, cands = store.latest(PROJECT), list_candidates()
     sels = list(store.latest_selections(PROJECT).values())
-    return [workflow_of(e["id"], dec, cands, sels) for e in payload()["data"]["episodes"]]
+    return [workflow_of(e["id"], dec, cands, sels, cur) for e in payload()["data"]["episodes"]]
 
 
 def dev_summary() -> dict:
@@ -595,7 +604,7 @@ def response(ep: str | None = None) -> dict:
                 except json.JSONDecodeError:
                     pass
     data["runs"] = runs
-    data["workflow"] = workflow_all()
+    data["workflow"] = workflow_all(data)
     data["dev"] = dev_summary()
     data["selections"] = list(store.latest_selections(PROJECT).values())
     meta = dict(base["meta"])
