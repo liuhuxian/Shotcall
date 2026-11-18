@@ -1134,12 +1134,12 @@ function sImg(){
   const cardChips = cards.length ? cards.map(c=>{
     const {color,label} = cardState(c);
     const off = c.state === "offline";
-    const on = sel.has(c.index) && !off;
-    return `<div ${off?'':`onclick="toggleCard(${c.index})"`}
-      title="${off?'该卡没有运行 ComfyUI 实例':esc(c.name)+' · 空闲 '+c.vramFreeGB+'GB / '+c.vramTotalGB+'GB'}"
-      style="cursor:${off?'not-allowed':'pointer'};display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
+    const on = sel.has(c.index);
+    return `<div onclick="toggleCard(${c.index})"
+      title="${off?'该卡暂无实例，勾选后提交批次时自动启动':esc(c.name)+' · 空闲 '+c.vramFreeGB+'GB / '+c.vramTotalGB+'GB'}"
+      style="cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
       border:1px solid ${on?color:'var(--line)'};background:${on?'rgba(255,255,255,.03)':'transparent'};
-      opacity:${off?'.45':'1'}">
+      opacity:${off&&!on?'.55':'1'}">
       <i class="dot" style="background:${color}"></i>
       <b style="font-size:12.5px">卡 ${c.index}</b>
       <span class="dim" style="font-size:11px">${label}${off?'':` · ${c.usedPct}% · ${c.vramFreeGB}G`}</span>
@@ -1201,7 +1201,7 @@ function sImg(){
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="resetCards()">恢复默认</button>
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="selectAllFree()">全选可用</button>
-        <span class="dim" style="font-size:11.5px">已选 ${sel.size} 张 · 占比低于 10% 为绿，能装下模型为橙，装不下为红</span>
+        <span class="dim" style="font-size:11.5px">已选 ${sel.size} 张 · 灰卡勾选后，提交批次时自动启动实例</span>
       </div>
     </div>
   </div>
