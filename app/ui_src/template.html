@@ -1042,6 +1042,28 @@ function selectAllFree(){
   render();
 }
 
+function bump(id, d){
+  const cur = IMGST.draft[id] || 0;
+  const n = Math.max(0, Math.min(16, cur + d));
+  if(n === 0) delete IMGST.draft[id]; else IMGST.draft[id] = n;
+  render();
+}
+function bumpAll(d){
+  IMGST.allN = Math.max(1, Math.min(16, (IMGST.allN || 4) + d));
+  render();
+}
+function setAllN(v){
+  IMGST.allN = Math.max(1, Math.min(16, parseInt(v,10)||1));
+  render();
+}
+function applyAll(){
+  const n = IMGST.allN || 4;
+  (IMGST.items||[]).forEach(it=>{
+    if(ADOPTED_OF(it) || !it.prompt) return;
+    IMGST.draft[it.id] = n;
+  });
+  render();
+}
 function addDraft(id, n){
   IMGST.draft[id] = (IMGST.draft[id]||0) + (n||1);
   render();
@@ -1051,7 +1073,7 @@ function addAllDraft(){
     if(ADOPTED_OF(it)) return;
     if(!it.prompt) return;
     if(IMGST.draft[it.id]) return;
-    IMGST.draft[it.id] = 4;
+    IMGST.draft[it.id] = IMGST.allN || 4;
   });
   render();
 }
@@ -1158,8 +1180,12 @@ function sImg(){
         <span class="badge ${hasPrompt?'b-ok':'b-warn'}" style="font-size:10px;cursor:pointer"
               onclick="IMGST.open['${it.id}']=!IMGST.open['${it.id}'];render()">提示词${hasPrompt?'详情':'缺失'}</span>
         ${adopted?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
-                 :`<button class="btn ghost" style="font-size:11.5px;padding:3px 9px" onclick="addDraft('${it.id}',1)">+1 候选</button>`}
-        ${draft[it.id]?`<span class="mono" style="font-size:11px;color:var(--acc)">已排 ${draft[it.id]} 张</span>`:""}
+                 :`<div style="display:flex;align-items:center;gap:5px">
+            <span class="dim" style="font-size:11px">候选</span>
+            <button class="btn ghost" style="font-size:12px;padding:1px 8px;line-height:18px" onclick="bump('${it.id}',-1)">−</button>
+            <span class="mono" style="font-size:12px;min-width:18px;text-align:center;color:${draft[it.id]?'var(--acc)':'var(--dim)'}">${draft[it.id]||0}</span>
+            <button class="btn ghost" style="font-size:12px;padding:1px 8px;line-height:18px" onclick="bump('${it.id}',1)">＋</button>
+          </div>`}
       </div>
       ${open?`<div style="padding:0 13px 12px">
         <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;border:1px solid var(--line);
@@ -1194,6 +1220,41 @@ function sImg(){
 
   return `
   <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>资产项</span><span class="dim">${items.length} 项 · 提示词就绪 ${items.filter(i=>i.prompt).length} 项</span></div>
+    <div class="pb">
+      ${items.length?rows:'<div class="dim">本集还没有 图片提示词.md</div>'}
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="dim" style="font-size:11.5px">全部候选加</span>
+          <button class="btn ghost" style="font-size:12px;padding:1px 8px;line-height:18px" onclick="bumpAll(-1)">−</button>
+          <input type="number" min="1" max="16" value="${IMGST.allN||4}" onchange="setAllN(this.value)"
+            style="width:56px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;text-align:center">
+          <button class="btn ghost" style="font-size:12px;padding:1px 8px;line-height:18px" onclick="bumpAll(1)">＋</button>
+          <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="applyAll()">应用到全部</button>
+        </div>
+        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="clearDraft()">清空候选单</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>候选单</span><span class="dim">${Object.keys(draft).length} 项 · 共 ${total} 张 · 确认后开始生成</span></div>
+    <div class="pb">
+      ${draftRows?`<table>
+        <thead><tr><th>编号</th><th>资产</th><th>提示词</th><th>张数</th><th></th></tr></thead>
+        <tbody>${draftRows}</tbody></table>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button class="btn acc" ${sel.size?'':'disabled'} onclick="runImgBatch()">确认并生成</button>
+          <span class="dim" style="font-size:11.5px">共 ${total} 张 · 卡 ${[...sel].join(', ')||'（未选）'} · 16:9 · 2048×1152</span>
+        </div>`:'<div class="dim">候选单是空的——在上面用「候选 − ＋」加数，或「全部候选加」批量设置</div>'}
+    </div>
+  </div>
+
+  ${jobs.length?`<div class="panel">
+    <div class="ph"><span>出图进度</span><span class="dim">点缩略图可放大</span></div>
+    <div class="pb">${jobRows}</div>
+  </div>`:""}
+  <div class="panel" style="margin-top:14px;margin-bottom:14px">
     <div class="ph"><span>显卡</span>
       <span class="dim">${IMGST.night?'夜间时段：默认全选空闲卡':'日间时段：默认卡 7'} · 可手动改</span></div>
     <div class="pb">
@@ -1206,34 +1267,6 @@ function sImg(){
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>资产项</span><span class="dim">${items.length} 项 · 提示词就绪 ${items.filter(i=>i.prompt).length} 项</span></div>
-    <div class="pb">
-      ${items.length?rows:'<div class="dim">本集还没有 图片提示词.md</div>'}
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="addAllDraft()">全部添加 4 张</button>
-        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="clearDraft()">清空批次单</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>批次单</span><span class="dim">${Object.keys(draft).length} 项 · 共 ${total} 张 · 签字后才提交</span></div>
-    <div class="pb">
-      ${draftRows?`<table>
-        <thead><tr><th>编号</th><th>资产</th><th>提示词</th><th>张数</th><th></th></tr></thead>
-        <tbody>${draftRows}</tbody></table>
-        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-          <button class="btn acc" ${sel.size?'':'disabled'} onclick="runImgBatch()">签字并提交 ${total} 张</button>
-          <span class="dim" style="font-size:11.5px">使用卡 ${[...sel].join(', ')||'（未选）'} · 16:9 · 2048×1152</span>
-        </div>`:'<div class="dim">批次单是空的——在上面点「+1 候选」或「全部添加 4 张」</div>'}
-    </div>
-  </div>
-
-  ${jobs.length?`<div class="panel">
-    <div class="ph"><span>出图进度</span><span class="dim">点缩略图可放大</span></div>
-    <div class="pb">${jobRows}</div>
-  </div>`:""}
   <div class="dim" style="font-size:12px;margin-top:12px">对应工作流第 09 步「出图① 资产图」。分镜图在「出图 · 分镜」页。</div>`;
 }
 
