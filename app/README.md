@@ -18,10 +18,10 @@ python3 server.py --port 8790
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `WORKBENCH_STATE` | `项目/制作运行/`（不可写时退到 `workbench/run/`） | 决策、任务、选择、运行记录 |
+| `WORKBENCH_STATE` | `项目/制作运行/`（不可写时退到 `app/run/`） | 决策、任务、选择、运行记录 |
 | `WORKBENCH_MEDIA` | `项目/剧集/EP002/制作成果/` | 候选素材扫描根 |
 
-启动日志会打印实际使用的状态目录。沙箱内跑会退到 `workbench/run/` 并给一行 `[warn]`。
+启动日志会打印实际使用的状态目录。沙箱内跑会退到 `app/run/` 并给一行 `[warn]`。
 
 ---
 

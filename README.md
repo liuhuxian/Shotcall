@@ -52,11 +52,11 @@ Shotcall 把这三件事变成数据结构：每条判定绑定**单元 × 文�
 ```bash
 cd Shotcall
 
-# 1. 生成界面（源码在 workbench/ui_src/template.html）
-python3 workbench/build_ui.py
+# 1. 生成界面（源码在 app/ui_src/template.html）
+python3 app/build_ui.py
 
 # 2. 启动，只监听本机
-python3 workbench/server.py --port 8790
+python3 app/server.py --port 8790
 ```
 
 打开 `http://127.0.0.1:8790/`。
@@ -66,11 +66,11 @@ python3 workbench/server.py --port 8790
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `WORKBENCH_PROJECT` | `~/short_v/有谁共鸣2` | 指向你的短剧项目根目录 |
-| `WORKBENCH_STATE` | `<项目>/制作运行/`（不可写时退到 `workbench/run/`） | 决策、任务、选择、运行记录 |
+| `WORKBENCH_STATE` | `<项目>/制作运行/`（不可写时退到 `app/run/`） | 决策、任务、选择、运行记录 |
 | `WORKBENCH_MEDIA` | `<项目>/剧集/EP002/制作成果/` | 候选素材扫描根 |
 
 ```bash
-WORKBENCH_PROJECT=~/my-drama python3 workbench/server.py --port 8790
+WORKBENCH_PROJECT=~/my-drama python3 app/server.py --port 8790
 ```
 
 依赖：Python 3.9+ 标准库；`ffmpeg`/`ffprobe` 用于缩略图和时长检测。不依赖任何 pip 包。
@@ -130,7 +130,7 @@ GET  /thumb?r=&p=       候选缩略图
 ## 测试
 
 ```bash
-python3 workbench/test_all.py
+python3 app/test_all.py
 ```
 
 不需要 GPU，覆盖：大纲校验、工作流状态、预检阻断、任务图结构、落账 supersede、接口可用性。内容类断言在有剧本时自动启用，空集时自动跳过。

@@ -1,14 +1,17 @@
+# ---- 项目需求文档：含具体剧本信息，不入库 ----
+docs/导演工作台_需求对齐_v1.1.md
+
 # ---- 运行时状态：决策、任务、候选素材（属于具体项目，不入库）----
-workbench/run/
-workbench/build/
-workbench/archive/
+app/run/
+app/build/
+app/archive/
 
 # ---- 批次单：每部剧不同 ----
-workbench/batches/*.md
-!workbench/batches/.gitkeep
+app/batches/*.md
+!app/batches/.gitkeep
 
-# ---- 界面构建产物：用 python3 workbench/build_ui.py 生成 ----
-workbench/ui/index.html
+# ---- 界面构建产物：用 python3 app/build_ui.py 生成 ----
+app/ui/index.html
 
 # ---- Python ----
 __pycache__/

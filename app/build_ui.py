@@ -7,7 +7,7 @@
 2. 演示用的假候选挑片 → 真实候选扫描
 3. 底部同步 render() → 异步 BOOT()
 
-    python3 build_ui.py   → workbench/ui/index.html
+    python3 build_ui.py   → app/ui/index.html
 """
 from pathlib import Path
 
