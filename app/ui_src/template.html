@@ -191,11 +191,6 @@ const mmss = sec => {
   const m = Math.floor(sec/60), s = Math.round(sec%60);
   return m + ":" + String(s).padStart(2,"0");
 };
-// 已采用的资产图（全剧共享；目前只有陈铭/秦淮有 6 视图）
-const ADOPTED = {
-  "陈铭": "资产/定妆照/陈铭6视图.png",
-  "秦淮": "资产/定妆照/秦淮6视图.png",
-};
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmt = n => (n>=60 ? (n/60).toFixed(1)+" 分" : n+" 秒");
 const shotById = id => D.shots.find(s=>s.id===id);
