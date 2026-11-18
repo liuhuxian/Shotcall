@@ -28,14 +28,18 @@ def _safe_name(name: str) -> str:
 def _job_dir(project: Path, ep: str, asset_id: str) -> Path:
     """候选图落在项目内：剧集/<集号>/制作成果/图片候选/<资产>/
     写不进去时退回状态目录（项目目录只读的沙箱环境）。"""
-    d = project / "剧集" / ep / "制作成果" / "图片候选" / asset_id
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-    except OSError:
-        d = store.state_dir(project) / "img" / ep / asset_id
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+    rel = Path("剧集") / ep / "制作成果" / "图片候选" / asset_id
+    for base in (project, store.state_dir(project), Path(__file__).parent / "run"):
+        d = base / rel if base == project else base / "img" / ep / asset_id
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            probe = d / ".w"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+            return d
+        except OSError:
+            continue
+    raise RuntimeError("没有任何可写目录用于保存候选图")
 
 
 def list_jobs(batch: str = None) -> list:
@@ -123,9 +127,13 @@ def _run(project: Path, ep: str, job_ids: list):
                     out.write_bytes(data)
                     with _lock:
                         _jobs[jid]["status"] = "done"
-                        try:
-                            _jobs[jid]["file"] = str(out.relative_to(project))
-                        except ValueError:
+                        for base in (project, Path(__file__).parent / "run"):
+                            try:
+                                _jobs[jid]["file"] = str(out.relative_to(base))
+                                break
+                            except ValueError:
+                                continue
+                        else:
                             _jobs[jid]["file"] = str(out)
                         _jobs[jid]["seconds"] = round(time.time() - t0, 1)
                     break
