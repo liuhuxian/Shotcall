@@ -2,6 +2,7 @@
 """出图任务：提交、轮询、落盘。内存态，重启后不保留未完成任务。"""
 import json
 import random
+import re
 import threading
 import time
 import traceback
@@ -15,6 +16,13 @@ import store
 _lock = threading.Lock()
 _jobs = {}          # job_id -> dict
 _order = []
+
+
+def _safe_name(name: str) -> str:
+    """目录名里不放括号、斜杠等字符。"""
+    s = re.sub(r"[（(].*?[)）]", "", name or "")          # 去掉括号说明
+    s = re.sub(r"[\\/:*?\"<>|\s]+", "", s)             # 去掉非法字符与空白
+    return s[:24] or "未命名"
 
 
 def _job_dir(project: Path, ep: str, asset_id: str) -> Path:
@@ -55,7 +63,9 @@ def submit_batch(project: Path, ep: str, items: list, cards: list, ports: dict) 
             jid = f"{batch}-{it['id']}-{k+1}"
             card = cards[(len(created)) % len(cards)] if cards else None
             port = ports.get(card)
-            job = {"id": jid, "batch": batch, "asset": it["id"], "name": it.get("name", ""),
+            job = {"id": jid, "batch": batch, "asset": it["id"],
+                   "dir": f"{it['id']}-{_safe_name(it.get('name',''))}",
+                   "name": it.get("name", ""),
                    "card": card, "port": port, "seed": random.randint(1, 2 ** 31 - 1),
                    "status": "queued", "file": None, "promptId": None, "error": None,
                    "width": it.get("width") or imagegen.DEFAULT_W,
@@ -107,7 +117,7 @@ def _run(project: Path, ep: str, job_ids: list):
                     if not imgs:
                         raise RuntimeError("任务完成但没有图")
                     data = imagegen.download(job["port"], imgs[0])
-                    out = _job_dir(project, ep, job["asset"]) / f"{job['seed']}.png"
+                    out = _job_dir(project, ep, job["dir"]) / f"{job['seed']}.png"
                     out.write_bytes(data)
                     with _lock:
                         _jobs[jid]["status"] = "done"
