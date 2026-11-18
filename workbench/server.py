@@ -27,7 +27,7 @@ import preflight as pf
 import runner
 import store
 
-PROJECT = Path.home() / "short_v/有谁共鸣2"
+PROJECT = Path(os.environ.get("WORKBENCH_PROJECT") or (Path.home() / "short_v/有谁共鸣2")).expanduser()
 EPISODE = "EP002"
 
 _lock = threading.Lock()

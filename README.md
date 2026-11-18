@@ -61,12 +61,17 @@ python3 workbench/server.py --port 8790
 
 打开 `http://127.0.0.1:8790/`。
 
-默认项目路径是 `~/short_v/有谁共鸣2`，可用环境变量覆盖：
+环境变量：
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
+| `WORKBENCH_PROJECT` | `~/short_v/有谁共鸣2` | 指向你的短剧项目根目录 |
 | `WORKBENCH_STATE` | `<项目>/制作运行/`（不可写时退到 `workbench/run/`） | 决策、任务、选择、运行记录 |
 | `WORKBENCH_MEDIA` | `<项目>/剧集/EP002/制作成果/` | 候选素材扫描根 |
+
+```bash
+WORKBENCH_PROJECT=~/my-drama python3 workbench/server.py --port 8790
+```
 
 依赖：Python 3.9+ 标准库；`ffmpeg`/`ffprobe` 用于缩略图和时长检测。不依赖任何 pip 包。
 
