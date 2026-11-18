@@ -596,15 +596,23 @@ function sR1(){
   if(!D.scenes || !D.scenes.length) return emptyPanel("r1");
   const sc = sceneById(state.scene) || D.scenes[0];
   const v = vget("scene",sc.id);
+  const stBadge = st => st==="pass"?'<span class="badge b-ok" style="font-size:10px;line-height:15px;padding:0 5px">通过</span>'
+    : st==="revise"?'<span class="badge b-warn" style="font-size:10px;line-height:15px;padding:0 5px">需修改</span>'
+    : st==="hold"?'<span class="badge b-mut" style="font-size:10px;line-height:15px;padding:0 5px">待定</span>'
+    : '<span class="badge" style="font-size:10px;line-height:15px;padding:0 5px;border-color:#2a303a;color:#5c6474">未审</span>';
+  const judged = D.scenes.filter(s=>vget("scene",s.id)).length;
   const list = D.scenes.map(s=>{
     const st=vget("scene",s.id);
-    const dot = st==="pass"?'<i class="dot" style="background:var(--ok)"></i>'
-      : st==="revise"?'<i class="dot" style="background:var(--warn)"></i>'
-      : st==="hold"?'<i class="dot" style="background:var(--dim)"></i>':'';
+    const stale = !!staleOf("scene", s.id);
     return `<div class="sitem ${s.id===sc.id?'on':''}" onclick="go('r1',{scene:'${s.id}'})">
       <div class="n">${s.id.slice(-3)}</div>
-      <div class="t"><div>${esc(s.place)}${dot}</div>
-        <div>${s.shotCount} 镜 · ${s.dur}s · ${s.dialogue.length} 句</div></div>
+      <div class="t">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.place)}</span>
+          ${stBadge(st)}
+        </div>
+        <div>${s.shotCount} 镜 · ${s.dur}s · ${s.dialogue.length} 句${stale?' · <span style="color:var(--warn)">待复核</span>':''}</div>
+      </div>
     </div>`;
   }).join("");
 
@@ -631,7 +639,7 @@ function sR1(){
   return `
   <div class="row" style="align-items:flex-start;gap:14px">
     <div class="panel" style="width:250px;flex-shrink:0">
-      <div class="ph"><span>场次</span><span class="dim">${S.scenes} 场</span></div>
+      <div class="ph"><span>场次</span><span class="dim">已审 ${judged}/${S.scenes}</span></div>
       <div style="max-height:calc(100vh - 250px);overflow:auto">${list}</div>
     </div>
 
