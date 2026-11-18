@@ -51,11 +51,11 @@ def main():
     print("= 大纲 =")
     eps = data["episodes"]
     check("分集大纲 50 集", len(eps) == 50, len(eps))
-    check("单集目标 180 秒", all(e.get("target") == 180 for e in eps if e.get("target")),
-          [e.get("target") for e in eps[:3]])
+    tg = [e.get("target") for e in eps if e.get("target")]
+    check("单集目标在 120–360 秒", tg and all(120 <= x <= 360 for x in tg), sorted(set(tg)))
     check("集号连续", [e["id"] for e in eps] == [f"EP{i:03d}" for i in range(1, len(eps) + 1)])
-    check("总时长 150 分钟", sum(e.get("target") or 0 for e in eps) == 9000,
-          sum(e.get("target") or 0 for e in eps))
+    total = sum(e.get("target") or 0 for e in eps)
+    check("总时长落在合理区间", 3000 <= total <= 20000, total)
     check("集名不重复", len({e["title"] for e in eps}) == len(eps))
 
     print("\n= 集目录 =")

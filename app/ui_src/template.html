@@ -285,6 +285,14 @@ function sWorkflow(){
         <div class="dim mono" style="font-size:11px;margin-top:2px">${esc(s.skill||"")}</div>
         ${s.note?`<div class="dim" style="font-size:11.5px;margin-top:2px">${esc(s.note)}</div>`:""}
         ${s.basis?`<div class="mono" style="font-size:10.5px;color:#5c6474;margin-top:3px">${s.status==="done"?"✓":"·"} ${esc(s.basis)}</div>`:""}
+        ${s.prompt?`<details style="margin-top:7px">
+          <summary class="dim" style="font-size:11.5px;cursor:pointer;user-select:none">提示词模板</summary>
+          <div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px">
+            <pre class="mono" style="flex:1;white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;
+              border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:0;color:#c9d2e0">${esc(s.prompt)}</pre>
+            <button class="btn ghost" style="font-size:11.5px;padding:4px 10px;flex-shrink:0" onclick="copyPrompt(this)">复制</button>
+          </div>
+        </details>`:""}
       </div>
       <div style="text-align:right;flex-shrink:0">
         <span class="badge ${cls}">${label}</span>
@@ -345,7 +353,12 @@ function sOverview(){
   <div class="grid4" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">全剧</div>
       <div class="kpi">${total}<small>集</small></div>
-      <div class="dim" style="font-size:11.5px;margin-top:4px">单集 ${mmss((D.episodes[0]||{}).target)}</div></div>
+      <div class="dim" style="font-size:11.5px;margin-top:4px">单集 ${(()=>{
+        const ts=(D.episodes||[]).map(e=>e.target).filter(Boolean);
+        if(!ts.length) return "—";
+        const a=Math.min(...ts), b=Math.max(...ts);
+        return a===b ? mmss(a) : mmss(a)+"–"+mmss(b);
+      })()}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">总目标时长</div>
       <div class="kpi">${Math.round(totalSec/60)}<small>分钟</small></div>
       <div class="dim" style="font-size:11.5px;margin-top:4px">${totalSec} 秒</div></div>
