@@ -7,6 +7,8 @@ import time
 import traceback
 from pathlib import Path
 
+import comfyctl
+import gpus
 import imagegen
 import store
 
@@ -78,6 +80,15 @@ def _run(project: Path, ep: str, job_ids: list):
                     _jobs[jid]["error"] = "没有可用的卡"
             continue
         try:
+            port = job["port"]
+            if not comfyctl._alive(port):
+                with _lock:
+                    _jobs[jid]["status"] = "starting"
+                t_wait = time.time()
+                while time.time() - t_wait < 300 and not comfyctl._alive(port):
+                    time.sleep(3)
+                if not comfyctl._alive(port):
+                    raise RuntimeError(f"卡 {job['card']} 的实例未就绪（超时）")
             with _lock:
                 _jobs[jid]["status"] = "running"
             ref = None
@@ -114,6 +125,17 @@ def _run(project: Path, ep: str, job_ids: list):
                 if jid in _jobs:
                     _jobs[jid]["status"] = "failed"
                     _jobs[jid]["error"] = f"{e}"
+            traceback.print_exc()
+    # 整批结束：按夜间/白天规则收尾
+    with _lock:
+        batch = (_jobs.get(job_ids[0]) or {}).get("batch")
+        same = [_jobs[j] for j in _order if _jobs[j]["batch"] == batch] if batch else []
+        running = any(j["status"] in ("queued", "running", "starting") for j in same)
+        cards = sorted({j["card"] for j in same if j.get("card") is not None})
+    if not running:
+        try:
+            comfyctl.shutdown_after_batch(cards, gpus.is_night())
+        except Exception:
             traceback.print_exc()
 
 

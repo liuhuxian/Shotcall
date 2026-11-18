@@ -68,9 +68,9 @@ def probe() -> list:
 
 
 def is_night(now=None) -> bool:
-    """21:00–07:00 为夜间时段（本机时区）。"""
+    """21:00–09:00 为夜间时段（本机时区）。"""
     now = now or time.localtime()
-    return now.tm_hour >= 21 or now.tm_hour < 7
+    return now.tm_hour >= 21 or now.tm_hour < 9
 
 
 def default_selection(cards: list, now=None) -> list:

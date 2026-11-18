@@ -22,6 +22,7 @@ from pathlib import Path
 import os
 
 import dataset
+import comfyctl
 import gpus
 import imagegen
 import imgjobs
@@ -867,6 +868,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(400, json.dumps({"error": "没有可用显卡"}, ensure_ascii=False).encode("utf-8"),
                                "application/json; charset=utf-8")
                     return
+                missing = [c for c in use if not comfyctl._alive(ports[c])]
+                if missing:
+                    threading.Thread(target=comfyctl.ensure, args=(missing,), daemon=True).start()
                 res = imgjobs.submit_batch(PROJECT, ep, items, use, ports)
                 store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
                              notes=[{"text": f"{ep} 图片批次：{len(items)} 项 × {n} 张，卡 {use}"}])
