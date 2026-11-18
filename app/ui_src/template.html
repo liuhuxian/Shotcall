@@ -206,6 +206,15 @@ function toast(msg){
   h.innerHTML = `<div class="toast">${esc(msg)}</div>`;
   clearTimeout(window.__t); window.__t=setTimeout(()=>h.innerHTML="",2200);
 }
+function tryAssetGen(name){
+  const hasPrompt = !!(D.files||{})["图片提示词.md"];
+  if (!hasPrompt) {
+    toast("还不能出图：本集缺 图片提示词.md（工作流第 08 步）");
+    return;
+  }
+  toast("候选 = 同一提示词出 4 个变体，挑一张采用；生成入口在下方批次单");
+}
+
 function go(tab, opts){
   Object.assign(state, opts||{}, {tab});
   render();
@@ -989,7 +998,7 @@ function sImg(){
         <div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(p.name)}</b>
           ${adopted?'<span class="badge b-ok">已采用</span>':'<span class="badge b-mut">未定</span>'}</div>
         <div class="dim mono" style="font-size:10.5px;margin:5px 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${adopted||"—"}</div>
-        <button class="btn" style="width:100%;font-size:12px;padding:5px 0" onclick="toast('会以当前造型为参考出候选')">出 4 张候选</button>
+        <button class="btn" style="width:100%;font-size:12px;padding:5px 0" onclick="tryAssetGen('${esc(p.name)}')">出 4 张候选</button>
       </div></div>`;
   }).join("");
 
@@ -1000,7 +1009,7 @@ function sImg(){
            :`<div style="width:42px;height:30px;border-radius:4px;border:1px dashed #3a4655;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#5c6474">无图</div>`}
       <div style="flex:1;min-width:0"><div style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
       <div class="dim" style="font-size:11px">${has?"已有参考":"尚无参考"}</div></div>
-      <button class="btn ghost" style="font-size:11.5px;padding:3px 8px" onclick="toast('会按指定机位出候选')">出图</button>
+      <button class="btn ghost" style="font-size:11.5px;padding:3px 8px" onclick="tryAssetGen('${esc(p.name)}')">出图</button>
     </div>`;
   }).join("");
 
