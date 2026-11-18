@@ -1039,7 +1039,8 @@ function sChecks(){
 
 
 /* ---------- 出图① · 资产图 ---------- */
-let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null};
+let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null,
+             enabled:new Set(), prog:null, progTimer:null};
 
 async function loadImg(){
   const ep = D.episode;
@@ -1051,7 +1052,14 @@ async function loadImg(){
     IMGST.items = a.items||[]; IMGST.exists = a.exists;
     IMGST.cards = b.cards||[]; IMGST.night = b.night; IMGST.defCards = b.default||[];
     IMGST.loadMin = b.loadMinGB;
-    if(!IMGST._init){ IMGST._init = true; IMGST.sel = new Set(IMGST.defCards); }
+    if(!IMGST._init){
+      IMGST._init = true;
+      IMGST.enabled = new Set(b.enabled || IMGST.defCards);
+      IMGST.sel = new Set(IMGST.enabled);
+    } else if(b.enabled){
+      IMGST.enabled = new Set(b.enabled);
+    }
+    if(b.draining) IMGST.draining = new Set(b.draining);
     const j = await fetch('/api/img/jobs').then(r=>r.json());
     IMGST.jobs = j.jobs||[];
     const ad = await fetch('/api/img/adopted?ep='+encodeURIComponent(ep)).then(r=>r.json());
@@ -1059,6 +1067,53 @@ async function loadImg(){
     const fl = await fetch('/api/img/files?ep='+encodeURIComponent(ep)).then(r=>r.json());
     IMGST.files = fl.files||[];
   }catch(e){ IMGST.err = String(e); }
+}
+
+function progHtml(){
+  const p = IMGST.prog;
+  if(!p) return "";
+  const pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
+  const cardRows = (p.cards||[]).map(c=>
+    `<span class="mono" style="font-size:11px;margin-right:14px;color:${c.running?'var(--acc)':c.pending?'var(--warn)':'var(--dim)'}">
+      卡${c.index} ${c.online? (c.running? `运行中 ${c.running}`:c.pending? `排队 ${c.pending}`:'空闲') : '离线'}</span>`).join("");
+  return `<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>出图进度</span><span class="dim">${p.batch?esc(p.batch):'暂无批次'}</span></div>
+    <div class="pb">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div class="bar" style="flex:1;margin:0"><i style="width:${pct}%"></i></div>
+        <span class="mono" style="font-size:12px">${p.done}/${p.total||0}</span>
+        ${p.failed?`<span class="badge b-warn" style="font-size:10px">失败 ${p.failed}</span>`:''}
+      </div>
+      <div>${cardRows||'<span class="dim" style="font-size:11.5px">没有启用的卡</span>'}</div>
+    </div></div>`;
+}
+
+async function pollProg(){
+  try{
+    const p = await fetch('/api/comfy/progress').then(r=>r.json());
+    IMGST.prog = p;
+    if(p.draining) IMGST.draining = new Set(p.draining);
+    if(state.tab==='img') render();
+    const busy = (p.running||0) + (p.queued||0) + (p.cards||[]).some(c=>c.running||c.pending);
+    if(busy) IMGST.progTimer = setTimeout(pollProg, 2500);
+    else IMGST.progTimer = null;
+  }catch(e){ IMGST.progTimer = null; }
+}
+
+async function confirmCards(){
+  const want = [...(IMGST.sel||[])];
+  const r = await fetch('/api/cards/confirm', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({enabled: want})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||"确认失败");
+  IMGST.enabled = new Set(j.enabled||want);
+  IMGST.draining = new Set(j.draining||[]);
+  let msg = "已启用 " + [...IMGST.enabled].map(i=>'卡'+i).join('、');
+  if((j.draining||[]).length) msg += "；卡 " + j.draining.join('、') + " 当前任务结束后关闭";
+  else if((j.stopped||[]).length) msg += "；已关闭 " + j.stopped.map(i=>'卡'+i).join('、');
+  toast(msg);
+  pollProg();
+  render();
 }
 
 function cardState(c){
@@ -1139,6 +1194,7 @@ async function runImgBatch(){
   IMGST.draft = {};
   toast("已提交批次 " + j.batch);
   pollImgJobs();
+  if(!IMGST.progTimer) pollProg();
 }
 
 async function pollImgJobs(){
@@ -1182,6 +1238,7 @@ document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeZoom(); })
 
 function sImg(){
   if(!IMGST.items && !IMGST.err){ loadImg().then(()=>{ if(state.tab==='img') render(); }); }
+  if(!IMGST.progTimer) pollProg();
   const items = IMGST.items || [];
   const cards = IMGST.cards || [];
   const sel = IMGST.sel || new Set();
@@ -1200,6 +1257,8 @@ function sImg(){
       <i class="dot" style="background:${color}"></i>
       <b style="font-size:12.5px">卡 ${c.index}</b>
       <span class="dim" style="font-size:11px">${label}${off?'':` · ${c.usedPct}% · ${c.vramFreeGB}G`}</span>
+      ${(IMGST.draining&&IMGST.draining.has(c.index))?'<span class="badge b-warn" style="font-size:9.5px">待关闭</span>'
+        :(IMGST.enabled&&IMGST.enabled.has(c.index))?'<span class="badge b-ok" style="font-size:9.5px">已启用</span>':''}
     </div>`;
   }).join("") : `<span class="dim" style="font-size:12px">没有可用实例</span>`;
 
@@ -1256,6 +1315,7 @@ function sImg(){
   }).join("");
 
   return `
+  ${progHtml()}
   <div class="panel" style="margin-bottom:14px">
     <div class="ph"><span>资产项</span><span class="dim">${items.length} 项 · 提示词就绪 ${items.filter(i=>i.prompt).length} 项</span></div>
     <div class="pb">
@@ -1299,6 +1359,7 @@ function sImg(){
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="resetCards()">恢复默认</button>
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="selectAllFree()">全选可用</button>
+        <button class="btn acc" style="font-size:11.5px;padding:4px 12px" onclick="confirmCards()">确认</button>
         <span class="dim" style="font-size:11.5px">已选 ${sel.size} 张 · 灰卡勾选后，提交批次时自动启动实例</span>
       </div>
     </div>

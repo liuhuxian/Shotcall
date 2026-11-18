@@ -67,6 +67,23 @@ def probe() -> list:
     return out
 
 
+def queue_of(port: int) -> dict:
+    """返回 {running: 数量, pending: 数量, promptId: 当前任务}"""
+    try:
+        q = _get(port, "/queue", timeout=1.5)
+    except Exception:
+        return {"running": 0, "pending": 0, "promptId": None}
+    run = q.get("queue_running") or []
+    pend = q.get("queue_pending") or []
+    pid = None
+    if run:
+        try:
+            pid = run[0][1] if isinstance(run[0], (list, tuple)) and len(run[0]) > 1 else None
+        except Exception:
+            pid = None
+    return {"running": len(run), "pending": len(pend), "promptId": pid}
+
+
 def is_night(now=None) -> bool:
     """21:00–09:00 为夜间时段（本机时区）。"""
     now = now or time.localtime()
