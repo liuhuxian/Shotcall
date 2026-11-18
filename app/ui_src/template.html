@@ -777,10 +777,10 @@ function sR1a(){
   if(!IMGST.files){ loadImg().then(()=>{ if(state.tab==='r1a') render(); }); }
   if(!D.assets || (!D.assets.people.length && !D.assets.places.length)) return emptyPanel("r1a");
   const people = D.assets.people.map(p=>{
-    const isChen = p.name==="陈铭", isQin = p.name==="秦淮";
-    const img = isChen?IMG.chen:isQin?IMG.qin:"";
+    const img = p.imageExists ? ("/assetimg?p=" + encodeURIComponent(p.image)) : "";
     return `<div class="card" style="padding:12px">
-      ${img?`<img src="${img}" style="width:100%;border-radius:7px;border:1px solid var(--line);display:block">`
+      ${img?`<img src="${img}" onclick="openZoom('${img}')" title="点击放大"
+             style="width:100%;border-radius:7px;border:1px solid var(--line);display:block;cursor:zoom-in">`
            :`<div style="height:150px;border-radius:7px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center" class="dim">尚无参考图</div>`}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px">
         <b>${esc(p.name)}</b>

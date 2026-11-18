@@ -855,6 +855,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
             self._serve_file(f, "video/mp4")
+        elif path == "/assetimg":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            f = resolve_asset(q.get("p", [""])[0])
+            if not f:
+                self._send(404, b'{"error":"no asset"}', "application/json; charset=utf-8")
+                return
+            self._send(200, f.read_bytes(), "image/png" if f.suffix.lower() == ".png" else "image/jpeg")
         elif path == "/assetthumb":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             f = resolve_asset(q.get("p", [""])[0])
