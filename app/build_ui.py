@@ -16,9 +16,11 @@ TPL = ROOT / "ui_src" / "template.html"
 OUT = ROOT / "ui" / "index.html"
 
 BOOT = """let D=null, IMG={}, S=null;
-const BOOT=async()=>{
-  const r=await fetch('/api/data'); const j=await r.json();
+const loadEp=async(ep)=>{
+  const r=await fetch('/api/data'+(ep?('?ep='+encodeURIComponent(ep)):''));
+  const j=await r.json();
   D=j.data; IMG=j.images||{}; S=D.stats;
+  state.ep = D.episode;
   state.scene = (D.scenes[0]||{}).id || null;
   state.shot = ((D.shots.find(x=>x.motion)||D.shots[0])||{}).id || null;
   state.verdicts={};
@@ -26,7 +28,8 @@ const BOOT=async()=>{
     if(d.unit) state.verdicts[d.unit.type+"::"+d.unit.id]=d.verdict;
   });
   render();
-};"""
+};
+const BOOT=async()=>{ await loadEp(); };"""
 
 PICK = r'''/* ---------- 挑片（真实候选） ---------- */
 const SELBADGE = st => st==="adopt"?'<span class="badge b-ok">采用</span>'

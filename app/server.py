@@ -31,14 +31,14 @@ PROJECT = Path(os.environ.get("WORKBENCH_PROJECT") or (Path.home() / "short_v/�
 EPISODE = "EP002"
 
 _lock = threading.Lock()
-_cache = {"data": None, "ts": 0.0, "sig": None}
+_cache = {"by": {}, "sig": None}
 
 WATCHED = ["剧本.md", "分镜.md", "视频提示词.md", "视觉设定.md"]
 
 
-def file_sig() -> str:
+def file_sig(episode: str | None = None) -> str:
     """四个创作文件的 mtime+size 指纹，用于缓存失效。"""
-    ep = PROJECT / "剧集" / EPISODE
+    ep = PROJECT / "剧集" / (episode or EPISODE)
     parts = []
     for name in WATCHED:
         f = ep / name
@@ -425,17 +425,27 @@ def export_markdown() -> str:
 
 def payload(ep: str = EPISODE, refresh: bool = False) -> dict:
     with _lock:
-        sig = file_sig()
-        if refresh or _cache["data"] is None or _cache.get("sig") != sig:
+        sig = file_sig(ep)
+        if _cache.get("sig") != sig:
+            _cache["by"].clear()
+            _cache["sig"] = sig
+        if ep not in _cache["by"]:
             t0 = time.time()
             out = dataset.load(PROJECT, ep)
             out["meta"] = {"builtAt": time.strftime("%Y-%m-%d %H:%M:%S"),
                            "buildSeconds": round(time.time() - t0, 2),
                            "project": str(PROJECT)}
-            _cache["data"] = out
-            _cache["ts"] = time.time()
-            _cache["sig"] = sig
-        return _cache["data"]
+            _cache["by"][ep] = out
+        return _cache["by"][ep]
+
+
+def current_episode() -> str:
+    """当前集：最后一个已写出剧本的集；一集都没有时取第一集。"""
+    eps = payload()["data"]["episodes"]
+    if not eps:
+        return EPISODE
+    with_script = [e["id"] for e in eps if (PROJECT / "剧集" / e["id"] / "剧本.md").exists()]
+    return with_script[-1] if with_script else eps[0]["id"]
 
 
 def _annotate_stale(records, files):
@@ -450,10 +460,12 @@ def _annotate_stale(records, files):
     return out
 
 
-def response() -> dict:
+def response(ep: str | None = None) -> dict:
     """解析数据可缓存；决策每次现读，保证刚落账立刻可见。"""
-    base = payload()
+    ep = ep or current_episode()
+    base = payload(ep)
     data = dict(base["data"])
+    data["currentEpisode"] = current_episode()
     files = data.get("files", {})
     data["decisions"] = _annotate_stale(store.latest(PROJECT), files)
     data["batches"] = list_batches()
@@ -511,6 +523,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        self.query_path = self.path
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             if UI.exists():
@@ -524,7 +537,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, STATUS_PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif path == "/api/data":
-            body = json.dumps(response(), ensure_ascii=False).encode("utf-8")
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            body = json.dumps(response(q.get("ep", [None])[0]), ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/execute":
             self._send(200, json.dumps(exec_status(), ensure_ascii=False).encode("utf-8"),

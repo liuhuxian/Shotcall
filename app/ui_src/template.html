@@ -1383,7 +1383,13 @@ function sEpSel(){
       <span class="s">${e.hasScript?'制作中':'仅大纲'}</span>
     </div>`).join("")}</div>`:''}`;
 }
-function pickEp(id){ state.ep=id; state.epOpen=false; render(); }
+function pickEp(id){
+  state.epOpen = false;
+  state.ep = id;
+  render();
+  // 真应用里 loadEp 会按集重新拉数据；模板单独打开时没有则只切高亮
+  if (typeof loadEp === "function") return loadEp(id);
+}
 
 function sEmptyEp(){
   const e = D.episodes.find(x=>x.id===state.ep);
@@ -1424,8 +1430,8 @@ function render(){
     html = sWorkflow();
   } else if (D && D.empty) {
     html = emptyPanel(state.tab);
-  } else if (state.ep !== "EP002") {
-    html = sEmptyEp();
+  } else if (D && D.episode && state.ep !== D.episode) {
+    html = emptyPanel(state.tab);
   } else {
     html = (map[state.tab] || sOverview)();
   }
