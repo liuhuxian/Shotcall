@@ -740,7 +740,41 @@ function setU(type,id,v){
 }
 
 /* ---------- 审核一 · 资产 ---------- */
+function galleryHtml(){
+  const files = IMGST.files || [];
+  if(!files.length) return "";
+  const groups = {};
+  files.forEach(f=>{ (groups[f.asset] = groups[f.asset] || []).push(f); });
+  const blocks = Object.entries(groups).map(([asset, list])=>{
+    const adopted = (IMGST.adopted||{})[asset];
+    const label = asset.replace(/^IMG-\d+-/, "");
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <b style="font-size:12.5px">${esc(label)}</b>
+        <span class="mono dim" style="font-size:10.5px">${esc(asset)}</span>
+        <span class="dim" style="font-size:11px">${list.length} 张</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+        ${list.map(f=>{
+          const on = adopted && adopted.file === f.file;
+          return `<div style="border:1px solid ${on?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
+            <img src="/api/img/file?p=${encodeURIComponent(f.file)}" style="width:100%;display:block;cursor:zoom-in"
+                 onclick="openZoom('/api/img/file?p=${encodeURIComponent(f.file)}')">
+            <div style="padding:7px 9px;display:flex;align-items:center;gap:6px">
+              <span class="mono dim" style="font-size:10px;flex:1">${esc((f.file||"").split("/").pop())}</span>
+              ${on?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
+                 :`<button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="adoptImg('${esc(asset)}','${esc(f.file)}')">采用</button>`}
+            </div></div>`;
+        }).join("")}
+      </div></div>`;
+  }).join("");
+  return `<div class="panel" style="margin-top:14px">
+    <div class="ph"><span>已生成候选图</span><span class="dim">点图放大，滚轮继续缩放；采用后进入设定</span></div>
+    <div class="pb">${blocks}</div></div>`;
+}
+
 function sR1a(){
+  if(!IMGST.files){ loadImg().then(()=>{ if(state.tab==='r1a') render(); }); }
   if(!D.assets || (!D.assets.people.length && !D.assets.places.length)) return emptyPanel("r1a");
   const people = D.assets.people.map(p=>{
     const isChen = p.name==="陈铭", isQin = p.name==="秦淮";
@@ -783,6 +817,7 @@ function sR1a(){
 
   return `
   <div class="panel" style="margin-bottom:14px">
+  ${galleryHtml()}
     <div class="ph"><span>人物资产 · 身份 → 造型 → 状态 <span class="badge b-acc">全剧共享</span></span><span class="dim">换装与受伤状态必须单独判定</span></div>
     <div class="pb" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">${people}</div>
   </div>
@@ -1251,24 +1286,6 @@ function sImg(){
         </div>`:'<div class="dim">候选单是空的——在上面用「候选 − ＋」加数，或「全部候选加」批量设置</div>'}
     </div>
   </div>
-
-  ${(IMGST.files||[]).length?`<div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>已生成候选</span><span class="dim">点图放大，可滚轮缩放</span></div>
-    <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">
-      ${(IMGST.files||[]).map(f=>{
-        const adopted = (IMGST.adopted||{})[f.asset];
-        const isOn = adopted && adopted.file === f.file;
-        return `<div style="border:1px solid ${isOn?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
-          <img src="/api/img/file?p=${encodeURIComponent(f.file)}" style="width:100%;display:block;cursor:zoom-in"
-               onclick="openZoom('/api/img/file?p=${encodeURIComponent(f.file)}')">
-          <div style="padding:7px 9px;display:flex;align-items:center;gap:6px">
-            <span class="mono dim" style="font-size:10.5px;flex:1">${esc(f.asset)}</span>
-            ${isOn?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
-                 :`<button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="adoptImg('${esc(f.asset)}','${esc(f.file)}')">采用</button>`}
-          </div></div>`;
-      }).join("")}
-    </div>
-  </div>`:""}
 
   ${jobs.length?`<div class="panel">
     <div class="ph"><span>出图进度</span><span class="dim">本会话的任务</span></div>
