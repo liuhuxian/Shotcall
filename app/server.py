@@ -720,6 +720,21 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps({"episode": ep, "exists": f.exists(), "items": items},
                               ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/files":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            ep = q.get("ep", [current_episode()])[0]
+            root = PROJECT / "剧集" / ep / "制作成果" / "图片候选"
+            out = []
+            if root.is_dir():
+                for sub in sorted(root.iterdir()):
+                    if not sub.is_dir():
+                        continue
+                    for f in sorted(sub.glob("*.png")) + sorted(sub.glob("*.jpg")):
+                        out.append({"asset": sub.name,
+                                    "file": str(f.relative_to(PROJECT)),
+                                    "kb": max(1, f.stat().st_size // 1024)})
+            body = json.dumps({"files": out}, ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/img/adopted":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             ep = q.get("ep", [current_episode()])[0]

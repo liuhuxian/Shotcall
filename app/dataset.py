@@ -100,8 +100,8 @@ def load(project: Path, episode: str = "EP002", with_images: bool = True) -> dic
         sc["broken"] = sum(len(x["broken"]) for x in lst)
         sc["src"] = sc.get("srcRange")
 
-    for pl in d["assets"].get("places", []):
-        pl["imageExists"] = bool(pl.get("image")) and (project / pl["image"]).exists()
+    for it in d["assets"].get("people", []) + d["assets"].get("places", []):
+        it["imageExists"] = bool(it.get("image")) and (project / it["image"]).exists()
 
     ref_paths = {}
     for key in ("REF-CHEN", "REF-QIN", "REF-OFFICE"):

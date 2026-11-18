@@ -750,7 +750,9 @@ function sR1a(){
            :`<div style="height:150px;border-radius:7px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center" class="dim">尚无参考图</div>`}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px">
         <b>${esc(p.name)}</b>
-        ${isChen?`<span class="badge b-warn">已采用 · 引用不一致</span>`:isQin?`<span class="badge b-ok">已定</span>`:`<span class="badge b-mut">未定</span>`}
+        ${p.imageExists?`<span class="badge b-ok">有参考图</span>`
+          :p.image?`<span class="badge b-warn">引用缺失</span>`
+          :`<span class="badge b-mut">无参考图</span>`}
       </div>
       <div class="dim" style="font-size:11.5px;margin-top:6px;line-height:1.7">
         ${p.bullets.slice(0,2).map(b=>esc(b.v.slice(0,44))+(b.v.length>44?"…":"")).join("<br>")}
@@ -1019,6 +1021,8 @@ async function loadImg(){
     IMGST.jobs = j.jobs||[];
     const ad = await fetch('/api/img/adopted?ep='+encodeURIComponent(ep)).then(r=>r.json());
     IMGST.adopted = ad.adopted||{};
+    const fl = await fetch('/api/img/files?ep='+encodeURIComponent(ep)).then(r=>r.json());
+    IMGST.files = fl.files||[];
   }catch(e){ IMGST.err = String(e); }
 }
 
@@ -1248,8 +1252,26 @@ function sImg(){
     </div>
   </div>
 
+  ${(IMGST.files||[]).length?`<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>已生成候选</span><span class="dim">点图放大，可滚轮缩放</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">
+      ${(IMGST.files||[]).map(f=>{
+        const adopted = (IMGST.adopted||{})[f.asset];
+        const isOn = adopted && adopted.file === f.file;
+        return `<div style="border:1px solid ${isOn?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
+          <img src="/api/img/file?p=${encodeURIComponent(f.file)}" style="width:100%;display:block;cursor:zoom-in"
+               onclick="openZoom('/api/img/file?p=${encodeURIComponent(f.file)}')">
+          <div style="padding:7px 9px;display:flex;align-items:center;gap:6px">
+            <span class="mono dim" style="font-size:10.5px;flex:1">${esc(f.asset)}</span>
+            ${isOn?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
+                 :`<button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="adoptImg('${esc(f.asset)}','${esc(f.file)}')">采用</button>`}
+          </div></div>`;
+      }).join("")}
+    </div>
+  </div>`:""}
+
   ${jobs.length?`<div class="panel">
-    <div class="ph"><span>出图进度</span><span class="dim">点缩略图可放大</span></div>
+    <div class="ph"><span>出图进度</span><span class="dim">本会话的任务</span></div>
     <div class="pb">${jobRows}</div>
   </div>`:""}
   <div class="panel" style="margin-top:14px;margin-bottom:14px">

@@ -133,17 +133,32 @@ def parse_visual(text: str):
             item = {"name": hm.group(2), "bullets": []}
             out[{"人物": "people", "地点": "places", "道具": "props"}[hm.group(1)]].append(item)
             continue
-        bm = re.match(r"^- ([^：]+)：(.*)$", line)
+        bm = re.match(r"^\s*- ([^：]+)：(.*)$", line)
         if bm and item:
             item["bullets"].append({"k": bm.group(1), "v": bm.group(2)})
-    # 地点：只有明确写了指向现存图片的路径，才算有参考图
-    for it in out["places"]:
+    # 全文出现的资产图片路径（视觉设定常在开头列出定妆照，不挂在人物小节下）
+    all_paths = [m.lstrip("/") for m in re.findall(
+        r"[\u4e00-\u9fa5A-Za-z0-9_/\-]*资产/[^\s、，。；（）()`]+?\.(?:png|jpg|jpeg|webp)", text)]
+
+    def _guess(name):
+        key = (name or "").split("（")[0].strip()[:2]
+        if not key:
+            return None
+        for path in all_paths:
+            if key in path.rsplit("/", 1)[-1]:
+                return path
+        return None
+
+    # 人物 / 地点：只有明确写了指向现存图片的路径，才算有参考图
+    for it in out["people"] + out["places"]:
         it["image"] = None
         for b in it["bullets"]:
             m = re.search(r"[\u4e00-\u9fa5A-Za-z0-9_/\-]*资产/[^\s、，。；（）()]+?\.(?:png|jpg|jpeg|webp)", b["v"])
             if m:
                 it["image"] = m.group(0).lstrip("/")
                 break
+        if not it["image"]:
+            it["image"] = _guess(it.get("name", ""))
     return out
 
 
