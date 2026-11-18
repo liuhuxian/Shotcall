@@ -234,7 +234,7 @@ function verdictBadge(v){
 
 function nav(){
   const items=[
-    ["overview","总览"],["workflow","工作流"],["img","出图 · 资产"],
+    ["overview","总览"],["workflow","工作流"],["dev","开发"],["img","出图 · 资产"],
     ["r1","审核一 · 剧本"],["r1a","审核一 · 资产"],
     ["r2","审核二 · 分镜"],["img2","出图 · 分镜"],["shot","单镜详情"],["checks","检查"],["pick","挑片"],["batch","视频生成"],["export","修改单"]
   ];
@@ -246,7 +246,7 @@ function nav(){
   }).join("");
 }
 
-const TAB_LABEL = {overview:"总览", workflow:"工作流", r1:"审核一 · 剧本", r1a:"审核一 · 资产",
+const TAB_LABEL = {overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核一 · 资产",
   r2:"审核二 · 分镜", shot:"单镜详情", checks:"检查", pick:"挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -265,6 +265,60 @@ function emptyPanel(key){
       </div>
       <div class="dim mono" style="font-size:11px;margin-top:16px">当前页面：${esc(key)}</div>
     </div></div>`;
+}
+
+/* ---------- 开发（原著拆解 · 人物圣经 · 分集大纲） ---------- */
+function sDev(){
+  const dv = D.dev || {};
+  const sa = dv.sourceAnalysis || {files:[]};
+  const bb = dv.bible || {characters:[], totalEvidence:0};
+  const eps = D.episodes||[];
+
+  const files = (sa.files||[]).map(f=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #1b2028">
+    <span style="font-size:12.5px">${esc(f.name)}</span><span class="dim mono" style="font-size:11px">${f.kb} KB</span></div>`).join("");
+
+  const chars = (bb.characters||[]).map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1b2028">
+    <span style="min-width:56px;font-size:13px">${esc(c.name)}</span>
+    <span class="dim" style="flex:1;font-size:11.5px">${esc(c.desc||"")}</span>
+    <span class="badge b-acc">${c.evidence} 条</span></div>`).join("");
+
+  const rows = eps.map(e=>`<tr style="cursor:pointer" onclick="pickEp('${e.id}')">
+    <td class="mono" style="color:${e.id===state.ep?'var(--acc)':'var(--dim)'}">${e.id}</td>
+    <td>${esc(e.title)}</td>
+    <td class="dim" style="text-align:center">${e.chapters?e.chapters[0]+"–"+e.chapters[1]:"—"}</td>
+    <td class="dim mono" style="text-align:center">${mmss(e.target)}</td></tr>`).join("");
+
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">拆解文件</div><div class="kpi">${(sa.files||[]).length}<small>份</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">人物分册</div><div class="kpi">${(bb.characters||[]).length}<small>位</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">原文证据</div><div class="kpi">${bb.totalEvidence||0}<small>条</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">分集</div><div class="kpi">${eps.length}<small>集</small></div></div>
+  </div>
+
+  <div class="row" style="gap:14px;align-items:flex-start;margin-bottom:14px">
+    <div class="panel" style="width:46%">
+      <div class="ph"><span>原著拆解</span><span class="dim">项目开发/source-analysis/</span></div>
+      <div class="pb">${files || '<div class="dim">尚未拆解</div>'}</div>
+    </div>
+    <div class="panel grow">
+      <div class="ph"><span>人物圣经</span><span class="dim">novel-analyzer · 每条带原文行号</span></div>
+      <div class="pb">
+        ${chars || '<div class="dim">尚未生成人物圣经</div>'}
+        ${(bb.minor||[]).length?`<div class="dim" style="font-size:11.5px;margin-top:8px">次要人物：${(bb.minor||[]).map(esc).join("、")}</div>`:""}
+        ${bb.world?`<div class="dim" style="font-size:11.5px;margin-top:6px">世界设定：${esc(bb.world)}</div>`:""}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><span>分集大纲</span><span class="dim">${eps.length} 集 · 点击行切换集</span></div>
+    <table>
+      <thead><tr><th style="width:70px">集</th><th>集名</th>
+        <th style="width:80px;text-align:center">原著</th><th style="width:70px;text-align:center">目标</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="dim">尚无分集大纲</td></tr>'}</tbody>
+    </table>
+  </div>`;
 }
 
 /* ---------- 工作流 ---------- */
@@ -1409,13 +1463,15 @@ function render(){
   document.getElementById("epsel").innerHTML = sEpSel();
   document.getElementById("bannerStat").textContent =
     `${S.scenes} 场 · ${S.shots} 镜 · ${(S.totalDur/60).toFixed(1)} 分 · 断链 ${S.brokenOcc} 处`;
-  const map={overview:sOverview,workflow:sWorkflow,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
+  const map={overview:sOverview,workflow:sWorkflow,dev:sDev,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
   const epScoped = ["r1","r2","shot","pick","batch","img","export","checks","workflow"];
   let html;
   if (state.tab === "overview") {
     html = sOverview();
   } else if (state.tab === "workflow") {
     html = sWorkflow();
+  } else if (state.tab === "dev") {
+    html = sDev();
   } else if (D && D.empty) {
     html = emptyPanel(state.tab);
   } else if (D && D.episode && state.ep !== D.episode) {

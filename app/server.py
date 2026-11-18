@@ -409,6 +409,59 @@ def workflow_all() -> list:
     return [workflow_of(e["id"], dec, cands, sels) for e in payload()["data"]["episodes"]]
 
 
+def dev_summary() -> dict:
+    """原著拆解 / 人物圣经 / 分集大纲 的结构化摘要（只读）。"""
+    sa = PROJECT / "项目开发/source-analysis"
+    bible = sa / "character-bible"
+
+    files = []
+    if sa.exists():
+        for f in sorted(sa.glob("*.md")):
+            files.append({"name": f.name, "kb": max(1, f.stat().st_size // 1024)})
+
+    characters, total_ev = [], 0
+    meta = {}
+    mf = bible / "metadata.json"
+    if mf.exists():
+        try:
+            meta = json.loads(mf.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+    for item in meta.get("main_characters", []):
+        name = item.split("（")[0].strip()
+        ev = 0
+        ef = bible / "profiles" / "_evidence" / f"{name}.json"
+        if ef.exists():
+            try:
+                ev = int(json.loads(ef.read_text(encoding="utf-8")).get("evidence_count") or 0)
+            except Exception:
+                ev = 0
+        total_ev += ev
+        characters.append({
+            "name": name,
+            "desc": item[len(name):].strip("（）"),
+            "evidence": ev,
+            "profile": f"profiles/profile_{name}.md",
+        })
+
+    return {
+        "sourceAnalysis": {
+            "exists": sa.exists(),
+            "files": files,
+            "chapters": meta.get("metadata", {}).get("total_lines"),
+            "chars": meta.get("metadata", {}).get("total_chars_no_newline"),
+        },
+        "bible": {
+            "exists": (bible / "人物圣经.md").exists(),
+            "characters": characters,
+            "totalEvidence": total_ev,
+            "minor": meta.get("minor_characters", []),
+            "world": meta.get("world_setting", ""),
+            "sha256": meta.get("source_sha256", ""),
+        },
+    }
+
+
 def exec_status() -> dict:
     return dict(EXEC, log=EXEC["log"][-12:])
 
@@ -534,6 +587,7 @@ def response(ep: str | None = None) -> dict:
                     pass
     data["runs"] = runs
     data["workflow"] = workflow_all()
+    data["dev"] = dev_summary()
     data["selections"] = list(store.latest_selections(PROJECT).values())
     meta = dict(base["meta"])
     meta["decisions"] = store.summary(PROJECT)
