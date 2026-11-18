@@ -1022,6 +1022,8 @@ async function loadImg(){
     if(!IMGST._init){ IMGST._init = true; IMGST.sel = new Set(IMGST.defCards); }
     const j = await fetch('/api/img/jobs').then(r=>r.json());
     IMGST.jobs = j.jobs||[];
+    const ad = await fetch('/api/img/adopted?ep='+encodeURIComponent(ep)).then(r=>r.json());
+    IMGST.adopted = ad.adopted||{};
   }catch(e){ IMGST.err = String(e); }
 }
 
@@ -1085,9 +1087,8 @@ function setDraft(id, v){
 }
 
 function ADOPTED_OF(it){
-  const nm = (it.name||"");
-  for(const k in ADOPTED){ if(nm.indexOf(k)>=0) return ADOPTED[k]; }
-  return null;
+  const rec = (IMGST.adopted || {})[it.id];
+  return rec ? rec.file : null;
 }
 
 async function runImgBatch(){
@@ -1214,6 +1215,8 @@ function sImg(){
       ${j.file?`<img src="/api/img/file?p=${encodeURIComponent(j.file)}" onclick="openZoom('/api/img/file?p=${encodeURIComponent(j.file)}')"
         style="width:64px;height:36px;object-fit:cover;border-radius:4px;cursor:zoom-in">`:'<div style="width:64px;height:36px"></div>'}
       <span class="mono dim" style="font-size:11px;flex:1">${esc(j.asset)} · 卡${j.card} · ${j.status}</span>
+      ${j.status==='done'&&j.file?`<button class="btn ghost" style="font-size:11px;padding:2px 8px"
+        onclick="adoptImg('${esc(j.asset)}','${esc(j.file)}')">采用</button>`:''}
       <span class="dim" style="font-size:11px">${j.seconds?j.seconds+'s':''} ${j.error?esc(j.error.slice(0,40)):''}</span>
     </div>`;
   }).join("");
@@ -1268,6 +1271,16 @@ function sImg(){
   </div>
 
   <div class="dim" style="font-size:12px;margin-top:12px">对应工作流第 09 步「出图① 资产图」。分镜图在「出图 · 分镜」页。</div>`;
+}
+
+async function adoptImg(asset, file){
+  const r = await fetch('/api/img/adopt', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ep:D.episode, asset, file})});
+  if(!r.ok) return toast("采用失败");
+  IMGST.adopted = IMGST.adopted||{}; IMGST.adopted[asset] = {asset, file};
+  delete IMGST.draft[asset];
+  toast("已采用 " + asset);
+  render();
 }
 
 function copyText(btn){

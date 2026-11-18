@@ -720,6 +720,21 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps({"episode": ep, "exists": f.exists(), "items": items},
                               ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/adopted":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            ep = q.get("ep", [current_episode()])[0]
+            f = store.state_dir(PROJECT) / "图片采用.jsonl"
+            rows = {}
+            if f.exists():
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    if r.get("ep") == ep:
+                        rows[r["asset"]] = r
+            body = json.dumps({"adopted": rows}, ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/img/jobs":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             body = json.dumps({"jobs": imgjobs.list_jobs(q.get("batch", [None])[0])},
@@ -845,6 +860,21 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/img/adopt":
+            try:
+                body = self._json_body()
+                ep = body.get("ep") or current_episode()
+                rec = {"ep": ep, "asset": body["asset"], "file": body["file"],
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                f = store.state_dir(PROJECT) / "图片采用.jsonl"
+                with open(f, "a", encoding="utf-8") as out:
+                    out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/img/preflight":
