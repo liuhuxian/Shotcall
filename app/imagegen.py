@@ -13,8 +13,8 @@ UNET = "minimax_h3_image_pruned_bf16.safetensors"
 CLIP = "qwen3vl_32b_minimax_h3_bf16.safetensors"
 VAE = "minimax_h3_image_vae_fp16.safetensors"
 
-DEFAULT_W, DEFAULT_H = 2048, 1152      # 16:9 · 4MP 区间，均为 32 倍数
-DEFAULT_STEPS = 6
+DEFAULT_W, DEFAULT_H = 2656, 1504      # 16:9 · 3.99 MP，均为 32 倍数
+DEFAULT_STEPS = 8
 
 
 def _post(port, path, payload, timeout=60):

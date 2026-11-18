@@ -100,8 +100,28 @@ def load(project: Path, episode: str = "EP002", with_images: bool = True) -> dic
         sc["broken"] = sum(len(x["broken"]) for x in lst)
         sc["src"] = sc.get("srcRange")
 
+    def _fallback(name):
+        """文档里的路径失效时，在资产目录里按名字找一个现存的图。"""
+        key = (name or "").split("（")[0].strip()[:2]
+        if not key or not (project / "资产").exists():
+            return None
+        cands = [f for f in (project / "资产").rglob("*.png")
+                 if key in f.name and "废图" not in str(f) and "旧版本" not in str(f)]
+        if not cands:
+            return None
+        for tag in ("定妆照", "6视图", "5视图"):
+            for f in cands:
+                if tag in f.name:
+                    return f
+        return cands[0]
+
     for it in d["assets"].get("people", []) + d["assets"].get("places", []):
         it["imageExists"] = bool(it.get("image")) and (project / it["image"]).exists()
+        if not it["imageExists"]:
+            alt = _fallback(it.get("name"))
+            if alt is not None:
+                it["image"] = str(alt.relative_to(project))
+                it["imageExists"] = True
 
     ref_paths = {}
     for key in ("REF-CHEN", "REF-QIN", "REF-OFFICE"):

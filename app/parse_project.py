@@ -140,6 +140,8 @@ def parse_visual(text: str):
     all_paths = [m.lstrip("/") for m in re.findall(
         r"[\u4e00-\u9fa5A-Za-z0-9_/\-]*资产/[^\s、，。；（）()`]+?\.(?:png|jpg|jpeg|webp)", text)]
 
+    all_paths = [p for p in all_paths if "废图" not in p and "旧版本" not in p]
+
     def _guess(name):
         key = (name or "").split("（")[0].strip()[:2]
         if not key:
@@ -148,7 +150,7 @@ def parse_visual(text: str):
         if not cands:
             return None
         # 优先顺序：6 视图 > 5 视图 > 其他（定妆照/表情参考）
-        for tag in ("6视图", "5视图"):
+        for tag in ("定妆照", "6视图", "5视图"):
             for p in cands:
                 if tag in p:
                     return p
