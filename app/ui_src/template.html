@@ -1126,7 +1126,7 @@ async function cancelJob(id){
   const r = await fetch('/api/img/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ids:[id]})});
   if(r.ok) toast("已取消 1 项");
-  pollProg();
+  if(await pollProgOnce()) render();
 }
 async function cancelAllQueued(){
   const batch = IMGST.prog && IMGST.prog.batch;
@@ -1135,31 +1135,29 @@ async function cancelAllQueued(){
     body: JSON.stringify({batch})});
   const j = await r.json();
   toast("已取消 " + (j.count||0) + " 项排队");
-  pollProg();
+  if(await pollProgOnce()) render();
 }
 
-async function pollProg(){
+async function pollProgOnce(){
   try{
     const p = await fetch('/api/comfy/progress').then(r=>r.json());
+    const j = await fetch('/api/img/jobs').then(r=>r.json());
+    const sig = JSON.stringify([p, (j.jobs||[]).map(x=>[x.id,x.status,x.startedAt])]);
+    const changed = sig !== IMGST.lastSig;
+    IMGST.lastSig = sig;
     IMGST.prog = p;
-    try{
-      const j = await fetch('/api/img/jobs').then(r=>r.json());
-      IMGST.jobs = j.jobs||[];
-      IMGST.seenFailed = IMGST.seenFailed || new Set();
-      IMGST.notices = IMGST.notices || [];
-      (IMGST.jobs||[]).forEach(x=>{
-        if(x.status==='failed' && !IMGST.seenFailed.has(x.id)){
-          IMGST.seenFailed.add(x.id);
-          IMGST.notices.unshift({id:x.id, text:(x.dir||x.asset)+" · "+(x.error||"未知错误").slice(0,90)});
-        }
-      });
-    }catch(e){}
-    if(p.draining) IMGST.draining = new Set(p.draining);
-    if(state.tab==='img') render();
-    const busy = (p.total - p.done - p.failed) > 0 || (p.cards||[]).some(c=>c.running||c.pending);
-    if(busy) IMGST.progTimer = setTimeout(pollProg, 2500);
-    else IMGST.progTimer = null;
-  }catch(e){ IMGST.progTimer = null; }
+    IMGST.jobs = j.jobs||[];
+    IMGST.seenFailed = IMGST.seenFailed || new Set();
+    IMGST.notices = IMGST.notices || [];
+    (IMGST.jobs||[]).forEach(x=>{
+      if(x.status==='failed' && !IMGST.seenFailed.has(x.id)){
+        IMGST.seenFailed.add(x.id);
+        IMGST.notices.unshift({id:x.id, text:(x.dir||x.asset)+" · "+(x.error||"未知错误").slice(0,90)});
+        changed = true;
+      }
+    });
+    return changed;
+  }catch(e){ return false; }
 }
 
 async function confirmCards(){
@@ -1174,7 +1172,7 @@ async function confirmCards(){
   if((j.draining||[]).length) msg += "；卡 " + j.draining.join('、') + " 当前任务结束后关闭";
   else if((j.stopped||[]).length) msg += "；已关闭 " + j.stopped.map(i=>'卡'+i).join('、');
   toast(msg);
-  pollProg();
+  await pollProgOnce();
   render();
 }
 
@@ -1257,8 +1255,8 @@ async function runImgBatch(){
   if(!r.ok){ toast(j.error + ": " + (j.detail||[]).join("；")); return; }
   IMGST.draft = {};
   toast("已提交批次 " + j.batch);
-  pollImgJobs();
-  if(!IMGST.progTimer) pollProg();
+  await pollProgOnce();
+  render();
 }
 
 async function pollImgJobs(){
@@ -1302,7 +1300,6 @@ document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeZoom(); })
 
 function sImg(){
   if(!IMGST.items && !IMGST.err){ loadImg().then(()=>{ if(state.tab==='img') render(); }); }
-  if(!IMGST.progTimer) pollProg();
   const items = IMGST.items || [];
   const cards = IMGST.cards || [];
   const sel = IMGST.sel || new Set();
