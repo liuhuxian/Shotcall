@@ -1069,58 +1069,56 @@ async function loadImg(){
   }catch(e){ IMGST.err = String(e); }
 }
 
+function noticesHtml(){
+  const list = IMGST.notices || [];
+  if(!list.length) return "";
+  return list.map(n=>`<div class="alert" style="margin-bottom:10px;border-color:#5c2323;background:#1d1212;cursor:default">
+    <div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+    <div style="flex:1"><b>生成失败</b>
+      <div class="dim" style="font-size:12px">${esc(n.text)}</div></div>
+    <button class="btn ghost" style="font-size:11px;padding:2px 9px;align-self:flex-start" onclick="dismissNotice('${esc(n.id)}')">✕</button>
+  </div>`).join("");
+}
+
+function dismissNotice(id){
+  IMGST.notices = (IMGST.notices||[]).filter(n=>n.id!==id);
+  render();
+}
+
 function progHtml(){
   const p = IMGST.prog;
   if(!p) return "";
   const jobs = IMGST.jobs || [];
   const active = jobs.filter(j=>['starting','running'].includes(j.status));
   const waiting = jobs.filter(j=>j.status==='queued');
-  const failed = jobs.filter(j=>j.status==='failed');
-  const cancelled = jobs.filter(j=>j.status==='cancelled');
+  if(!active.length && !waiting.length) return noticesHtml();
   const now = Date.now()/1000;
-  const pct = p.total ? Math.round((p.done + p.failed + (p.cancelled||0)) / p.total * 100) : 0;
 
   const row = (j, idx) => {
     const secs = j.startedAt ? Math.round(now - j.startedAt) : null;
     const st = j.status;
     const badge = st==='running' ? '<span class="badge b-acc" style="font-size:10px">生成中</span>'
       : st==='starting' ? '<span class="badge b-warn" style="font-size:10px">启动中</span>'
-      : st==='failed' ? '<span class="badge b-bad" style="font-size:10px">失败</span>'
-      : st==='cancelled' ? '<span class="badge b-mut" style="font-size:10px">已取消</span>'
       : '<span class="badge b-mut" style="font-size:10px">排队</span>';
     return `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid #1b2028">
       <span class="mono dim" style="font-size:10.5px;width:32px">${idx}</span>
       ${badge}
       <span class="mono dim" style="font-size:10.5px;width:42px">卡${j.card}</span>
       <span style="flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.dir||j.asset)}</span>
-      ${st==='failed'?`<span class="dim" style="font-size:10.5px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.error||'')}">${esc((j.error||'').slice(0,60))}</span>`:''}
       <span class="dim mono" style="font-size:11px">${secs!==null?secs+'s':''}</span>
       ${st==='queued'?`<button class="btn ghost" style="font-size:10.5px;padding:1px 8px" onclick="cancelJob('${esc(j.id)}')">取消</button>`:''}
     </div>`;
   };
 
-  return `<div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>生成队列</span><span class="dim">${p.batch?esc(p.batch):'暂无批次'}</span></div>
+  return noticesHtml() + `<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>生成队列</span><span class="dim">${p.batch?esc(p.batch):''} · ${p.done}/${p.total} 完成</span></div>
     <div class="pb">
-      ${p.total?`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-        <div class="bar" style="flex:1;margin:0"><i style="width:${pct}%"></i></div>
-        <span class="mono" style="font-size:12px">${p.done}/${p.total} 完成</span>
-        ${p.failed?`<span class="badge b-bad" style="font-size:10px">失败 ${p.failed}</span>`:''}
-        ${p.cancelled?`<span class="badge b-mut" style="font-size:10px">已取消 ${p.cancelled}</span>`:''}
-      </div>`:''}
       ${active.length?active.map((j,i)=>row(j,i+1)).join(""):'<div class="dim" style="font-size:12px;padding:4px 0">当前没有正在生成的任务</div>'}
       ${waiting.length?`<div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
           <span class="dim" style="font-size:11px">排队 ${waiting.length} 项</span>
           <button class="btn ghost" style="font-size:10.5px;padding:1px 8px" onclick="cancelAllQueued()">全部取消</button>
         </div>
         ${waiting.map((j,i)=>row(j, active.length+i+1)).join("")}`:''}
-      ${failed.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">失败 ${failed.length} 项</div>
-        ${failed.map((j,i)=>row(j, active.length+waiting.length+i+1)).join("")}`:''}
-      ${cancelled.length?`<div class="dim" style="font-size:11px;margin:10px 0 4px">已取消 ${cancelled.length} 项</div>
-        ${cancelled.map((j,i)=>row(j, active.length+waiting.length+failed.length+i+1)).join("")}`:''}
-      <div style="margin-top:10px">${(p.cards||[]).map(c=>
-        `<span class="mono" style="font-size:11px;margin-right:14px;color:${c.running?'var(--acc)':c.pending?'var(--warn)':'var(--dim)'}">
-          卡${c.index} ${c.online?(c.running?`队列 ${c.running}`:c.pending?`排队 ${c.pending}`:'空闲'):'离线'}</span>`).join("")}</div>
     </div></div>`;
 }
 
@@ -1147,6 +1145,14 @@ async function pollProg(){
     try{
       const j = await fetch('/api/img/jobs').then(r=>r.json());
       IMGST.jobs = j.jobs||[];
+      IMGST.seenFailed = IMGST.seenFailed || new Set();
+      IMGST.notices = IMGST.notices || [];
+      (IMGST.jobs||[]).forEach(x=>{
+        if(x.status==='failed' && !IMGST.seenFailed.has(x.id)){
+          IMGST.seenFailed.add(x.id);
+          IMGST.notices.unshift({id:x.id, text:(x.dir||x.asset)+" · "+(x.error||"未知错误").slice(0,90)});
+        }
+      });
     }catch(e){}
     if(p.draining) IMGST.draining = new Set(p.draining);
     if(state.tab==='img') render();
@@ -1232,8 +1238,10 @@ function setDraft(id, v){
 }
 
 function ADOPTED_OF(it){
-  const rec = (IMGST.adopted || {})[it.id];
-  return rec ? rec.file : null;
+  const ad = IMGST.adopted || {};
+  if(ad[it.id]) return ad[it.id].file;
+  const key = Object.keys(ad).find(k=>k.startsWith(it.id+"-"));
+  return key ? ad[key].file : null;
 }
 
 async function runImgBatch(){
@@ -1324,10 +1332,14 @@ function sImg(){
     </div>`;
   }).join("") : `<span class="dim" style="font-size:12px">没有可用实例</span>`;
 
+  const genCount = {};
+  (IMGST.files||[]).forEach(f=>{ genCount[f.asset] = (genCount[f.asset]||0) + 1; });
   const rows = items.map(it=>{
     const adopted = ADOPTED_OF(it);
     const hasPrompt = !!it.prompt;
     const open = !!IMGST.open[it.id];
+    const dirKey = Object.keys(genCount).find(k=>k.startsWith(it.id+"-"));
+    const made = dirKey ? genCount[dirKey] : 0;
     return `<div style="border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-bottom:9px">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 13px">
         <span class="mono dim" style="font-size:11px;width:52px">${esc(it.id)}</span>
@@ -1335,6 +1347,8 @@ function sImg(){
         ${it.ref?`<span class="badge ${it.hasRef?'b-ok':'b-warn'}" style="font-size:10px">参考${it.hasRef?'✓':'✗'}</span>`:""}
         <span class="badge ${hasPrompt?'b-ok':'b-warn'}" style="font-size:10px;cursor:pointer"
               onclick="IMGST.open['${it.id}']=!IMGST.open['${it.id}'];render()">提示词${hasPrompt?'详情':'缺失'}</span>
+        ${made?`<span class="badge b-acc" style="font-size:10px">已生成 ${made} 张</span>`
+              :`<span class="badge b-mut" style="font-size:10px">未生成</span>`}
         ${adopted?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
                  :`<div style="display:flex;align-items:center;gap:5px">
             <span class="dim" style="font-size:11px">候选</span>
