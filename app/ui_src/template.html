@@ -762,7 +762,7 @@ function galleryHtml(){
                  onclick="openZoom('/api/img/file?p=${encodeURIComponent(f.file)}')">
             <div style="padding:7px 9px;display:flex;align-items:center;gap:6px">
               <span class="mono dim" style="font-size:10px;flex:1">${esc((f.file||"").split("/").pop())}</span>
-              ${on?`<span class="badge b-ok" style="font-size:10px">已采用</span>`
+              ${on?`<button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="adoptImg('${esc(asset)}',null)">取消采用</button>`
                  :`<button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="adoptImg('${esc(asset)}','${esc(f.file)}')">采用</button>`}
             </div></div>`;
         }).join("")}
@@ -1249,16 +1249,22 @@ function sImg(){
     const {color,label} = cardState(c);
     const off = c.state === "offline";
     const on = sel.has(c.index);
+    const isEnabled = IMGST.enabled && IMGST.enabled.has(c.index);
+    const isDraining = IMGST.draining && IMGST.draining.has(c.index);
+    const tag = isDraining ? '<span class="badge b-warn" style="font-size:9.5px">待关闭</span>'
+              : isEnabled ? '<span class="badge b-ok" style="font-size:9.5px">已启用</span>'
+              : on ? '<span class="badge b-acc" style="font-size:9.5px">待确认</span>' : '';
     return `<div onclick="toggleCard(${c.index})"
       title="${off?'该卡暂无实例，勾选后提交批次时自动启动':esc(c.name)+' · 空闲 '+c.vramFreeGB+'GB / '+c.vramTotalGB+'GB'}"
       style="cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
-      border:1px solid ${on?color:'var(--line)'};background:${on?'rgba(255,255,255,.03)':'transparent'};
+      border:1px solid ${on?'var(--acc)':'var(--line)'};
+      background:${on?'rgba(90,140,220,.12)':'transparent'};
+      box-shadow:${on?'0 0 0 1px rgba(90,140,220,.25)':'none'};
       opacity:${off&&!on?'.55':'1'}">
       <i class="dot" style="background:${color}"></i>
       <b style="font-size:12.5px">卡 ${c.index}</b>
       <span class="dim" style="font-size:11px">${label}${off?'':` · ${c.usedPct}% · ${c.vramFreeGB}G`}</span>
-      ${(IMGST.draining&&IMGST.draining.has(c.index))?'<span class="badge b-warn" style="font-size:9.5px">待关闭</span>'
-        :(IMGST.enabled&&IMGST.enabled.has(c.index))?'<span class="badge b-ok" style="font-size:9.5px">已启用</span>':''}
+      ${tag}
     </div>`;
   }).join("") : `<span class="dim" style="font-size:12px">没有可用实例</span>`;
 
@@ -1371,10 +1377,11 @@ function sImg(){
 async function adoptImg(asset, file){
   const r = await fetch('/api/img/adopt', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ep:D.episode, asset, file})});
-  if(!r.ok) return toast("采用失败");
-  IMGST.adopted = IMGST.adopted||{}; IMGST.adopted[asset] = {asset, file};
-  delete IMGST.draft[asset];
-  toast("已采用 " + asset);
+  if(!r.ok) return toast("操作失败");
+  IMGST.adopted = IMGST.adopted||{};
+  if(file) IMGST.adopted[asset] = {asset, file};
+  else { delete IMGST.adopted[asset]; delete IMGST.draft[asset]; }
+  toast(file ? ("已采用 " + asset) : ("已取消采用 " + asset));
   render();
 }
 

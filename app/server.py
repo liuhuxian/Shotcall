@@ -806,7 +806,10 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         continue
                     if r.get("ep") == ep:
-                        rows[r["asset"]] = r
+                        if r.get("file"):
+                            rows[r["asset"]] = r
+                        else:
+                            rows.pop(r["asset"], None)
             body = json.dumps({"adopted": rows}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/img/jobs":
