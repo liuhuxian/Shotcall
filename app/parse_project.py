@@ -144,10 +144,15 @@ def parse_visual(text: str):
         key = (name or "").split("（")[0].strip()[:2]
         if not key:
             return None
-        for path in all_paths:
-            if key in path.rsplit("/", 1)[-1]:
-                return path
-        return None
+        cands = [p for p in all_paths if key in p.rsplit("/", 1)[-1]]
+        if not cands:
+            return None
+        # 优先顺序：6 视图 > 5 视图 > 其他（定妆照/表情参考）
+        for tag in ("6视图", "5视图"):
+            for p in cands:
+                if tag in p:
+                    return p
+        return cands[0]
 
     # 人物 / 地点：只有明确写了指向现存图片的路径，才算有参考图
     for it in out["people"] + out["places"]:
