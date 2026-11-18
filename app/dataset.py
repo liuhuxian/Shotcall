@@ -100,6 +100,9 @@ def load(project: Path, episode: str = "EP002", with_images: bool = True) -> dic
         sc["broken"] = sum(len(x["broken"]) for x in lst)
         sc["src"] = sc.get("srcRange")
 
+    for pl in d["assets"].get("places", []):
+        pl["imageExists"] = bool(pl.get("image")) and (project / pl["image"]).exists()
+
     ref_paths = {}
     for key in ("REF-CHEN", "REF-QIN", "REF-OFFICE"):
         ref_paths[key] = sorted({r["path"] for s in shots for r in s["refs"] if r["key"] == key})
@@ -134,7 +137,7 @@ def load(project: Path, episode: str = "EP002", with_images: bool = True) -> dic
         "srcScenes": sum(1 for sc in scenes if sc.get("src")),
         "declaredAdapt": d["checks"]["sourceFidelity"]["declared"],
         "places": len(d["assets"]["places"]),
-        "placesNoRef": len(d["gaps"]["places"]),
+        "placesNoRef": sum(1 for pl in d["assets"].get("places", []) if not pl.get("imageExists")),
         "props": len(d["assets"]["props"]),
         "people": len(d["assets"]["people"]),
         "idScheme": d["checks"].get("idScheme"),

@@ -136,6 +136,14 @@ def parse_visual(text: str):
         bm = re.match(r"^- ([^：]+)：(.*)$", line)
         if bm and item:
             item["bullets"].append({"k": bm.group(1), "v": bm.group(2)})
+    # 地点：只有明确写了指向现存图片的路径，才算有参考图
+    for it in out["places"]:
+        it["image"] = None
+        for b in it["bullets"]:
+            m = re.search(r"[\u4e00-\u9fa5A-Za-z0-9_/\-]*资产/[^\s、，。；（）()]+?\.(?:png|jpg|jpeg|webp)", b["v"])
+            if m:
+                it["image"] = m.group(0).lstrip("/")
+                break
     return out
 
 

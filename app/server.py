@@ -74,6 +74,14 @@ MEDIA = Path(os.environ.get("WORKBENCH_MEDIA") or (PROJECT / "剧集" / EPISODE 
 THUMB_CACHE = {}
 
 
+def resolve_asset(p: str):
+    root = (PROJECT / "资产").resolve()
+    f = (PROJECT / p).resolve()
+    if not str(f).startswith(str(root)) or not f.is_file():
+        return None
+    return f
+
+
 def media_roots() -> list:
     return [MEDIA, store.state_dir(PROJECT) / "media"]
 
@@ -679,6 +687,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
             self._serve_file(f, "video/mp4")
+        elif path == "/assetthumb":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            f = resolve_asset(q.get("p", [""])[0])
+            th = thumb_of(f) if f else None
+            if not th:
+                self._send(404, b'{"error":"no asset"}', "application/json; charset=utf-8")
+                return
+            self._send(200, th.read_bytes(), "image/jpeg")
         elif path == "/thumb":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             f = resolve_media(int(q.get("r", ["0"])[0]), q.get("p", [""])[0])
