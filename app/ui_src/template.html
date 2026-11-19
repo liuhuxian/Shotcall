@@ -1069,6 +1069,27 @@ async function loadImg(){
   }catch(e){ IMGST.err = String(e); }
 }
 
+function statusBar(){
+  const p = IMGST.prog;
+  if(!p || !p.cards) return "";
+  const chips = (p.cards||[]).filter(c=>c.state!=='offline'||c.enabled).map(c=>{
+    const color = c.state==='offline' ? '#3a4655'
+      : c.state==='free' ? 'var(--ok)' : c.state==='loadable' ? 'var(--warn)' : 'var(--bad)';
+    const label = c.state==='offline' ? '未启动' : c.state==='free' ? '空闲' : c.state==='loadable' ? '可加载' : '忙碌';
+    const cur = (IMGST.jobs||[]).find(j=>j.card===c.index && ['running','starting'].includes(j.status));
+    return `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:11.5px">
+      <i class="dot" style="background:${color}"></i><b>卡${c.index}</b><span class="dim">${label}</span>
+      ${cur?`<span class="mono" style="font-size:10.5px;color:var(--acc)">${esc((cur.dir||cur.asset||'').slice(0,20))}</span>`:''}
+    </span>`;
+  }).join("");
+  const q = (p.queued||0) + (p.pending||0);
+  return `<div style="display:flex;align-items:center;gap:12px;padding:8px 14px;margin-bottom:12px;
+      border:1px solid var(--line);border-radius:9px;background:#0d1116;font-size:11.5px">
+    <b style="font-size:12px">显卡</b>${chips||'<span class="dim">无在线实例</span>'}
+    <span style="margin-left:auto" class="dim">${q?`待调度 ${q} 项`:'队列空闲'}</span>
+  </div>`;
+}
+
 function noticesHtml(){
   const list = IMGST.notices || [];
   if(!list.length) return "";
@@ -1306,28 +1327,6 @@ function sImg(){
   const draft = IMGST.draft || {};
   const jobs = IMGST.jobs || [];
 
-  const cardChips = cards.length ? cards.map(c=>{
-    const {color,label} = cardState(c);
-    const off = c.state === "offline";
-    const on = sel.has(c.index);
-    const isEnabled = IMGST.enabled && IMGST.enabled.has(c.index);
-    const isDraining = IMGST.draining && IMGST.draining.has(c.index);
-    const tag = isDraining ? '<span class="badge b-warn" style="font-size:9.5px">待关闭</span>'
-              : isEnabled ? '<span class="badge b-ok" style="font-size:9.5px">已启用</span>'
-              : on ? '<span class="badge b-acc" style="font-size:9.5px">待确认</span>' : '';
-    return `<div onclick="toggleCard(${c.index})"
-      title="${off?'该卡暂无实例，勾选后提交批次时自动启动':esc(c.name)+' · 空闲 '+c.vramFreeGB+'GB / '+c.vramTotalGB+'GB'}"
-      style="cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;
-      border:1px solid ${on?'var(--acc)':'var(--line)'};
-      background:${on?'rgba(90,140,220,.12)':'transparent'};
-      box-shadow:${on?'0 0 0 1px rgba(90,140,220,.25)':'none'};
-      opacity:${off&&!on?'.55':'1'}">
-      <i class="dot" style="background:${color}"></i>
-      <b style="font-size:12.5px">卡 ${c.index}</b>
-      <span class="dim" style="font-size:11px">${label}${off?'':` · ${c.usedPct}% · ${c.vramFreeGB}G`}</span>
-      ${tag}
-    </div>`;
-  }).join("") : `<span class="dim" style="font-size:12px">没有可用实例</span>`;
 
   const genCount = {};
   (IMGST.files||[]).forEach(f=>{ genCount[f.asset] = (genCount[f.asset]||0) + 1; });
@@ -1892,7 +1891,7 @@ function render(){
   } else {
     html = (map[state.tab] || sOverview)();
   }
-  document.getElementById("app").innerHTML = html;
+  document.getElementById("app").innerHTML = statusBar() + html;
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
   if(state.candModal) showDraftModal();
   else {

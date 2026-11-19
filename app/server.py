@@ -22,10 +22,10 @@ from pathlib import Path
 import os
 
 import dataset
-import comfyctl
 import gpus
 import imagegen
 import imgjobs
+import sched
 import planner
 import preflight as pf
 import runner
@@ -35,37 +35,6 @@ PROJECT = Path(os.environ.get("WORKBENCH_PROJECT") or (Path.home() / "short_v/�
 EPISODE = "EP002"
 
 _lock = threading.Lock()
-CARDS = {"enabled": None, "draining": set()}   # enabled=None 表示按默认初始化
-
-
-def _cards_enabled() -> set:
-    if CARDS["enabled"] is None:
-        CARDS["enabled"] = set(gpus.default_selection(gpus.probe()))
-    return CARDS["enabled"]
-
-
-def _drain_watch():
-    """待关闭的卡：队列空了才真正关掉。"""
-    while True:
-        try:
-            probes = {c["index"]: c for c in gpus.probe()}
-            for idx in list(CARDS["draining"]):
-                c = probes.get(idx)
-                if not c or c["state"] == "offline":
-                    CARDS["draining"].discard(idx)
-                    CARDS["enabled"].discard(idx)
-                    continue
-                q = gpus.queue_of(c["port"])
-                if q["running"] == 0 and q["pending"] == 0:
-                    comfyctl.stop(idx)
-                    CARDS["draining"].discard(idx)
-                    CARDS["enabled"].discard(idx)
-        except Exception:
-            pass
-        time.sleep(5)
-
-
-threading.Thread(target=_drain_watch, daemon=True).start()
 _cache = {"by": {}, "sig": None}
 
 WATCHED = ["剧本.md", "分镜.md", "视频提示词.md", "视觉设定.md"]
@@ -734,15 +703,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
-        elif path == "/api/gpus":
-            cards = gpus.probe()
-            body = json.dumps({"cards": cards, "night": gpus.is_night(),
-                               "default": gpus.default_selection(cards),
-                               "loadMinGB": gpus.LOAD_MIN_GB,
-                               "enabled": sorted(_cards_enabled()),
-                               "draining": sorted(CARDS["draining"])},
-                              ensure_ascii=False).encode("utf-8")
-            self._send(200, body, "application/json; charset=utf-8")
+        elif path in ("/api/gpus", "/api/sched/state"):
+            snap = sched.snapshot()
+            snap["default"] = gpus.default_selection(gpus.probe())
+            self._send(200, json.dumps(snap, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/prompts":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             ep = q.get("ep", [current_episode()])[0]
@@ -754,31 +719,18 @@ class Handler(BaseHTTPRequestHandler):
                               ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/comfy/progress":
-            probes = {c["index"]: c for c in gpus.probe()}
-            rows = []
-            for idx in sorted(_cards_enabled()):
-                c = probes.get(idx)
-                if not c or c["state"] == "offline":
-                    rows.append({"index": idx, "running": 0, "pending": 0, "online": False})
-                    continue
-                q = gpus.queue_of(c["port"])
-                rows.append({"index": idx, "online": True, "running": q["running"],
-                             "pending": q["pending"], "promptId": q["promptId"]})
+            snap = sched.snapshot()
             jobs = imgjobs.list_jobs()
             batch = jobs[-1]["batch"] if jobs else None
             same = [j for j in jobs if j["batch"] == batch]
-            body = json.dumps({
-                "cards": rows,
-                "batch": batch,
-                "total": len(same),
-                "done": sum(1 for j in same if j["status"] == "done"),
-                "failed": sum(1 for j in same if j["status"] == "failed"),
-                "cancelled": sum(1 for j in same if j["status"] == "cancelled"),
-                "running": sum(1 for j in same if j["status"] in ("running", "starting")),
-                "queued": sum(1 for j in same if j["status"] == "queued"),
-                "draining": sorted(CARDS["draining"]),
-            }, ensure_ascii=False).encode("utf-8")
-            self._send(200, body, "application/json; charset=utf-8")
+            snap.update({"batch": batch, "total": len(same),
+                         "done": sum(1 for j in same if j["status"] == "done"),
+                         "failed": sum(1 for j in same if j["status"] == "failed"),
+                         "cancelled": sum(1 for j in same if j["status"] == "cancelled"),
+                         "running": sum(1 for j in same if j["status"] == "running"),
+                         "queued": sum(1 for j in same if j["status"] == "queued")})
+            self._send(200, json.dumps(snap, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/files":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             ep = q.get("ep", [current_episode()])[0]
@@ -961,30 +913,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/cards/confirm":
             try:
-                body = self._json_body()
-                want = set(int(x) for x in (body.get("enabled") or []))
-                cur = set(_cards_enabled())
-                probes = {c["index"]: c for c in gpus.probe()}
-                stopped, draining = [], []
-                for idx in cur - want:
-                    c = probes.get(idx)
-                    if c and c["state"] != "offline":
-                        q = gpus.queue_of(c["port"])
-                        mine = [j for j in imgjobs.list_jobs()
-                                if j.get("card") == idx and j["status"] in ("queued", "running", "starting")]
-                        if q["running"] or q["pending"] or mine:
-                            CARDS["draining"].add(idx)
-                            draining.append(idx)
-                            continue
-                        if comfyctl.stop(idx).get("stopped"):
-                            stopped.append(idx)
-                    cur.discard(idx)
-                for idx in want - cur:
-                    cur.add(idx)
-                CARDS["enabled"] = cur
-                self._send(200, json.dumps({"ok": True, "enabled": sorted(cur),
-                                            "stopped": stopped, "draining": draining},
-                                           ensure_ascii=False).encode("utf-8"),
+                out = sched.set_cards(self._json_body().get("enabled") or [])
+                out["ok"] = True
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
@@ -1000,6 +931,43 @@ class Handler(BaseHTTPRequestHandler):
                 with open(f, "a", encoding="utf-8") as out:
                     out.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/img/preflight":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            ep = q.get("ep", [current_episode()])[0]
+            items = imagegen.parse_prompts(PROJECT / "剧集" / ep / "图片提示词.md")
+            self._send(200, json.dumps(imagegen.preflight(items, PROJECT), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+            return
+        if path == "/api/img/execute":
+            try:
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+                ep = q.get("ep", [current_episode()])[0]
+                body = self._json_body()
+                n = int(body.get("n") or 4)
+                allp = imagegen.parse_prompts(PROJECT / "剧集" / ep / "图片提示词.md")
+                by = {x["id"]: x for x in allp}
+                items = []
+                for w in (body.get("items") or []):
+                    base = by.get(w.get("id") if isinstance(w, dict) else w)
+                    if not base:
+                        continue
+                    x = dict(base)
+                    x["n"] = int((w or {}).get("n") or n) if isinstance(w, dict) else n
+                    items.append(x)
+                pf = imagegen.preflight(items, PROJECT)
+                if pf["blockers"]:
+                    self._send(400, json.dumps({"error": "预检未通过", "detail": pf["blockers"]},
+                                               ensure_ascii=False).encode("utf-8"))
+                    return
+                res = imgjobs.submit_batch(PROJECT, ep, items)
+                store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
+                             notes=[{"text": f"{ep} 图片批次：{len(items)} 项 × {n} 张"}])
+                self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
