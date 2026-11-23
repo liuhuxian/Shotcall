@@ -22,11 +22,13 @@ from pathlib import Path
 import os
 
 import artifacts
+import assetsdb
 import dataset
 import gpus
 import imagegen
 import imgjobs
 import sched
+import scenes
 import planner
 import preflight as pf
 import runner
@@ -703,6 +705,29 @@ class Handler(BaseHTTPRequestHandler):
                        "application/json; charset=utf-8")
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/proj/file":
+            q4 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            raw = q4.get("p", [""])[0]
+            f = (PROJECT / raw).resolve()
+            root = PROJECT.resolve()
+            if (not str(f).startswith(str(root)) or not f.is_file()
+                    or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp")):
+                self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
+                return
+            self._send(200, f.read_bytes(),
+                       "image/png" if f.suffix.lower() == ".png" else "image/jpeg")
+        elif path == "/api/scenes":
+            self._send(200, json.dumps(scenes.build(PROJECT), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/scenes/shots":
+            q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sid = q3.get("scene", ["N001"])[0]
+            self._send(200, json.dumps({"scene": sid, "shots": scenes.shot_details(PROJECT, sid)},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/assets":
+            self._send(200, json.dumps(assetsdb.build(PROJECT), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/stages":
             q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)

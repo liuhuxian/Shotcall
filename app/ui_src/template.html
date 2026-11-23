@@ -261,15 +261,15 @@ function reviewDot(tab){
 
 function nav(){
   const items=[
-    ["stages","阶段看板"],["stage","阶段详情"],["pending","待确认"],
-    ["arts","成果清单"],["verify","校验"],["legacy","旧界面"]];
+    ["stages","阶段看板"],["scenes","场次"],["assets","资产"],["shots","镜头"],
+    ["pending","待确认"],["verify","校验"],["legacy","旧界面"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {stages:"阶段看板", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {stages:"阶段看板", scenes:"场次", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -404,6 +404,139 @@ function sWorkflow(){
 }
 
 /* ---------- 总览 ---------- */
+
+/* ---------- 场次 ---------- */
+let SCN = {data:null, err:null};
+let AST = {data:null};
+
+async function loadScenes(force){
+  if(SCN.data && !force) return SCN.data;
+  try{ SCN.data = await (await fetch('/api/scenes')).json(); }catch(e){ SCN.err=String(e); }
+  return SCN.data;
+}
+async function loadAssets(force){
+  if(AST.data && !force) return AST.data;
+  try{ AST.data = await (await fetch('/api/assets')).json(); }catch(e){}
+  return AST.data;
+}
+
+const STAGE_STEPS = ["未开始","已写表演","已拆镜","已出片"];
+
+function sScenes(){
+  const d = SCN.data;
+  if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取分场…</div>`; }
+  const s = d.summary||{};
+  const rows = (d.scenes||[]).map(x=>{
+    const pct = x.stage>=4?100:x.stage===3?66:x.stage===2?33:8;
+    const color = x.stage>=4?'var(--ok)':x.stage===3?'var(--acc)':x.stage===2?'var(--warn)':'#3a4655';
+    return `<tr style="cursor:pointer" onclick="go('shots',{scene:'${x.id}'})">
+      <td class="mono" style="color:var(--acc)">${x.id}</td>
+      <td class="dim mono" style="font-size:11px">${esc(x.episode)}</td>
+      <td>${esc(x.place)}</td>
+      <td class="dim" style="font-size:11px">${esc(x.interior)} · ${esc(x.time)}</td>
+      <td class="dim mono" style="text-align:center">${x.shots} 镜</td>
+      <td class="dim mono" style="text-align:center">${x.duration? x.duration+'s' : '—'}</td>
+      <td style="text-align:center">${x.acting?'<span class="badge b-ok" style="font-size:10px">表演</span>':'<span class="dim">—</span>'}</td>
+      <td style="text-align:center">${x.planned?'<span class="badge b-acc" style="font-size:10px">规划</span>':'<span class="dim">—</span>'}</td>
+      <td style="text-align:center">${x.videos?`<span class="badge b-ok" style="font-size:10px">${x.videos} 片</span>`:'<span class="dim">—</span>'}</td>
+      <td style="width:110px"><div class="bar" style="margin:0"><i style="width:${pct}%;background:${color}"></i></div>
+        <div class="dim" style="font-size:10px;margin-top:3px">${STAGE_STEPS[x.stage]||''}</div></td>
+    </tr>`;
+  }).join("");
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">场次</div><div class="kpi">${s.scenes||0}<small>场</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已拆镜</div><div class="kpi">${s.planned||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已出片</div><div class="kpi" style="color:var(--ok)">${s.withVideo||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已拆镜总时长</div><div class="kpi">${s.totalSeconds||0}<small>秒</small></div></div>
+  </div>
+  <div class="panel"><div class="ph"><span>分场进度</span><span class="dim">以「场」为主键 · 点任意行看该场镜头</span></div>
+    <div class="pb"><table><thead><tr><th style="width:60px">场</th><th style="width:70px">集</th><th>地点</th>
+      <th style="width:130px">内外·时间</th><th style="width:60px;text-align:center">镜头</th>
+      <th style="width:60px;text-align:center">时长</th><th style="width:60px;text-align:center">表演</th>
+      <th style="width:60px;text-align:center">规划</th><th style="width:60px;text-align:center">成片</th>
+      <th>进度</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* ---------- 镜头 ---------- */
+let SHOTS = {};
+async function loadShots(scene, force){
+  if(SHOTS[scene] && !force) return SHOTS[scene];
+  try{
+    SHOTS[scene] = await (await fetch('/api/scenes/shots?scene='+encodeURIComponent(scene))).json();
+  }catch(e){ SHOTS[scene] = {shots:[]}; }
+  return SHOTS[scene];
+}
+
+function sShots(){
+  const d = SCN.data;
+  if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const scene = state.scene && d.scenes.some(s=>s.id===state.scene) ? state.scene : (d.scenes[0]||{}).id;
+  state.scene = scene;
+  const info = (d.scenes||[]).find(s=>s.id===scene) || {};
+  if(!SHOTS[scene]){ loadShots(scene).then(()=>render()); }
+  const sh = (SHOTS[scene]||{}).shots || [];
+  const tabs = (d.scenes||[]).map(s=>`<span onclick="go('shots',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
+    border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
+  const rows = sh.map(x=>`<tr>
+    <td class="mono" style="color:var(--acc)">${x.id}</td>
+    <td class="dim mono" style="text-align:center">${x.duration}s</td>
+    <td style="font-size:12px">${esc((x.size||"").slice(0,40))}</td>
+    <td class="dim" style="font-size:11.5px">${esc((x.action||"").slice(0,60))}</td>
+    <td class="dim" style="font-size:11.5px">${esc((x.firstFrame||"").slice(0,40))}</td>
+    <td class="dim" style="font-size:11.5px">${esc((x.lastFrame||"").slice(0,40))}</td>
+  </tr>`).join("");
+  return `
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+  <div class="panel">
+    <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
+      <span class="dim">${esc(info.episode||"")} · ${esc(info.interior||"")} · ${esc(info.time||"")} · ${sh.length} 镜 · ${info.duration||0}s</span></div>
+    <div class="pb">
+      ${sh.length?`<table><thead><tr><th style="width:70px">镜头</th><th style="width:50px;text-align:center">时长</th>
+        <th style="width:200px">景别</th><th>动作与表演</th><th style="width:160px">首帧状态</th><th style="width:160px">尾帧状态</th></tr></thead>
+        <tbody>${rows}</tbody></table>`:'<div class="dim" style="font-size:12.5px">该场尚未拆镜（需要 09 阶段生成镜头表）。</div>'}
+    </div></div>`;
+}
+
+/* ---------- 资产 ---------- */
+function sAssetsPage(){
+  const d = AST.data;
+  if(!d){ loadAssets().then(()=>render()); return `<div class="dim">读取资产…</div>`; }
+  const s = d.summary||{};
+  const typeName = {character:"角色", scene:"场景", prop:"道具", extra:"辅助"};
+  const groups = ["character","scene","prop","extra"].map(tp=>{
+    const items = (d.assets||[]).filter(a=>a.type===tp);
+    if(!items.length) return "";
+    const cards = items.map(a=>{
+      const b = a.binding;
+      const img = a.bound && b && b.image;
+      return `<div style="border:1px solid ${a.bound?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
+        ${img?`<img src="/api/proj/file?p=${encodeURIComponent(b.image)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(b.image)}')"
+             style="width:100%;height:110px;object-fit:cover;display:block;cursor:zoom-in">
+            <div class="dim" style="font-size:10px;padding:2px 6px">点击放大</div>`
+          :`<div style="height:110px;display:flex;align-items:center;justify-content:center" class="dim">未绑定</div>`}
+        <div style="padding:7px 9px">
+          <div class="mono dim" style="font-size:10px">${esc(a.id)}</div>
+          <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div>
+          <div style="margin-top:4px">${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
+            :`<span class="badge b-mut" style="font-size:9.5px">未绑定</span>`}</div>
+        </div></div>`;
+    }).join("");
+    return `<div class="panel" style="margin-bottom:14px">
+      <div class="ph"><span>${typeName[tp]||tp}</span><span class="dim">${items.length} 项 · 已绑定 ${items.filter(x=>x.bound).length}</span></div>
+      <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div></div>`;
+  }).join("");
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">资产</div><div class="kpi">${s.total||0}<small>项</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已绑定</div><div class="kpi" style="color:var(--ok)">${s.bound||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">角色 / 场景 / 道具</div>
+      <div class="kpi" style="font-size:20px">${s.character||0} / ${s.scene||0} / ${s.prop||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">未绑定</div><div class="kpi" style="color:var(--warn)">${(s.total||0)-(s.bound||0)}</div></div>
+  </div>
+  <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
+  ${groups}`;
+}
 
 /* ---------- 阶段看板 ---------- */
 function sStages(){
@@ -2095,6 +2228,12 @@ function render(){
   let html;
   if (state.tab === "stages") {
     html = sStages();
+  } else if (state.tab === "scenes") {
+    html = sScenes();
+  } else if (state.tab === "assets") {
+    html = sAssetsPage();
+  } else if (state.tab === "shots") {
+    html = sShots();
   } else if (state.tab === "stage") {
     html = sStage();
   } else if (state.tab === "pending") {
