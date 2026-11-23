@@ -86,7 +86,7 @@ def attach_zh(units: list, scene: str) -> list:
 
 def latest_prompt_file(d: Path):
     """同一目录可能有 v001/v002…，取版本号最大的那份。"""
-    files = list(d.glob("minimax-h3-ref2va*.md")) or list(d.glob("minimax-h3*.md")) or list(d.glob("*.md"))
+    files = list(d.glob("minimax-h3-ref2va*.md"))   # 只认 Ref2VA 提示词，不做兜底
     if not files:
         return None
 
