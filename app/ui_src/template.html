@@ -212,6 +212,12 @@ function tryAssetGen(name){
 
 function go(tab, opts){
   Object.assign(state, opts||{}, {tab});
+  if(tab === 'backend'){
+    BK.data = null;                       // 先清空，避免显示旧快照
+    render();
+    loadBackend(true).then(()=>render());
+    return;
+  }
   render();
 }
 
@@ -1787,6 +1793,24 @@ async function cancelAllQueued(){
   if(await pollProgOnce()) render();
 }
 
+let TICK = null;
+
+async function pollTick(){
+  try{
+    if(state.tab === 'backend'){
+      const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
+      if(b){
+        const sig = JSON.stringify([b.cards.map(c=>[c.card,c.usedGB,c.hasInstance]),
+                                    b.jobs.map(j=>[j.id,j.status,j.etaSec]),
+                                    (b.instances||[]).map(i=>[i.card,i.pid])]);
+        if(sig !== BK.sig){ BK.sig = sig; BK.data = b; render(); }
+      }
+      return;
+    }
+    if(await pollProgOnce()) render();
+  }catch(e){}
+}
+
 async function pollProgOnce(){
   try{
     try{
@@ -1799,13 +1823,6 @@ async function pollProgOnce(){
       }
       if(sg && sg.sig) STG.sig = sg.sig;
     }catch(e){}
-    if(state.tab==='backend'){
-      const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
-      if(b){ const sig=JSON.stringify([b.instances.map(i=>[i.card,i.progress,i.queue,i.job&&i.job.elapsed]),b.startable]);
-        if(sig!==BK.sig){ BK.sig=sig; BK.data=b; render(); } }
-      POLL_T = setTimeout(()=>startPoller(true), 3000);
-      return;
-    }
     const p = await fetch('/api/comfy/progress').then(r=>r.json());
     const j = await fetch('/api/img/jobs').then(r=>r.json());
     const sig = JSON.stringify([p, (j.jobs||[]).map(x=>[x.id,x.status,x.startedAt])]);

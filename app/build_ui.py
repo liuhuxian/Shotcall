@@ -31,6 +31,7 @@ const loadEp=async(ep)=>{
 };
 const BOOT=async()=>{
   await loadEp();
+  if(!TICK) TICK = setInterval(pollTick, 3000);   // 全局 3 秒轮询：算力页与其它页共用
   try{
     const h = await fetch('/api/health').then(r=>r.json());
     if (h.stateDir && h.project && !String(h.stateDir).startsWith(String(h.project))){
