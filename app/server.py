@@ -342,6 +342,7 @@ def _video_recovery_loop():
     while True:
         try:
             vjobs.reconcile(PROJECT)
+            vjobs.sweep()
             got = vjobs.recover(PROJECT)
             if got:
                 print("[recover] 认领视频：", got, flush=True)

@@ -242,6 +242,56 @@ def reconcile(project: Path = None) -> int:
     return n
 
 
+def sweep() -> int:
+    """清掉已经不存在的任务：既不在 ComfyUI 队列里，也没有产出。"""
+    alive = set()
+    hist_ids = set()
+    dead = set()
+    for card in range(8):
+        port = 8188 + card
+        try:
+            q = gpus.queue_of(port)
+            alive |= set(q.get("runningIds") or []) | set(q.get("pendingIds") or [])
+        except Exception:
+            pass
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/history?max_items=200", timeout=8) as r:
+                hist = json.loads(r.read().decode())
+            for hp, entry in (hist or {}).items():
+                outs = [i for v in (entry.get("outputs") or {}).values()
+                        for i in v.get("images", []) if i.get("filename", "").endswith(".mp4")]
+                if outs:
+                    hist_ids.add(hp)          # 有成片 → 交给 recover 认领
+                else:
+                    dead.add(hp)              # 有记录但没成片 → 中断或失败
+        except Exception:
+            pass
+    n = 0
+    with _lock:
+        for jid in list(_order):
+            j = _jobs.get(jid) or {}
+            if j.get("status") not in ("running", "waiting", "queued", "dispatched", "starting"):
+                continue
+            pid = j.get("promptId")
+            if pid:
+                if pid in dead:
+                    _jobs[jid]["status"] = "aborted"
+                    _jobs[jid]["error"] = "执行被中断"
+                    n += 1
+                    continue
+                if pid not in alive and pid not in hist_ids:
+                    _jobs[jid]["status"] = "aborted"
+                    _jobs[jid]["error"] = "已中断或丢失"
+                    n += 1
+            elif (time.time() - (j.get("queuedAt") or 0)) > 900:
+                _jobs[jid]["status"] = "aborted"
+                _jobs[jid]["error"] = "长时间未送达 ComfyUI"
+                n += 1
+    if n:
+        _save()
+    return n
+
+
 def recover(project: Path) -> list:
     """从 ComfyUI 的 /history 里认领"没人认领"的产出（进程重启后的孤儿任务）。
 
