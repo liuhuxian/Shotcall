@@ -262,14 +262,14 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","阶段看板"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["pending","待确认"],["verify","校验"],["legacy","旧界面"]];
+    ["gen","生成台"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {stages:"阶段看板", scenes:"场次", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -405,6 +405,87 @@ function sWorkflow(){
 
 /* ---------- 总览 ---------- */
 
+/* ---------- 生成台 ---------- */
+let GEN = {scene:null, units:[], results:[], jobs:[], draft:{}, poll:null};
+
+async function loadGen(scene, force){
+  if(GEN.scene===scene && !force && GEN.loaded) return;
+  GEN.scene = scene;
+  try{
+    const [u, r, j] = await Promise.all([
+      fetch('/api/gen/units?scene='+encodeURIComponent(scene)).then(x=>x.json()),
+      fetch('/api/gen/results?scene='+encodeURIComponent(scene)).then(x=>x.json()),
+      fetch('/api/gen/jobs').then(x=>x.json()),
+    ]);
+    GEN.units = u.units||[]; GEN.results = r.results||[]; GEN.jobs = j.jobs||[];
+    GEN.loaded = true;
+  }catch(e){ GEN.loaded = true; }
+}
+
+function genUnitRow(u){
+  const mine = (GEN.results||[]).filter(r=>r.unit===u.id);
+  const running = (GEN.jobs||[]).find(j=>j.unit===u.id && ['running','queued','starting'].includes(j.status));
+  const picked = GEN.draft[u.id] !== false;
+  return `<div style="border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 13px">
+      <input type="checkbox" ${picked?'checked':''} onchange="GEN.draft['${u.id}']=this.checked"
+        style="width:15px;height:15px">
+      <b class="mono" style="font-size:12.5px">${u.id}</b>
+      <span class="dim" style="font-size:11.5px">${u.seconds} 秒 · ${esc(u.shots)}</span>
+      <span class="dim" style="font-size:11px">${u.prompt.length} 字</span>
+      ${running?`<span class="badge b-acc" style="font-size:10px">${running.status==='running'?'生成中':'排队'}</span>`:''}
+      ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
+      <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
+        onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">提示词</button>
+    </div>
+    ${GEN.open && GEN.open[u.id]?`<div style="padding:0 13px 12px">
+      <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;
+        border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:0;color:#c9d2e0;
+        max-height:240px;overflow:auto">${esc(u.prompt)}</pre></div>`:''}
+    ${mine.length?`<div style="padding:0 13px 12px;display:flex;gap:8px;flex-wrap:wrap">
+      ${mine.map(r=>`<div style="width:180px">
+        <video src="/api/proj/file?p=${encodeURIComponent(r.file)}" controls preload="metadata"
+          style="width:100%;border-radius:6px;border:1px solid var(--line)"></video>
+        <div class="mono dim" style="font-size:10px;margin-top:3px">${esc(r.name)} · ${r.kb} KB</div>
+      </div>`).join("")}</div>`:''}
+  </div>`;
+}
+
+function sGen(){
+  const d = SCN.data;
+  if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const scene = state.scene && d.scenes.some(s=>s.id===state.scene) ? state.scene : (d.scenes[0]||{}).id;
+  state.scene = scene;
+  if(GEN.scene !== scene || !GEN.loaded){ loadGen(scene).then(()=>render()); }
+  const tabs = (d.scenes||[]).map(s=>`<span onclick="go('gen',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
+    border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
+  const units = GEN.units||[];
+  const picked = units.filter(u=>GEN.draft[u.id]!==false);
+  return `
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>${scene} 生成单元</span><span class="dim">${units.length} 个单元 · 已选 ${picked.length}</span></div>
+    <div class="pb">
+      ${units.length?units.map(genUnitRow).join(""):'<div class="dim" style="font-size:12.5px">该场还没有视频提示词（需要 09 阶段先编译）。</div>'}
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成 ${picked.length} 个单元</button>
+        <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="loadGen(GEN.scene,true).then(()=>render())">刷新</button>
+        <span class="dim" style="font-size:11.5px">卡由调度后端分配，结果落到 09-…/生成结果/${scene}/</span>
+      </div>
+    </div></div>`;
+}
+
+async function submitGen(){
+  const units = (GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).map(u=>u.id);
+  if(!units.length) return toast("没有选中单元");
+  const r = await fetch('/api/gen/submit', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scene: GEN.scene, units})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||"提交失败");
+  toast("已提交 "+j.jobs.length+" 个单元：" + j.batch);
+  setTimeout(()=>loadGen(GEN.scene,true).then(()=>render()), 3000);
+}
+
 /* ---------- 场次 ---------- */
 let SCN = {data:null, err:null};
 let AST = {data:null};
@@ -499,6 +580,27 @@ function sShots(){
 }
 
 /* ---------- 资产 ---------- */
+let CLOUD = {data:null};
+
+async function loadCloud(){
+  try{ CLOUD.data = await (await fetch('/api/cloud/status')).json(); }catch(e){ CLOUD.data = null; }
+  return CLOUD.data;
+}
+
+function cloudBar(){
+  const c = CLOUD.data;
+  if(!c){ loadCloud().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取出图渠道…</div>`; }
+  const ok = c.configured;
+  return `<div class="panel" style="margin-bottom:12px;border-color:${ok?'var(--ok)':'var(--line)'}">
+    <div class="pb" style="display:flex;align-items:center;gap:10px;font-size:12px">
+      <b>出图渠道</b>
+      <span class="badge ${ok?'b-ok':'b-mut'}" style="font-size:10px">本机 H3</span>
+      <span class="badge ${ok?'b-ok':'b-warn'}" style="font-size:10px">云端：${ok?'已配置 '+esc(c.model):'未配置'}</span>
+      <span class="dim" style="flex:1;font-size:11px">${ok?esc(c.base):esc(c.reason||'')}</span>
+    </div>
+    <div class="dim" style="padding:0 13px 10px;font-size:11px;line-height:1.7">${ok?'':'填 <span class="mono">app/cloud-image.json</span>：{"base":"https://api.openai.com/v1","key":"…","model":"gpt-image-1"} 后重启即可。<br>Codex 本身没有出图 API（只有 ChatGPT 登录态）。'}</div>
+  </div>`;
+}
 function sAssetsPage(){
   const d = AST.data;
   if(!d){ loadAssets().then(()=>render()); return `<div class="dim">读取资产…</div>`; }
@@ -534,6 +636,7 @@ function sAssetsPage(){
       <div class="kpi" style="font-size:20px">${s.character||0} / ${s.scene||0} / ${s.prop||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">未绑定</div><div class="kpi" style="color:var(--warn)">${(s.total||0)-(s.bound||0)}</div></div>
   </div>
+  ${cloudBar()}
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
   ${groups}`;
 }
@@ -2234,6 +2337,8 @@ function render(){
     html = sAssetsPage();
   } else if (state.tab === "shots") {
     html = sShots();
+  } else if (state.tab === "gen") {
+    html = sGen();
   } else if (state.tab === "stage") {
     html = sStage();
   } else if (state.tab === "pending") {

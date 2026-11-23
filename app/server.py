@@ -23,12 +23,14 @@ import os
 
 import artifacts
 import assetsdb
+import cloudimg
 import dataset
 import gpus
 import imagegen
 import imgjobs
 import sched
 import scenes
+import vjobs
 import planner
 import preflight as pf
 import runner
@@ -717,6 +719,34 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, f.read_bytes(),
                        "image/png" if f.suffix.lower() == ".png" else "image/jpeg")
+        elif path == "/api/cloud/status":
+            self._send(200, json.dumps(cloudimg.status(), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/gen/units":
+            q5 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sc = q5.get("scene", ["N001"])[0]
+            self._send(200, json.dumps({"scene": sc, "units": vjobs.parse_units(PROJECT, sc)},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/gen/jobs":
+            self._send(200, json.dumps({"jobs": vjobs.list_jobs()}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/gen/results":
+            q6 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sc = q6.get("scene", ["N001"])[0]
+            root = PROJECT / vjobs.RESULT_DIR / sc
+            out = []
+            if root.is_dir():
+                import re as _re
+                for f in sorted(root.rglob("*.mp4")):
+                    m = _re.match(r"(U\d{3})", f.stem)
+                    out.append({"file": str(f.relative_to(PROJECT)),
+                                "unit": m.group(1) if m else f.parent.name,
+                                "group": f.parent.name, "name": f.name,
+                                "kb": max(1, f.stat().st_size // 1024),
+                                "mtime": f.stat().st_mtime})
+            self._send(200, json.dumps({"scene": sc, "results": out}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/scenes":
             self._send(200, json.dumps(scenes.build(PROJECT), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -966,6 +996,25 @@ class Handler(BaseHTTPRequestHandler):
                     evidence=payload()["data"].get("files") or {},
                 )
                 self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/gen/submit":
+            try:
+                body = self._json_body()
+                scene = body.get("scene") or "N001"
+                want = body.get("units") or []
+                ops = vjobs.parse_units(PROJECT, scene)
+                by = {u["id"]: u for u in ops}
+                units = [by[x] for x in want if x in by]
+                if not units:
+                    raise ValueError("没有可提交的单元")
+                res = vjobs.submit(PROJECT, scene, units)
+                store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
+                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元"}])
+                self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
