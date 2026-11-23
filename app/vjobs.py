@@ -36,6 +36,30 @@ def frames_of(sec: float) -> int:
     return n + (5 - n % 17) % 17
 
 
+ZH_FILE = Path(__file__).parent / "prompt_zh.json"
+
+
+def load_zh() -> dict:
+    try:
+        return json.loads(ZH_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def attach_zh(units: list, scene: str) -> list:
+    """给每个单元挂中文审核稿；英文原文变了就标 zhStale。"""
+    table = (load_zh() or {}).get(scene, {})
+    for u in units:
+        rec = table.get(u["id"])
+        if not rec:
+            u["zh"], u["zhStale"] = "", False
+            continue
+        cur = __import__("hashlib").sha1(u["prompt"].encode("utf-8")).hexdigest()
+        u["zh"] = rec.get("zh", "")
+        u["zhStale"] = rec.get("srcSha1") != cur
+    return units
+
+
 def parse_units(project: Path, scene: str) -> list:
     """从视频提示词 md 里解析生成单元：U001 / 时长 / 六段提示词正文。"""
     d = project / VP_DIR / scene
@@ -55,7 +79,7 @@ def parse_units(project: Path, scene: str) -> list:
             "prompt": (pm.group(1).strip() if pm else ""),
             "source": f.name,
         })
-    return out
+    return attach_zh(out, scene)
 
 
 def list_jobs(batch: str = None) -> list:

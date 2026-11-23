@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import os
+import re
 
 import artifacts
 import assetsdb
@@ -713,12 +714,41 @@ class Handler(BaseHTTPRequestHandler):
             raw = q4.get("p", [""])[0]
             f = (PROJECT / raw).resolve()
             root = PROJECT.resolve()
-            if (not str(f).startswith(str(root)) or not f.is_file()
-                    or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp")):
+            IMG = (".png", ".jpg", ".jpeg", ".webp")
+            VID = (".mp4", ".mov", ".webm", ".m4v")
+            if not str(f).startswith(str(root)) or not f.is_file() or f.suffix.lower() not in IMG + VID:
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
-            self._send(200, f.read_bytes(),
-                       "image/png" if f.suffix.lower() == ".png" else "image/jpeg")
+            ext = f.suffix.lower()
+            ctype = ("video/mp4" if ext in (".mp4", ".m4v") else
+                     "video/quicktime" if ext == ".mov" else
+                     "video/webm" if ext == ".webm" else
+                     "image/png" if ext == ".png" else "image/jpeg")
+            data = f.read_bytes()
+            rng = self.headers.get("Range")
+            if rng and ext in VID:                      # 支持拖动进度
+                m = re.match(r"bytes=(\d*)-(\d*)", rng)
+                if m:
+                    start = int(m.group(1) or 0)
+                    end = int(m.group(2)) if m.group(2) else len(data) - 1
+                    end = min(end, len(data) - 1)
+                    chunk = data[start:end + 1]
+                    self.send_response(206)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
+                    self.send_header("Content-Length", str(len(chunk)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(chunk)
+                    return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
         elif path == "/api/cloud/status":
             self._send(200, json.dumps(cloudimg.status(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")

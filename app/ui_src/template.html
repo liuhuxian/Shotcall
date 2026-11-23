@@ -436,12 +436,22 @@ function genUnitRow(u){
       ${running?`<span class="badge b-acc" style="font-size:10px">${running.status==='running'?'生成中':'排队'}</span>`:''}
       ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
-        onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">提示词</button>
+        onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">
+        ${GEN.open && GEN.open[u.id] ? '收起' : '审核稿'}</button>
     </div>
     ${GEN.open && GEN.open[u.id]?`<div style="padding:0 13px 12px">
-      <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;
-        border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:0;color:#c9d2e0;
-        max-height:240px;overflow:auto">${esc(u.prompt)}</pre></div>`:''}
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+        <button class="btn ghost" style="font-size:11px;padding:2px 9px;${(GEN.lang||{})[u.id]!=='en'?'border-color:var(--acc);color:var(--acc)':''}"
+          onclick="GEN.lang=GEN.lang||{};GEN.lang['${u.id}']='zh';render()">中文审核稿</button>
+        <button class="btn ghost" style="font-size:11px;padding:2px 9px;${(GEN.lang||{})[u.id]==='en'?'border-color:var(--acc);color:var(--acc)':''}"
+          onclick="GEN.lang=GEN.lang||{};GEN.lang['${u.id}']='en';render()">英文原文</button>
+        ${u.zhStale?'<span class="badge b-warn" style="font-size:10px">译文与原文不一致</span>':''}
+      </div>
+      <pre style="white-space:pre-wrap;line-height:1.85;font-size:${(GEN.lang||{})[u.id]==='en'?'11px':'12.5px'};
+        background:#0f1216;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0;
+        color:#c9d2e0;max-height:300px;overflow:auto">${esc(((GEN.lang||{})[u.id]==='en' || !u.zh) ? u.prompt : u.zh)}</pre>
+      ${!u.zh?'<div class="dim" style="font-size:11px;margin-top:4px">该单元还没有中文审核稿。</div>':''}
+      </div>`:''}
     ${mine.length?`<div style="padding:0 13px 12px;display:flex;gap:8px;flex-wrap:wrap">
       ${mine.map(r=>`<div style="width:180px">
         <video src="/api/proj/file?p=${encodeURIComponent(r.file)}" controls preload="metadata"
