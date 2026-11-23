@@ -977,6 +977,26 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/proj/text":
+            qt = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            rel = qt.get("p", [""])[0]
+            f = (PROJECT / rel).resolve()
+            root = PROJECT.resolve()
+            TEXT = (".md", ".txt", ".json", ".jsonl", ".csv", ".yaml", ".yml")
+            if (not str(f).startswith(str(root)) or not f.is_file()
+                    or f.suffix.lower() not in TEXT):
+                self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
+                return
+            st = f.stat()
+            raw = f.read_text(encoding="utf-8", errors="replace")
+            LIMIT = 400_000
+            self._send(200, json.dumps({
+                "path": rel, "sizeKB": round(st.st_size / 1024, 1),
+                "mtime": int(st.st_mtime),
+                "time": time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime)),
+                "text": raw[:LIMIT], "truncated": len(raw) > LIMIT,
+            }, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8")
         elif path == "/api/proj/file":
             q4 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             raw = q4.get("p", [""])[0]
