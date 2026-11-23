@@ -791,6 +791,7 @@ function sStages(){
         ${st.counts.superseded?`<span class="badge b-mut" style="font-size:10px">历史 ${st.counts.superseded}</span>`:''}
         ${st.staleDeps?`<span class="badge b-bad" style="font-size:10px">失效 ${st.staleDeps}</span>`:''}
         ${st.modifiedFiles?`<span class="badge b-bad" style="font-size:10px">改动 ${st.modifiedFiles}</span>`:''}
+        ${st.unregistered?`<span class="badge b-mut" style="font-size:10px">未登记 ${st.unregistered}</span>`:''}
       </div>
       <div class="dim mono" style="font-size:10.5px;margin-top:7px">${st.fileCount} 个文件</div>
     </div>`;
@@ -875,11 +876,22 @@ function sPending(){
         <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button></td>
     </tr>`;
   }).join("");
+  const unreg = (d.unregistered||[]);
+  const unregHtml = unreg.length ? `<div class="panel" style="margin-top:14px">
+    <div class="ph"><span>未登记的文档</span><span class="dim">目录里有文件，但 artifact-state.json 里没有记录 · 需要在项目工具里登记后才会进入确认流程</span></div>
+    <div class="pb"><table>
+      <thead><tr><th style="width:40px">阶段</th><th>文件</th><th style="width:110px">修改时间</th><th style="width:70px;text-align:right">大小</th></tr></thead>
+      <tbody>${unreg.map(u=>`<tr>
+        <td class="mono dim">${u.stage}</td>
+        <td class="mono" style="font-size:11px">${esc(u.path)}</td>
+        <td class="dim mono" style="font-size:11px">${esc(u.time)}</td>
+        <td class="dim mono" style="text-align:right;font-size:11px">${u.sizeKB} KB</td>
+      </tr>`).join("")}</tbody></table></div></div>` : "";
   return `<div class="panel">
     <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入本工作台的决策记录（不改项目登记表）</span></div>
     <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
       <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
-      <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div></div>` + unregHtml;
 }
 
 /* ---------- 成果清单 ---------- */

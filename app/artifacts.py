@@ -34,6 +34,40 @@ def load_registry(project: Path) -> dict:
             "schemaVersion": d.get("schema_version")}
 
 
+SKIP_DIRS = ("生成结果", "候选图片", "资产绑定", "历史版本", "工作台", "_develop-work",
+             "trailer", "废图", "旧版本", "聊天附件")
+DOC_EXT = (".md",)
+VERSIONED = __import__("re").compile(r"-v\d{3}(-\d+)?\.md$")
+
+
+def scan_unregistered(project: Path, known: set) -> list:
+    """目录里有、登记表里没有的文档 —— 新写的草稿若没登记就会落在这里。"""
+    out = []
+    for s in stages.STAGES:
+        d = project / s["dir"]
+        if not d.is_dir():
+            continue
+        for f in d.rglob("*"):
+            if not f.is_file() or f.suffix.lower() not in DOC_EXT:
+                continue
+            rel = str(f.relative_to(project))
+            if rel in known:
+                continue
+            if any(part in rel for part in SKIP_DIRS):
+                continue
+            if f.name.startswith(("原生草稿", "manualDraft")):
+                continue
+            if not VERSIONED.search(f.name):      # 只认带版本号的成果文档
+                continue
+            out.append({
+                "path": rel, "stage": s["no"], "name": f.name,
+                "sizeKB": round(f.stat().st_size / 1024),
+                "mtime": int(f.stat().st_mtime),
+                "time": __import__("time").strftime("%m-%d %H:%M", __import__("time").localtime(f.stat().st_mtime)),
+            })
+    return sorted(out, key=lambda x: x["mtime"], reverse=True)
+
+
 def build(project: Path) -> dict:
     """返回 {stages:[...], artifacts:[...], summary:{...}}"""
     reg = load_registry(project)
@@ -92,6 +126,7 @@ def build(project: Path) -> dict:
         item["staleDeps"] = stale
 
     arts = sorted(known.values(), key=lambda x: (x["stage"], x["path"]))
+    unreg = scan_unregistered(project, set(known.keys()))
 
     out_stages = []
     for s in stages.STAGES:
@@ -120,6 +155,7 @@ def build(project: Path) -> dict:
         })
 
     summary = {
+        "unregistered": len(unreg),
         "total": len(arts),
         "draft": sum(1 for a in arts if a["status"] == "draft"),
         "confirmed": sum(1 for a in arts if a["status"] == "confirmed"),
@@ -130,4 +166,5 @@ def build(project: Path) -> dict:
         "staleDeps": sum(1 for a in arts if a["staleDeps"]),
     }
     return {"exists": reg["exists"], "registryPath": STATE_FILE,
-            "stages": out_stages, "artifacts": arts, "summary": summary}
+            "stages": out_stages, "artifacts": arts,
+            "unregistered": unreg, "summary": summary}
