@@ -341,10 +341,11 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
     return g
 
 
-def _stage_ref(port: int, path: Path) -> str:
+def _stage_ref(port: int, path: Path, as_name: str = None) -> str:
+    name = as_name or path.name
     boundary = "----vjob" + str(int(time.time() * 1000))
     body = (f"--{boundary}\r\n".encode()
-            + f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'.encode()
+            + f'Content-Disposition: form-data; name="image"; filename="{name}"\r\n'.encode()
             + b"Content-Type: application/octet-stream\r\n\r\n" + path.read_bytes() + b"\r\n"
             + f"--{boundary}\r\n".encode()
             + b'Content-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n'
@@ -352,7 +353,7 @@ def _stage_ref(port: int, path: Path) -> str:
     req = urllib.request.Request(f"http://127.0.0.1:{port}/upload/image", data=body,
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=180) as r:
-        return json.loads(r.read().decode()).get("name", path.name)
+        return json.loads(r.read().decode()).get("name", name)
 
 
 def _api(port, path, payload=None, timeout=120):
@@ -380,6 +381,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
                    "seed": (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1),
+                   "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
                    "status": "queued", "card": None, "file": None, "error": None,
                    "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"]}
             with _lock:
@@ -406,8 +408,18 @@ def _runner(project: Path, jid: str):
 
 def _execute(project: Path, jid: str, job: dict):
     try:
+        ref_names = []
+        for i, rel in enumerate(job.get("refs") or []):
+            f = project / rel
+            if not f.exists():
+                raise RuntimeError(f"参考图缺失：{rel}")
+            ref_names.append(_stage_ref(job["port"], f, as_name=f"u_{jid[-10:]}_{i}{f.suffix}"))
+        with _lock:
+            if jid in _jobs:
+                _jobs[jid]["usedRefs"] = ref_names
+        _save()
         g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
-                        job["seed"], job["steps"])
+                        job["seed"], job["steps"], ref_images=ref_names)
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:

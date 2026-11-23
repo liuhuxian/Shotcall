@@ -405,7 +405,8 @@ def backend_state() -> dict:
                          "status": j["status"], "card": j.get("card"),
                          "frames": j.get("frames"), "seconds": j.get("seconds"),
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
-                         "batch": j.get("batch"), "promptId": j.get("promptId")})
+                         "batch": j.get("batch"), "promptId": j.get("promptId"),
+                         "refs": len(j.get("usedRefs") or j.get("refs") or [])})
     for j in img_jobs:
         if j["status"] in ("queued", "running", "starting"):
             JOBS.append({"id": j["id"], "kind": "image", "unit": j.get("dir") or j.get("asset"),
