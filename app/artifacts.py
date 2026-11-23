@@ -85,6 +85,25 @@ def scan_unregistered(project: Path, known: set, known_versions: dict = None) ->
     return sorted(out, key=lambda x: x["mtime"], reverse=True)
 
 
+def signature(project: Path) -> str:
+    """轻量指纹：只统计各阶段目录里文档的路径+大小+修改时间，不读内容。"""
+    import hashlib
+    parts = []
+    for s in stages.STAGES:
+        d = project / s["dir"]
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*")):
+            if f.is_file() and f.suffix.lower() in DOC_EXT:
+                st = f.stat()
+                parts.append(f"{f.relative_to(project)}|{st.st_size}|{int(st.st_mtime)}")
+    reg = project / STATE_FILE
+    if reg.exists():
+        st = reg.stat()
+        parts.append(f"{STATE_FILE}|{st.st_size}|{int(st.st_mtime)}")
+    return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]
+
+
 def build(project: Path) -> dict:
     """返回 {stages:[...], artifacts:[...], summary:{...}}"""
     reg = load_registry(project)

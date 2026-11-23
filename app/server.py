@@ -864,6 +864,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stages":
             q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             proj = Path(q2.get("project", [str(PROJECT)])[0]).expanduser()
+            if q2.get("sig"):
+                self._send(200, json.dumps({"sig": artifacts.signature(proj)},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+                return
             self._send(200, json.dumps(artifacts.build(proj), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path in ("/api/gpus", "/api/sched/state"):

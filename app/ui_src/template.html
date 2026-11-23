@@ -1600,6 +1600,7 @@ async function loadStages(force){
   try{
     const r = await fetch('/api/stages');
     STG.data = await r.json();
+    try{ STG.sig = (await (await fetch('/api/stages?sig=1')).json()).sig; }catch(e){}
     STG.err = null;
   }catch(e){ STG.err = String(e); }
   STG.loading = false;
@@ -1743,6 +1744,16 @@ async function cancelAllQueued(){
 
 async function pollProgOnce(){
   try{
+    try{
+      const sg = await fetch('/api/stages?sig=1').then(r=>r.json());
+      if(sg && sg.sig && STG.sig && sg.sig !== STG.sig){
+        STG.sig = sg.sig;
+        await loadStages(true);
+        render();
+        return;
+      }
+      if(sg && sg.sig) STG.sig = sg.sig;
+    }catch(e){}
     if(state.tab==='backend'){
       const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
       if(b){ const sig=JSON.stringify([b.instances.map(i=>[i.card,i.progress,i.queue,i.job&&i.job.elapsed]),b.startable]);
