@@ -268,14 +268,14 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","阶段看板"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["gen","生成台"],["backend","算力"],["pending","待确认"],["verify","校验"]];
+    ["gen","生成台"],["history","生成历史"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {backend:"算力", stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -549,6 +549,72 @@ function sBackend(){
   ${cardsGrid(d)}
   ${queueHtml(d)}
   <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认 · 自动扩缩已关闭</div>`;
+}
+
+/* ---------- 生成历史 ---------- */
+let HIST = {data:null};
+
+async function loadHistory(force){
+  if(HIST.data && !force) return HIST.data;
+  try{ HIST.data = await (await fetch('/api/gen/history')).json(); }catch(e){ HIST.data = {items:[]}; }
+  return HIST.data;
+}
+
+function fmtDur(s){
+  if(s == null) return '—';
+  const m = Math.floor(s/60), r = Math.round(s%60);
+  return m ? `${m} 分 ${r} 秒` : `${r} 秒`;
+}
+
+function sHistory(){
+  const d = HIST.data;
+  if(!d){ loadHistory().then(()=>render()); return `<div class="dim">读取历史…</div>`; }
+  const items = d.items||[];
+  const rows = items.map(x=>`<tr>
+    <td class="dim mono" style="font-size:11px;width:88px">${esc(x.time)}</td>
+    <td class="mono" style="width:70px">${esc(x.unit)}</td>
+    <td class="dim mono" style="font-size:10.5px;width:96px">${x.seed??'—'}</td>
+    <td class="dim mono" style="font-size:11px;width:96px">${x.w&&x.h?x.w+'×'+x.h:'—'}</td>
+    <td class="dim mono" style="font-size:11px;width:64px;text-align:right">${x.frames?x.frames+' 帧':'—'}</td>
+    <td class="dim mono" style="font-size:11px;width:52px;text-align:right">${x.steps?x.steps+' 步':'—'}</td>
+    <td class="mono" style="font-size:11.5px;width:88px;text-align:right">${fmtDur(x.renderSec)}</td>
+    <td class="dim mono" style="font-size:11px;width:66px;text-align:right">${x.sizeMB} MB</td>
+    <td style="width:150px;text-align:right">
+      <button class="btn ghost" style="font-size:10.5px;padding:2px 8px"
+        onclick="playHist('${esc(x.file)}')">播放</button>
+      <a class="btn ghost" style="font-size:10.5px;padding:2px 8px;text-decoration:none"
+        href="/api/proj/file?p=${encodeURIComponent(x.file)}" download>下载</a>
+    </td>
+  </tr>`).join("");
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">已生成视频</div><div class="kpi">${d.count||0}<small>条</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">总占用</div><div class="kpi">${d.totalMB||0}<small>MB</small></div></div>
+    <div class="card"><div class="muted" style="font-size:12px">实测速率</div>
+      <div class="kpi">${d.ratePerFrame?d.ratePerFrame:'—'}<small>秒/帧</small></div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">来自 ${d.measured||0} 条有记录的</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">记录方式</div>
+      <div class="dim" style="font-size:11.5px;line-height:1.7">耗时只在导演台提交时记录；<br>早期任务显示「—」</div></div>
+  </div>
+  <div class="panel"><div class="ph"><span>生成历史</span>
+    <span class="dim">${items.length} 条 · 按完成时间倒序</span></div>
+    <div class="pb">${items.length?`<table><thead><tr>
+      <th>完成时间</th><th>单元</th><th>种子</th><th>分辨率</th><th style="text-align:right">帧数</th>
+      <th style="text-align:right">步数</th><th style="text-align:right">耗时</th><th style="text-align:right">大小</th>
+      <th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table>`
+      :'<div class="dim" style="font-size:12.5px">还没有生成记录。</div>'}</div></div>
+  <div id="histPlayer"></div>`;
+}
+
+function playHist(file){
+  const box = document.getElementById('histPlayer');
+  if(!box) return;
+  box.innerHTML = `<div class="panel" style="margin-top:12px" id="histBox">
+    <div class="ph"><span>${esc(file.split('/').pop())}</span><span class="dim">按 F 全屏</span></div>
+    <div class="pb"><video src="/api/proj/file?p=${encodeURIComponent(file)}" controls autoplay
+      onmouseenter="GEN.hoverVid=this" ondblclick="toggleFs(this)"
+      style="width:100%;max-height:70vh;border-radius:8px;border:1px solid var(--line)"></video></div></div>`;
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 
 /* ---------- 生成台 ---------- */
@@ -1853,6 +1919,9 @@ async function pollTick(){
 async function pollProgOnce(){
   try{
     // 生成台：只看该场产物有没有新增，别的抖动一律不重绘
+    if(state.tab === 'history'){
+      return false;
+    }
     if(state.tab === 'gen'){
       if(!GEN.scene) return false;
       const r = await fetch('/api/gen/results?scene='+encodeURIComponent(GEN.scene)).then(x=>x.json()).catch(()=>null);
@@ -2608,6 +2677,8 @@ function render(){
     html = sShots();
   } else if (state.tab === "gen") {
     html = sGen();
+  } else if (state.tab === "history") {
+    html = sHistory();
   } else if (state.tab === "backend") {
     html = sBackend();
   } else if (state.tab === "stage") {

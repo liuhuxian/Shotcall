@@ -592,7 +592,8 @@ def _execute(project: Path, jid: str, job: dict):
                 out.write_bytes(data)
                 with _lock:
                     _jobs[jid].update({"status": "done", "file": str(out.relative_to(project)),
-                                       "seconds": round(time.time() - t0, 1)})
+                                       "renderSec": round(time.time() - t0, 1),
+                                       "finishedAt": time.time()})
                 _save()
                 return
         raise RuntimeError("轮询超时")

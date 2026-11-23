@@ -11,8 +11,8 @@
 """
 import argparse
 import json
-import subprocess
 import tempfile
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -349,6 +349,76 @@ def _video_recovery_loop():
         except Exception as e:
             print("[recover] 出错：", e, flush=True)
         time.sleep(30)
+
+
+_PROBE_CACHE = {}
+
+
+def _probe_video(f: Path) -> dict:
+    """读分辨率/帧数，按 路径+大小+修改时间 缓存。"""
+    st = f.stat()
+    key = f"{f}|{st.st_size}|{int(st.st_mtime)}"
+    if key in _PROBE_CACHE:
+        return _PROBE_CACHE[key]
+    out = {}
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height,nb_frames",
+                            "-of", "json", str(f)], capture_output=True, timeout=20)
+        s = (json.loads(r.stdout.decode() or "{}").get("streams") or [{}])[0]
+        out = {"w": s.get("width"), "h": s.get("height"),
+               "frames": int(s["nb_frames"]) if str(s.get("nb_frames", "")).isdigit() else None}
+    except Exception:
+        out = {}
+    _PROBE_CACHE[key] = out
+    return out
+
+
+def _guess_render(j: dict):
+    """老记录把渲染耗时存在 seconds 里；片长只有十几秒，用 60 秒做分界。"""
+    s = j.get("seconds")
+    try:
+        return float(s) if s and float(s) > 60 else None
+    except Exception:
+        return None
+
+
+def gen_history() -> dict:
+    """导演台生成过的视频历史：以磁盘文件为准，任务记录补充耗时/规格。"""
+    root = PROJECT / vjobs.RESULT_DIR
+    by_file = {}
+    for j in vjobs.list_jobs():
+        if j.get("file"):
+            by_file[j["file"]] = j
+    items = []
+    if root.is_dir():
+        for f in root.rglob("*.mp4"):
+            rel = str(f.relative_to(PROJECT))
+            st = f.stat()
+            j = by_file.get(rel) or {}
+            pr = _probe_video(f)
+            items.append({
+                "file": rel, "name": f.name,
+                "unit": j.get("unit") or f.parent.name,
+                "seed": j.get("seed") or (f.stem if f.stem.isdigit() else None),
+                "scene": j.get("scene") or "N001",
+                "sizeMB": round(st.st_size / 2 ** 20, 1),
+                "mtime": int(st.st_mtime),
+                "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime)),
+                "w": pr.get("w"), "h": pr.get("h"),
+                "frames": pr.get("frames") or j.get("frames"),
+                "steps": j.get("steps"),
+                "renderSec": j.get("renderSec") or _guess_render(j),
+                "source": j.get("source") or ("workbench" if j else "disk"),
+                "refs": len(j.get("refs") or []),
+            })
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    known = [i for i in items if i.get("renderSec") and i.get("frames")]
+    rate = round(sum(i["renderSec"] / i["frames"] for i in known) / len(known), 2) if known else None
+    return {"items": items, "count": len(items),
+            "totalMB": round(sum(i["sizeMB"] for i in items), 1),
+            "ratePerFrame": rate,
+            "measured": len(known)}
 
 
 def backend_state() -> dict:
@@ -950,6 +1020,9 @@ class Handler(BaseHTTPRequestHandler):
             sc = q5.get("scene", ["N001"])[0]
             self._send(200, json.dumps({"scene": sc, "units": vjobs.parse_units(PROJECT, sc)},
                                        ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/gen/history":
+            self._send(200, json.dumps(gen_history(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/jobs":
             self._send(200, json.dumps({"jobs": vjobs.list_jobs()}, ensure_ascii=False).encode("utf-8"),
