@@ -927,6 +927,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/artifact/confirm":
+            try:
+                body = self._json_body()
+                verdict = body.get("verdict") or "pass"
+                if verdict not in ("pass", "revise", "hold"):
+                    raise ValueError("verdict 只能是 pass / revise / hold")
+                rec = store.append(
+                    PROJECT, 1,
+                    {"type": "artifact", "id": body["path"]}, verdict,
+                    notes=[{"text": f"{body.get('stage','')} {body.get('kind','')} {body.get('scope','')}".strip()}],
+                    scope=body.get("scope"),
+                    evidence=payload()["data"].get("files") or {},
+                )
+                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/img/adopt":
             try:
                 body = self._json_body()

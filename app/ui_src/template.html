@@ -178,7 +178,7 @@ const S = D.stats;
 
 /* ---- 原型内的模拟状态（仅内存） ---- */
 const state = {
-  tab:"overview", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
+  tab:"stages", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
   filter:"all", verdicts:{}, picks:{}, candModal:null, batchModal:null, reasonChips:[], drafts:{}, preflight:null, plan:null, exec:null
 };
 const vkey=(t,id)=>t+"::"+id;
@@ -261,17 +261,15 @@ function reviewDot(tab){
 
 function nav(){
   const items=[
-    ["overview","总览"],["workflow","工作流"],["dev","开发"],
-    ["r1","审核一 · 剧本"],["img","出图 · 资产"],["r1a","审核二 · 资产"],
-    ["r2","审核三 · 分镜"],["img2","出图 · 分镜"],["shot","单镜详情"],["checks","检查"],
-    ["batch","视频生成"],["pick","审核四 · 挑片"],["export","修改单"]];
+    ["stages","阶段看板"],["stage","阶段详情"],["pending","待确认"],
+    ["arts","成果清单"],["verify","校验"],["legacy","旧界面"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {stages:"阶段看板", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -406,6 +404,187 @@ function sWorkflow(){
 }
 
 /* ---------- 总览 ---------- */
+
+/* ---------- 阶段看板 ---------- */
+function sStages(){
+  const d = STG.data;
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取成果登记…</div>`; }
+  if(!d.exists) return `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+    <div><b>没有找到成果登记表</b><div class="dim" style="font-size:12px">${esc(d.registryPath||"00-项目管理/artifact-state.json")}</div></div></div>`;
+  const s = d.summary || {};
+  const cards = (d.stages||[]).map(st=>{
+    const color = STAGE_COLOR[st.state] || "var(--dim)";
+    return `<div class="card" style="cursor:pointer;border-color:${st.state==='empty'?'var(--line)':color}" onclick="go('stage',{stage:'${st.no}'})">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="mono dim" style="font-size:11px">${st.no}</span>
+        <b style="font-size:13px;flex:1">${esc(st.name)}</b>
+        <i class="dot" style="background:${color}"></i>
+      </div>
+      <div class="dim" style="font-size:11.5px;margin-top:6px">${esc(st.desc)}</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:wrap">
+        <span class="badge" style="font-size:10px;border-color:${color};color:${color}">${STAGE_LABEL[st.state]||st.state}</span>
+        ${st.artifacts?`<span class="dim" style="font-size:10.5px">成果 ${st.artifacts}</span>`:''}
+        ${st.counts.draft?`<span class="badge b-warn" style="font-size:10px">草稿 ${st.counts.draft}</span>`:''}
+        ${st.counts.confirmed?`<span class="badge b-ok" style="font-size:10px">确认 ${st.counts.confirmed}</span>`:''}
+        ${st.counts.superseded?`<span class="badge b-mut" style="font-size:10px">历史 ${st.counts.superseded}</span>`:''}
+        ${st.staleDeps?`<span class="badge b-bad" style="font-size:10px">失效 ${st.staleDeps}</span>`:''}
+        ${st.modifiedFiles?`<span class="badge b-bad" style="font-size:10px">改动 ${st.modifiedFiles}</span>`:''}
+      </div>
+      <div class="dim mono" style="font-size:10.5px;margin-top:7px">${st.fileCount} 个文件</div>
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">成果总数</div><div class="kpi">${s.total||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${s.draft||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">异常</div>
+      <div class="kpi" style="color:${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)?'var(--bad)':'var(--dim)'}">${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)}</div>
+      <div class="dim" style="font-size:11px;margin-top:3px">改动 ${s.modified||0} · 缺失 ${s.missing||0} · 失效依赖 ${s.staleDeps||0}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">${cards}</div>
+  <div class="dim" style="font-size:12px;margin-top:14px">登记表：${esc(d.registryPath||"")} · 只读，不修改项目文件</div>`;
+}
+
+/* ---------- 阶段详情 ---------- */
+function sStage(){
+  const d = STG.data;
+  if(!d) { if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const no = state.stage || (d.stages[0]||{}).no;
+  const st = stageOf(no) || d.stages[0];
+  const items = (d.artifacts||[]).filter(a=>a.stage===no);
+  const rows = items.map(a=>{
+    const c = ART_COLOR[a.status]||"var(--dim)";
+    const stale = (a.staleDeps||[]).length;
+    return `<tr>
+      <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[a.status]||a.status}</span></td>
+      <td><div style="font-size:12.5px">${esc(a.kind||"")}</div>
+          <div class="mono dim" style="font-size:10.5px">${esc(a.path)}</div></td>
+      <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
+      <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>
+      <td style="text-align:center">${a.fileState==='ok'?'<span class="badge b-ok" style="font-size:10px">一致</span>'
+        :a.fileState==='modified'?'<span class="badge b-bad" style="font-size:10px">已改动</span>'
+        :'<span class="badge b-bad" style="font-size:10px">缺失</span>'}</td>
+      <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px" title="${esc(a.staleDeps.map(x=>x.path+'：'+x.reason).join('\n'))}">${stale} 处</span>`:'<span class="dim">—</span>'}</td>
+      <td style="text-align:right">${a.status==='draft'
+        ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认</button>
+           <button class="btn warn" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button>`
+        : `<span class="dim" style="font-size:11px">${a.confirmedAt?esc(String(a.confirmedAt).slice(0,16)):''}</span>`}</td>
+    </tr>`;
+  }).join("");
+
+  const nav = (d.stages||[]).map(x=>
+    `<span onclick="go('stage',{stage:'${x.no}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11.5px;
+      border:1px solid ${x.no===no?'var(--acc)':'var(--line)'};color:${x.no===no?'var(--acc)':'#8b95a6'}">${x.no}</span>`).join(" ");
+
+  return `
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${nav}</div>
+  <div class="panel">
+    <div class="ph"><span><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
+      <span class="dim">${esc(st.desc)} · ${st.fileCount} 个文件 · ${items.length} 项成果</span></div>
+    <div class="pb">
+      ${items.length?`<table>
+        <thead><tr><th style="width:70px">状态</th><th>成果</th><th style="width:150px">范围</th>
+          <th style="width:70px;text-align:right">大小</th><th style="width:70px;text-align:center">哈希</th>
+          <th style="width:70px;text-align:center">依赖</th><th style="width:150px;text-align:right">操作</th></tr></thead>
+        <tbody>${rows}</tbody></table>`
+        :'<div class="dim" style="font-size:12.5px">这一阶段还没有登记成果'+(st.fileCount?`（目录里有 ${st.fileCount} 个文件，未登记）`:'')+'</div>'}
+    </div>
+  </div>`;
+}
+
+/* ---------- 待确认 ---------- */
+function sPending(){
+  const d = STG.data;
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const drafts = (d.artifacts||[]).filter(a=>a.status==='draft');
+  if(!drafts.length) return `<div class="panel"><div class="pb dim">没有待确认的成果。</div></div>`;
+  const rows = drafts.map(a=>{
+    const stale = (a.staleDeps||[]).length;
+    return `<tr>
+      <td class="mono dim" style="width:40px">${a.stage}</td>
+      <td><div style="font-size:12.5px">${esc(a.kind||"")}</div>
+          <div class="mono dim" style="font-size:10.5px">${esc(a.path)}</div></td>
+      <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
+      <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px">依赖 ${stale}</span>`:'<span class="dim">—</span>'}</td>
+      <td style="text-align:right">
+        <button class="btn ok" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','pass')">确认</button>
+        <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button></td>
+    </tr>`;
+  }).join("");
+  return `<div class="panel">
+    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入本工作台的决策记录（不改项目登记表）</span></div>
+    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
+      <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
+      <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* ---------- 成果清单 ---------- */
+function sArts(){
+  const d = STG.data;
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const rows = (d.artifacts||[]).map(a=>`<tr>
+    <td class="mono dim" style="width:40px">${a.stage}</td>
+    <td style="font-size:12.5px">${esc(a.kind||"")}</td>
+    <td class="mono dim" style="font-size:10.5px">${esc(a.path)}</td>
+    <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
+    <td><span class="badge" style="font-size:10px;border-color:${ART_COLOR[a.status]||'var(--dim)'};color:${ART_COLOR[a.status]||'var(--dim)'}">${ART_LABEL[a.status]||a.status}</span></td>
+    <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>
+  </tr>`).join("");
+  return `<div class="panel"><div class="ph"><span>成果清单</span><span class="dim">${(d.artifacts||[]).length} 项</span></div>
+    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>类型</th><th>路径</th>
+      <th style="width:150px">范围</th><th style="width:80px">状态</th><th style="width:70px;text-align:right">大小</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* ---------- 校验 ---------- */
+function sVerify(){
+  const d = STG.data;
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const bad = (d.artifacts||[]).filter(a=>a.fileState!=='ok' || (a.staleDeps||[]).length);
+  const s = d.summary||{};
+  const rows = bad.map(a=>`<tr>
+    <td class="mono dim" style="width:40px">${a.stage}</td>
+    <td class="mono dim" style="font-size:10.5px">${esc(a.path)}</td>
+    <td style="text-align:center">${a.fileState==='modified'?'<span class="badge b-bad" style="font-size:10px">文件已改动</span>'
+      :a.fileState==='missing'?'<span class="badge b-bad" style="font-size:10px">文件缺失</span>':'<span class="dim">—</span>'}</td>
+    <td style="font-size:11px" class="dim">${(a.staleDeps||[]).map(x=>esc(x.path)+'：'+esc(x.reason)).join('<br>')||'—'}</td>
+  </tr>`).join("");
+  return `<div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">文件被改动</div><div class="kpi">${s.modified||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">文件缺失</div><div class="kpi">${s.missing||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">失效依赖</div><div class="kpi">${s.staleDeps||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">哈希一致</div><div class="kpi" style="color:var(--ok)">${(s.total||0)-(s.modified||0)-(s.missing||0)}</div></div>
+  </div>
+  <div class="panel"><div class="ph"><span>异常明细</span><span class="dim">按登记时记录的 sha256 比对当前文件</span></div>
+    <div class="pb">${bad.length?`<table><thead><tr><th style="width:40px">阶段</th><th>成果路径</th>
+      <th style="width:110px;text-align:center">文件</th><th>失效依赖</th></tr></thead><tbody>${rows}</tbody></table>`
+      :'<div class="dim" style="font-size:12.5px">没有异常：所有登记成果的文件哈希与依赖都成立。</div>'}</div></div>`;
+}
+
+/* ---------- 旧界面 ---------- */
+function sLegacy(){
+  return `<div class="panel"><div class="ph"><span>旧界面</span><span class="dim">按「集」组织的旧结构，项目已改用 00–09 阶段目录</span></div>
+  <div class="pb dim" style="font-size:12.5px;line-height:2">
+    旧页面（审核一~四、出图、挑片、视频生成）依赖 <span class="mono">剧集/&lt;集号&gt;/</span> 与
+    <span class="mono">项目开发/episode-map.jsonl</span>，这些路径在当前项目里已不存在，因此内容为空。<br>
+    新的执行入口会在第 3 期接到 07 / 09 阶段上。
+  </div></div>`;
+}
+
+async function confirmArt(path, verdict){
+  const d = STG.data;
+  const art = (d.artifacts||[]).find(a=>a.path===path);
+  const r = await fetch('/api/artifact/confirm', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({path, verdict, kind:art?art.kind:"", scope:art?art.scope:"", stage:art?art.stage:""})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||"记录失败");
+  toast(verdict==='pass' ? ("已记录确认："+path) : ("已记录退回："+path));
+  await loadStages(true);
+  render();
+}
+
 function sOverview(){
   const sceneV = D.scenes.map(s=>vget("scene",s.id));
   const shotDone = D.shots.filter(s=>vget("shot",s.id)).length;
@@ -1039,6 +1218,35 @@ function sChecks(){
 
 
 /* ---------- 出图① · 资产图 ---------- */
+let STG = {data:null, err:null, loading:false, detail:null};
+
+async function loadStages(force){
+  if(STG.data && !force) return STG.data;
+  STG.loading = true;
+  try{
+    const r = await fetch('/api/stages');
+    STG.data = await r.json();
+    STG.err = null;
+  }catch(e){ STG.err = String(e); }
+  STG.loading = false;
+  return STG.data;
+}
+
+function stageOf(no){
+  const d = STG.data;
+  if(!d) return null;
+  return (d.stages||[]).find(s=>s.no===no) || null;
+}
+
+const STAGE_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", blocked:"var(--bad)",
+                     conclusion:"var(--acc)", superseded:"#5c6474", empty:"#3a4655"};
+const STAGE_LABEL = {confirmed:"已确认", draft:"有待确认", blocked:"文件缺失",
+                     conclusion:"已出结论", superseded:"已替代", empty:"未开始"};
+const ART_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", superseded:"#5c6474",
+                   conclusion:"var(--acc)", unknown:"var(--dim)"};
+const ART_LABEL = {confirmed:"已确认", draft:"草稿", superseded:"已替代",
+                   conclusion:"结论", unknown:"未知"};
+
 let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null,
              enabled:new Set(), prog:null, progTimer:null};
 
@@ -1885,18 +2093,28 @@ function render(){
   const map={overview:sOverview,workflow:sWorkflow,dev:sDev,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
   const epScoped = ["r1","r2","shot","pick","batch","img","export","checks","workflow"];
   let html;
-  if (state.tab === "overview") {
+  if (state.tab === "stages") {
+    html = sStages();
+  } else if (state.tab === "stage") {
+    html = sStage();
+  } else if (state.tab === "pending") {
+    html = sPending();
+  } else if (state.tab === "arts") {
+    html = sArts();
+  } else if (state.tab === "verify") {
+    html = sVerify();
+  } else if (state.tab === "overview") {
     html = sOverview();
   } else if (state.tab === "workflow") {
     html = sWorkflow();
   } else if (state.tab === "dev") {
     html = sDev();
   } else if (D && D.empty) {
-    html = emptyPanel(state.tab);
+    html = sLegacy();
   } else if (D && D.episode && state.ep !== D.episode) {
     html = emptyPanel(state.tab);
   } else {
-    html = (map[state.tab] || sOverview)();
+    html = (map[state.tab] || sStages)();
   }
   document.getElementById("app").innerHTML = statusBar() + html;
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
