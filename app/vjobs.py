@@ -18,6 +18,29 @@ import store
 _lock = __import__("threading").Lock()
 _jobs = {}
 _order = []
+JOBS_FILE = Path(__file__).parent / "run" / "vjobs.json"
+
+
+def _save():
+    with _lock:
+        data = {"order": list(_order), "jobs": {k: dict(v) for k, v in _jobs.items()}}
+    try:
+        JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = JOBS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(JOBS_FILE)
+    except Exception:
+        pass
+
+
+def _load():
+    try:
+        data = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    with _lock:
+        _jobs.update({k: v for k, v in (data.get("jobs") or {}).items()})
+        _order.extend(x for x in (data.get("order") or []) if x in _jobs)
 
 PLAN_DIR = "09-镜头与视频提示词/镜头规划"
 VP_DIR = "09-镜头与视频提示词/视频提示词"
@@ -125,6 +148,68 @@ def parse_units(project: Path, scene: str) -> list:
     return attach_zh(out, scene)
 
 
+def recover(project: Path) -> list:
+    """从 ComfyUI 的 /history 里认领"没人认领"的产出（进程重启后的孤儿任务）。
+
+    按提示词全文匹配单元，命中就下载并登记为 done。
+    """
+    units = {}
+    for sc in {j.get("scene") for j in _jobs.values() if j.get("scene")} or {"N001"}:
+        for u in parse_units(project, sc):
+            units[u["prompt"].strip()] = (sc, u)
+    if not units:
+        return []
+    known = {(j.get("scene"), j.get("unit"), j.get("seed")) for j in _jobs.values()}
+    saved = []
+    for card in range(8):
+        port = 8188 + card
+        try:
+            hist = _api(port, "/history", timeout=20)
+        except Exception:
+            continue
+        for pid, entry in (hist or {}).items():
+            try:
+                nodes = (entry.get("prompt") or [None, None, {}])[2] or {}
+                text = seed = None
+                for node in nodes.values():
+                    ins = node.get("inputs") or {}
+                    if node.get("class_type") == "MiniMaxH3ReferenceToVideo" and isinstance(ins.get("prompt"), str):
+                        text = ins["prompt"].strip()
+                    if node.get("class_type") == "RandomNoise":
+                        seed = ins.get("noise_seed")
+                if not text or text not in units:
+                    continue
+                sc, u = units[text]
+                if (sc, u["id"], seed) in known:
+                    continue
+                items = [i for v in (entry.get("outputs") or {}).values() for i in v.get("images", [])]
+                vids = [i for i in items if i.get("filename", "").endswith(".mp4")]
+                if not vids:
+                    continue
+                v = vids[-1]
+                q = urllib.parse.urlencode({"filename": v["filename"],
+                                            "subfolder": v.get("subfolder", ""), "type": "output"})
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/view?{q}", timeout=600) as r:
+                    data = r.read()
+                out = project / RESULT_DIR / sc / u["id"] / f"{seed}.mp4"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(data)
+                jid = f"RECOVER-{u['id']}-{seed}"
+                with _lock:
+                    _jobs[jid] = {"id": jid, "batch": "recovered", "scene": sc, "unit": u["id"],
+                                  "seq": None, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
+                                  "seed": seed, "status": "done", "card": card,
+                                  "file": str(out.relative_to(project)), "source": "recovered",
+                                  "queuedAt": time.time(), "startedAt": None, "prompt": text}
+                    _order.append(jid)
+                    known.add((sc, u["id"], seed))
+                _save()
+                saved.append(str(out.relative_to(project)))
+            except Exception:
+                continue
+    return saved
+
+
 def list_jobs(batch: str = None) -> list:
     with _lock:
         return [_jobs[j] for j in _order if not batch or _jobs[j]["batch"] == batch]
@@ -207,6 +292,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                 _jobs[jid] = job
                 _order.append(jid)
             tasks.append({"id": jid, "run": _runner(project, jid)})
+    _save()
     sched.submit("video", tasks)
     return {"batch": batch, "jobs": [t["id"] for t in tasks]}
 
@@ -219,6 +305,7 @@ def _runner(project: Path, jid: str):
                 return
             _jobs[jid].update({"status": "running", "startedAt": time.time(),
                                "port": port, "card": port - 8188})
+        _save()
         _execute(project, jid, dict(_jobs[jid]))
     return run
 
@@ -252,12 +339,14 @@ def _execute(project: Path, jid: str, job: dict):
                 with _lock:
                     _jobs[jid].update({"status": "done", "file": str(out.relative_to(project)),
                                        "seconds": round(time.time() - t0, 1)})
+                _save()
                 return
         raise RuntimeError("轮询超时")
     except Exception as e:
         with _lock:
             if jid in _jobs:
                 _jobs[jid].update({"status": "failed", "error": str(e)})
+        _save()
 
 
 def cancel(ids: list) -> int:
@@ -268,3 +357,6 @@ def cancel(ids: list) -> int:
                 _jobs[jid]["status"] = "cancelled"
                 n += 1
     return n
+
+
+_load()

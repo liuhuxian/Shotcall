@@ -337,6 +337,18 @@ def _script_title(ep_dir: Path):
     return None
 
 
+def _video_recovery_loop():
+    """每 30 秒认领一次孤儿产物：进程重启后仍在 ComfyUI 里跑完的任务。"""
+    while True:
+        try:
+            got = vjobs.recover(PROJECT)
+            if got:
+                print("[recover] 认领视频：", got, flush=True)
+        except Exception as e:
+            print("[recover] 出错：", e, flush=True)
+        time.sleep(30)
+
+
 def backend_state() -> dict:
     """算力页：只列**已启动**的实例。"""
     cards = gpus.probe()
@@ -384,7 +396,24 @@ def backend_state() -> dict:
         used = vm.get("usedGB")
         if used is not None and used < 8:
             startable.append({"card": c["index"], "vramUsedGB": used})
-    return {"instances": inst, "startable": startable,
+    JOBS = []
+    for j in vid_jobs:
+        if j["status"] in ("queued", "running", "starting"):
+            JOBS.append({"id": j["id"], "kind": "video", "unit": j.get("unit"),
+                         "seq": j.get("seq"), "scene": j.get("scene"),
+                         "status": j["status"], "card": j.get("card"),
+                         "frames": j.get("frames"), "seconds": j.get("seconds"),
+                         "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
+                         "batch": j.get("batch")})
+    for j in img_jobs:
+        if j["status"] in ("queued", "running", "starting"):
+            JOBS.append({"id": j["id"], "kind": "image", "unit": j.get("dir") or j.get("asset"),
+                         "seq": None, "scene": None, "status": j["status"],
+                         "card": j.get("card"), "frames": None, "seconds": None,
+                         "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
+                         "batch": j.get("batch")})
+    JOBS.sort(key=lambda x: (x["status"] != "running", x.get("queuedAt") or 0))
+    return {"instances": inst, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
                         "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),
                         "running": sum(1 for i in inst if i.get("executing"))}}
@@ -1345,6 +1374,9 @@ def main():
     print(f"导演工作台 P0 骨架 → http://{a.host}:{a.port}")
     print(f"  项目 {PROJECT} · {EPISODE} · 仅监听本机")
     srv.serve_forever()
+
+
+threading.Thread(target=_video_recovery_loop, daemon=True).start()
 
 
 if __name__ == "__main__":
