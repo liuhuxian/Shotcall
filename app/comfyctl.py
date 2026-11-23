@@ -55,10 +55,13 @@ def start(card: int, wait: float = 90.0) -> dict:
     if _alive(port):
         return {"card": card, "port": port, "started": False, "ready": True}
     env = dict(os.environ)
-    env["CUDA_VISIBLE_DEVICES"] = str(card)
+    # 注意：ComfyUI 会用 --cuda-device 覆盖 CUDA_VISIBLE_DEVICES（main.py:101-102），
+    # 所以卡号必须通过 --cuda-device 传，不能只靠环境变量。
+    env.pop("CUDA_VISIBLE_DEVICES", None)
     log = open(COMFY_LOG / f"comfy-card{card}.log", "ab")
     subprocess.Popen(
-        [COMFY_PY, "main.py", "--listen", "127.0.0.1", "--port", str(port), "--cuda-device", "0", *_CMD_TAIL],
+        [COMFY_PY, "main.py", "--listen", "127.0.0.1", "--port", str(port),
+         "--cuda-device", str(card), *_CMD_TAIL],
         cwd=str(COMFY_DIR), env=env, stdout=log, stderr=log, start_new_session=True,
     )
     t0 = time.time()

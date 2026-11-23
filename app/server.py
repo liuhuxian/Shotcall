@@ -21,6 +21,7 @@ from pathlib import Path
 
 import os
 
+import artifacts
 import dataset
 import gpus
 import imagegen
@@ -702,6 +703,11 @@ class Handler(BaseHTTPRequestHandler):
                        "application/json; charset=utf-8")
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/stages":
+            q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            proj = Path(q2.get("project", [str(PROJECT)])[0]).expanduser()
+            self._send(200, json.dumps(artifacts.build(proj), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path in ("/api/gpus", "/api/sched/state"):
             snap = sched.snapshot()

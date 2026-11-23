@@ -1819,7 +1819,14 @@ ${S.adapted.map(a=>`- [${a.scene.slice(-3)}] ${a.spk}："${a.text}" — 原著�
 
 /* ---------- 路由 ---------- */
 function sEpSel(){
-  const cur = D.episodes.find(e=>e.id===state.ep) || D.episodes[0];
+  const eps = D.episodes || [];
+  if(!eps.length){
+    return `<button class="epbtn" onclick="toast('项目里没有 项目开发/episode-map.jsonl，选集不可用')">
+      <span class="proj">${D.project?esc(String(D.project).split(' · ')[0]):'项目'}</span>
+      <span class="sep">·</span><i class="st" style="background:var(--bad)"></i>
+      <span class="cur">无分集数据</span></button>`;
+  }
+  const cur = eps.find(e=>e.id===state.ep) || eps[0];
   const dot = cur.hasScript ? "var(--acc)" : "var(--dim)";
   return `
   <button class="epbtn" onclick="state.epOpen=!state.epOpen;render()">

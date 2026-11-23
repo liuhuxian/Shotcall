@@ -17,6 +17,7 @@ _state = {
     "draining": set(),    # 队列清空后关闭
     "assign": {},         # 卡号 -> 当前任务的 kind（仅用于展示）
     "jobs": {},           # 卡号 -> 正在跑的 job id 集合
+    "manual": set(),      # 用户手动开启/指定的卡，白天不自动回收
 }
 _pending = []             # 等待分配的任务（dict: id, kind, run()）
 _runners = {}             # job_id -> callable(port) 真正干活的函数
@@ -43,6 +44,7 @@ def snapshot() -> dict:
             c["comfyRunning"] = q["running"]
             c["comfyPending"] = q["pending"]
     return {"cards": cards, "enabled": enabled, "draining": draining,
+            "manual": sorted(_state["manual"]),
             "night": gpus.is_night(), "loadMinGB": gpus.LOAD_MIN_GB,
             "pending": len(_pending)}
 
@@ -65,6 +67,7 @@ def set_cards(want: list) -> dict:
             if comfyctl.stop(idx).get("stopped"):
                 stopped.append(idx)
         cur.discard(idx)
+    _state["manual"] |= want                  # 确认过的卡视为手动指定，白天不回收
     for idx in want - cur:
         cur.add(idx)
     with _lock:
@@ -191,7 +194,7 @@ def _housekeeping():
                 with _lock:
                     idle = not _pending and not any(_state["jobs"].values())
                 if idle:
-                    keep = set(gpus.default_selection(gpus.probe()))
+                    keep = set(gpus.default_selection(gpus.probe())) | _state["manual"]
                     for idx in set(_enabled()) - keep:
                         _state["draining"].add(idx)
             for idx in list(_state["draining"]):
