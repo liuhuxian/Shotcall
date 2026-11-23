@@ -1288,9 +1288,14 @@ class Handler(BaseHTTPRequestHandler):
                 seed = int(seed) if str(seed).strip().isdigit() else None
                 steps = body.get("steps")
                 steps = int(steps) if str(steps).isdigit() else 20
-                res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps)
+                size = str(body.get("size") or "1216x672")
+                try:
+                    w, h = [int(x) for x in size.lower().split("x")]
+                except Exception:
+                    w, h = 1216, 672
+                res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps, width=w, height=h)
                 store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
-                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步" +
+                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
                                             (f"，种子 {seed}" if seed is not None else "，种子随机")}])
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")

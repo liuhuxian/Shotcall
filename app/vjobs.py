@@ -330,10 +330,15 @@ def sweep() -> int:
                     _jobs[jid]["error"] = "执行被中断"
                     n += 1
                     continue
-                # 给刚送达的任务 2 分钟宽限，避免"提交后、注册前"被误判
-                fresh = (time.time() - (j.get("pidAt") or j.get("startedAt")
-                                        or j.get("queuedAt") or 0)) < 180
-                if pid not in alive and pid not in hist_ids and not fresh:
+                # pid 是 ComfyUI 已经接收的凭证：只要还没在队列/历史里连续消失 20 分钟，就别判死
+                if pid in alive or pid in hist_ids:
+                    _jobs[jid].pop("vanishedAt", None)
+                    continue
+                if not _jobs[jid].get("vanishedAt"):
+                    _jobs[jid]["vanishedAt"] = time.time()
+                    continue
+                gone = time.time() - _jobs[jid]["vanishedAt"]
+                if gone > 1200:
                     _jobs[jid]["status"] = "aborted"
                     _jobs[jid]["error"] = "已中断或丢失"
                     n += 1
@@ -509,7 +514,7 @@ def _api(port, path, payload=None, timeout=120):
 
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
-           width=1344, height=768, steps=20) -> dict:
+           width=1216, height=672, steps=20) -> dict:
     """units: [{"unit": {...}, "count": n}]；seed 给了就按 seed, seed+1, ... 递增。"""
     batch = time.strftime("VID-%Y%m%d-%H%M%S")
     tasks = []
