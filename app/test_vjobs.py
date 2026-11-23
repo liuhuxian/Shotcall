@@ -100,6 +100,40 @@ def main():
     check("无成片的历史记录判为中断", vjobs._jobs["D-1"]["status"] == "aborted",
           vjobs._jobs["D-1"]["status"])
 
+    print("\n= 有 pid 的任务不因短暂消失被误杀 =")
+    empty_hist = mock.MagicMock(__enter__=lambda s: s, __exit__=lambda *x: None,
+                                read=lambda: b"{}")
+    reset({"E-1": job("E-1", status="running", promptId="PID-E1", card=4,
+                       pidAt=time.time())})
+    with mock.patch.object(sched, "pending_ids", return_value=set()), \
+         mock.patch.object(vjobs.gpus, "queue_of",
+                           return_value={"runningIds": [], "pendingIds": []}), \
+         mock.patch.object(vjobs.urllib.request, "urlopen", return_value=empty_hist):
+        vjobs.sweep()
+        check("第一次看不到：不判死", vjobs._jobs["E-1"]["status"] == "running",
+              vjobs._jobs["E-1"]["status"])
+        check("记下消失时刻", bool(vjobs._jobs["E-1"].get("vanishedAt")))
+        # 第二次仍然看不到，但还没满 20 分钟 → 继续等
+        vjobs.sweep()
+        check("20 分钟内仍不判死", vjobs._jobs["E-1"]["status"] == "running",
+              vjobs._jobs["E-1"]["status"])
+        # 让它"消失"超过 20 分钟
+        vjobs._jobs["E-1"]["vanishedAt"] = time.time() - 1300
+        vjobs.sweep()
+        check("连续消失超 20 分钟才判中断", vjobs._jobs["E-1"]["status"] == "aborted",
+              vjobs._jobs["E-1"]["status"])
+
+    reset({"E-2": job("E-2", status="running", promptId="PID-E2", card=4,
+                       pidAt=time.time(), vanishedAt=time.time() - 100)})
+    with mock.patch.object(sched, "pending_ids", return_value=set()), \
+         mock.patch.object(vjobs.gpus, "queue_of",
+                           return_value={"runningIds": ["PID-E2"], "pendingIds": []}), \
+         mock.patch.object(vjobs.urllib.request, "urlopen", return_value=empty_hist):
+        vjobs.sweep()
+        check("重新出现时清掉消失标记", not vjobs._jobs["E-2"].get("vanishedAt"))
+        check("重新出现后仍算在跑", vjobs._jobs["E-2"]["status"] == "running",
+              vjobs._jobs["E-2"]["status"])
+
     print("\n= 参考图接线 =")
     g = vjobs.build_graph("p", 1344, 768, 328, 7, 20, ref_images=["a.png", "b.png"])
     h3 = [v for v in g.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]
