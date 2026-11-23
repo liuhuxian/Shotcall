@@ -26,6 +26,7 @@ import artifacts
 import assetsdb
 import cloudimg
 import comfyctl
+import confirms
 import comfywatch
 import dataset
 import gpus
@@ -1037,7 +1038,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gen/units":
             q5 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = q5.get("scene", ["N001"])[0]
-            self._send(200, json.dumps({"scene": sc, "units": vjobs.parse_units(PROJECT, sc)},
+            units = vjobs.parse_units(PROJECT, sc)
+            src = units[0]["source"] if units else None
+            rel = f"{vjobs.VP_DIR}/{sc}/{src}" if src else None
+            st = confirms.state_of(PROJECT, rel) if rel else {"local": "none"}
+            self._send(200, json.dumps({"scene": sc, "units": units, "promptFile": rel,
+                                        "promptConfirm": st},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/storyboards":
@@ -1108,7 +1114,15 @@ class Handler(BaseHTTPRequestHandler):
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
                 return
-            self._send(200, json.dumps(artifacts.build(proj), ensure_ascii=False).encode("utf-8"),
+            payload = artifacts.build(proj)
+            states = confirms.all_states(proj)
+            for a in payload["artifacts"]:
+                a["local"] = states.get(a["path"], {"local": "none"})
+            for u in payload.get("unregistered", []):
+                u["local"] = states.get(u["path"], {"local": "none"})
+            payload["summary"]["localConfirmed"] = sum(
+                1 for s in states.values() if s.get("local") == "confirmed")
+            self._send(200, json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path in ("/api/gpus", "/api/sched/state"):
             snap = sched.snapshot()
@@ -1332,6 +1346,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body = self._json_body()
                 verdict = body.get("verdict") or "pass"
+                if body.get("path"):
+                    confirms.record(PROJECT, body["path"],
+                                    "confirm" if verdict == "pass" else "reject",
+                                    (body.get("note") or ""))
                 if verdict not in ("pass", "revise", "hold"):
                     raise ValueError("verdict 只能是 pass / revise / hold")
                 rec = store.append(
@@ -1341,7 +1359,9 @@ class Handler(BaseHTTPRequestHandler):
                     scope=body.get("scope"),
                     evidence=payload()["data"].get("files") or {},
                 )
-                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
+                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                                           ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
@@ -1449,6 +1469,11 @@ class Handler(BaseHTTPRequestHandler):
                         units.append({"unit": by[x], "count": 1})
                 if not units:
                     raise ValueError("没有可提交的单元")
+                src = units[0]["unit"]["source"]
+                rel = f"{vjobs.VP_DIR}/{scene}/{src}"
+                cst = confirms.state_of(PROJECT, rel)
+                if cst.get("local") != "confirmed" and not body.get("force"):
+                    raise ValueError(f"提示词版本 {src} 尚未确认，请先在「待确认」里确认该文件")
                 seed = body.get("seed")
                 seed = int(seed) if str(seed).strip().isdigit() else None
                 steps = body.get("steps")
@@ -1477,7 +1502,9 @@ class Handler(BaseHTTPRequestHandler):
                 f = store.state_dir(PROJECT) / "图片采用.jsonl"
                 with open(f, "a", encoding="utf-8") as out:
                     out.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
+                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                                           ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
@@ -1600,7 +1627,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(n) or b"{}")
                 rec = store.select(PROJECT, body["shot"], body["candidate"],
                                    body["status"], body.get("reason"))
-                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
+                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                                           ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
