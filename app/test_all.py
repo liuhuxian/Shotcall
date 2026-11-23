@@ -140,6 +140,13 @@ def main():
     except Exception as e:
         check("服务接口可访问", False, str(e))
 
+    print("\n= 视频任务层（test_vjobs.py）=")
+    import subprocess
+    r = subprocess.run([sys.executable, str(Path(__file__).parent / "test_vjobs.py")],
+                       capture_output=True, text=True)
+    tail = [ln for ln in r.stdout.splitlines() if ln.startswith("通过")]
+    check("视频任务层测试通过", r.returncode == 0, (tail[-1] if tail else r.stdout[-200:]))
+
     print(f"\n通过 {len(PASS)} · 失败 {len(FAIL)} · 跳过 {len(SKIP)}")
     if FAIL:
         print("失败项：")
