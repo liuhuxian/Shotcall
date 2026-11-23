@@ -400,16 +400,17 @@ def backend_state() -> dict:
             startable.append({"card": c["index"], "vramUsedGB": used})
     JOBS = []
     for j in vid_jobs:
-        if j["status"] in ("queued", "running", "starting"):
+        if j["status"] in ("queued", "running", "starting", "waiting", "dispatched"):
             JOBS.append({"id": j["id"], "kind": "video", "unit": j.get("unit"),
                          "seq": j.get("seq"), "scene": j.get("scene"),
                          "status": j["status"], "card": j.get("card"),
                          "frames": j.get("frames"), "seconds": j.get("seconds"),
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch"), "promptId": j.get("promptId"),
-                         "refs": len(j.get("usedRefs") or j.get("refs") or [])})
+                         "refs": len(j.get("usedRefs") or j.get("refs") or []),
+                         "steps": j.get("steps")})
     for j in img_jobs:
-        if j["status"] in ("queued", "running", "starting"):
+        if j["status"] in ("queued", "running", "starting", "waiting", "dispatched"):
             JOBS.append({"id": j["id"], "kind": "image", "unit": j.get("dir") or j.get("asset"),
                          "seq": None, "scene": None, "status": j["status"],
                          "card": j.get("card"), "frames": None, "seconds": None,
@@ -463,10 +464,7 @@ def backend_state() -> dict:
         j["seq"] = base + seen[key]
         # 预计耗时：按帧数与步数折算；只在"生成中"给倒计时
         f = j.get("frames") or 0
-        steps = 20
-        for jj in vid_jobs:
-            if jj.get("id") == j.get("id"):
-                steps = jj.get("steps") or 20
+        steps = j.get("steps") or 20
         total = f * rate_of(steps, f) if f else None
         el = (time.time() - (j.get("startedAt") or time.time())) if j["status"] in ("running", "waiting") else 0
         j["totalSec"] = round(total) if total else None

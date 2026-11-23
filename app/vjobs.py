@@ -209,6 +209,9 @@ def reconcile(project: Path = None) -> int:
                 running_ids = set(q.get("runningIds") or [])
                 st = "running" if pid in running_ids else "waiting"
                 with _lock:
+                    used = {(_jobs.get(x) or {}).get("promptId") for x in _order}
+                    if pid in used:          # 这个 pid 已经有任务认领了，别再重复分配
+                        continue
                     matched = False
                     for jid in _order:
                         j = _jobs.get(jid) or {}
