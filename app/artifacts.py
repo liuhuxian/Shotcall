@@ -37,11 +37,24 @@ def load_registry(project: Path) -> dict:
 SKIP_DIRS = ("生成结果", "候选图片", "资产绑定", "历史版本", "工作台", "_develop-work",
              "trailer", "废图", "旧版本", "聊天附件")
 DOC_EXT = (".md",)
-VERSIONED = __import__("re").compile(r"-v\d{3}(-\d+)?\.md$")
+VERSIONED = __import__("re").compile(r"-v(\d{3})(-\d+)?\.md$")
 
 
-def scan_unregistered(project: Path, known: set) -> list:
-    """目录里有、登记表里没有的文档 —— 新写的草稿若没登记就会落在这里。"""
+def family_of(path: str) -> tuple:
+    """把一个文件归到"同一份文档的第几版"：返回 (家族键, 版本号)。"""
+    m = VERSIONED.search(path)
+    if not m:
+        return (path, 0)
+    return (VERSIONED.sub("", path), int(m.group(1)))
+
+
+def scan_unregistered(project: Path, known: set, known_versions: dict = None) -> list:
+    """目录里有、登记表里没有的文档。
+
+    只保留"比该文档当前最新登记版本更新"的文件；历史版本不再列出。
+    家族从未登记过的（全新文档）一律保留。
+    """
+    known_versions = known_versions or {}
     out = []
     for s in stages.STAGES:
         d = project / s["dir"]
@@ -58,6 +71,10 @@ def scan_unregistered(project: Path, known: set) -> list:
             if f.name.startswith(("原生草稿", "manualDraft")):
                 continue
             if not VERSIONED.search(f.name):      # 只认带版本号的成果文档
+                continue
+            fam, ver = family_of(rel)
+            top = known_versions.get(fam)
+            if top is not None and ver <= top:    # 比已登记的最新版旧或相同 → 不列
                 continue
             out.append({
                 "path": rel, "stage": s["no"], "name": f.name,
@@ -126,7 +143,11 @@ def build(project: Path) -> dict:
         item["staleDeps"] = stale
 
     arts = sorted(known.values(), key=lambda x: (x["stage"], x["path"]))
-    unreg = scan_unregistered(project, set(known.keys()))
+    known_versions = {}
+    for pth in known:
+        fam, ver = family_of(pth)
+        known_versions[fam] = max(known_versions.get(fam, 0), ver)
+    unreg = scan_unregistered(project, set(known.keys()), known_versions)
 
     out_stages = []
     for s in stages.STAGES:
