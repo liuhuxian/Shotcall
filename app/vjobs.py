@@ -230,6 +230,15 @@ def reconcile(project: Path = None) -> int:
                     pass
             return out
         run_now = _ids(q.get("queue_running"))
+        pend_now = _ids(q.get("queue_pending"))
+        if run_now or pend_now:
+            with _lock:
+                for jj in _jobs.values():
+                    pid2 = jj.get("promptId")
+                    if pid2 in run_now and jj.get("status") not in ("running", "done"):
+                        jj["status"] = "running"; jj["error"] = None; changed = True
+                    elif pid2 in pend_now and jj.get("status") not in ("waiting", "running", "done"):
+                        jj["status"] = "waiting"; jj["error"] = None; changed = True
         if run_now:
             with _lock:
                 for jj in _jobs.values():
@@ -596,7 +605,8 @@ def _execute(project: Path, jid: str, job: dict):
                 _jobs[jid]["promptId"] = pid
         _save()                      # 立刻落盘：重启后还能认出这条任务在 ComfyUI 里的位置
         t0 = time.time()
-        while time.time() - t0 < 7200:
+        gone_since = None          # 只要任务还在 ComfyUI 队列里就一直等，不设总时长上限
+        while True:
             time.sleep(10)
             h = _api(job["port"], f"/history/{pid}", timeout=30)
             if pid in h:
@@ -620,7 +630,18 @@ def _execute(project: Path, jid: str, job: dict):
                                        "finishedAt": time.time()})
                 _save()
                 return
-        raise RuntimeError("轮询超时")
+            # 不在队列里也不在历史里：连续 10 分钟才认为真的丢了
+            try:
+                q = gpus.queue_of(job["port"])
+                live = (pid in (q.get("runningIds") or [])) or (pid in (q.get("pendingIds") or []))
+            except Exception:
+                live = True
+            if live:
+                gone_since = None
+                continue
+            gone_since = gone_since or time.time()
+            if time.time() - gone_since > 600:
+                raise RuntimeError("任务从 ComfyUI 队列消失超过 10 分钟")
     except Exception as e:
         with _lock:
             if jid in _jobs:
