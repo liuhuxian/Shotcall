@@ -155,8 +155,8 @@ def resume(project: Path) -> list:
     with _lock:
         for jid in _order:
             j = _jobs.get(jid) or {}
-            if j.get("status") == "queued" and not j.get("resubmitted"):
-                _jobs[jid]["resubmitted"] = True
+            # 只要还停在"排队"且不在调度待派表里，就重新送一遍（防止重启丢任务）
+            if j.get("status") == "queued" and jid not in sched.pending_ids():
                 todo.append(dict(j))
     if not todo:
         return []

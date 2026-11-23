@@ -475,7 +475,7 @@ function cardsGrid(d){
       </div>
       ${inst ? `
         <div class="mono dim" style="font-size:10px;margin-bottom:6px">
-          pid ${inst.pid||'—'} · 队列 ${inst.queue?inst.queue.run+'跑'+inst.queue.pend+'排':'0'}
+          pid ${inst.pid||'—'} · ComfyUI ${inst.queue?inst.queue.run+'跑'+inst.queue.pend+'排':'0'}
           ${inst.job?` · ${esc(inst.job.label)}`:''}
         </div>
         <div class="bar" style="margin:0 0 8px"><i style="width:${prog}%;background:var(--acc)"></i></div>
@@ -538,7 +538,9 @@ function sBackend(){
   <div class="grid4" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">排队任务</div><div class="kpi">${s.queueTotal||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">排队任务</div>
+      <div class="kpi">${s.pendingLocal||0}<small>待派</small></div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">ComfyUI 内 ${s.queueTotal||0} 项</div></div>
     <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
   ${cardsGrid(d)}

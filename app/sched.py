@@ -112,6 +112,12 @@ def _least_loaded(cards: list, enabled: set, require_comfy_idle: bool = False) -
                                     c["state"] == "offline"))["index"]
 
 
+def pending_ids() -> set:
+    """还压在本调度层、没送进 ComfyUI 的任务 id。"""
+    with _lock:
+        return {p["id"] for p in _pending}
+
+
 def submit(kind: str, items: list) -> list:
     """items: [{'id':..., 'run': callable(port)->bool}]，返回任务 id 列表。"""
     ids = []
