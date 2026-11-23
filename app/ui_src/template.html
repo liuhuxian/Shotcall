@@ -268,7 +268,7 @@ function reviewDot(tab){
 
 function nav(){
   const items=[
-    ["stages","阶段看板"],["scenes","场次"],["assets","资产"],["shots","镜头"],
+    ["stages","工作流"],["scenes","场次"],["assets","资产"],["shots","镜头"],
     ["gen","生成台"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
@@ -276,7 +276,7 @@ function nav(){
   }).join("");
 }
 
-const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -1130,56 +1130,55 @@ function sStages(){
   if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取成果登记…</div>`; }
   if(!d.exists) return `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
     <div><b>没有找到成果登记表</b><div class="dim" style="font-size:12px">${esc(d.registryPath||"00-项目管理/artifact-state.json")}</div></div></div>`;
-  const s = d.summary || {};
-  const cards = (d.stages||[]).map(st=>{
+  const stages = d.stages||[];
+  const sel = state.stage && stages.some(s=>s.no===state.stage)
+    ? state.stage : (stages.find(s=>s.state!=="empty")||stages[0]||{}).no;
+
+  const rail = stages.map((st,i)=>{
     const color = STAGE_COLOR[st.state] || "var(--dim)";
-    return `<div class="card" style="cursor:pointer;border-color:${st.state==='empty'?'var(--line)':color}" onclick="go('stage',{stage:'${st.no}'})">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span class="mono dim" style="font-size:11px">${st.no}</span>
-        <b style="font-size:13px;flex:1">${esc(st.name)}</b>
-        <i class="dot" style="background:${color}"></i>
+    const on = st.no === sel;
+    const last = i === stages.length-1;
+    return `<div onclick="go('stages',{stage:'${st.no}'})"
+      style="display:flex;gap:10px;cursor:pointer;align-items:flex-start">
+      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
+        <div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+          font-size:10.5px;font-family:var(--mono);font-weight:600;
+          background:${on?color:'#12161b'};color:${on?'#080a0d':color};
+          border:1px solid ${on?color:'var(--line)'}">${st.no}</div>
+        ${last?'':`<div style="width:1px;flex:1;min-height:22px;background:${st.state==='empty'?'var(--line)':color};opacity:.45"></div>`}
       </div>
-      <div class="dim" style="font-size:11.5px;margin-top:6px">${esc(st.desc)}</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:wrap">
-        <span class="badge" style="font-size:10px;border-color:${color};color:${color}">${STAGE_LABEL[st.state]||st.state}</span>
-        ${st.artifacts?`<span class="dim" style="font-size:10.5px">成果 ${st.artifacts}</span>`:''}
-        ${st.counts.draft?`<span class="badge b-warn" style="font-size:10px">草稿 ${st.counts.draft}</span>`:''}
-        ${st.counts.confirmed?`<span class="badge b-ok" style="font-size:10px">确认 ${st.counts.confirmed}</span>`:''}
-        ${st.counts.superseded?`<span class="badge b-mut" style="font-size:10px">历史 ${st.counts.superseded}</span>`:''}
-        ${st.staleDeps?`<span class="badge b-bad" style="font-size:10px">失效 ${st.staleDeps}</span>`:''}
-        ${st.modifiedFiles?`<span class="badge b-bad" style="font-size:10px">改动 ${st.modifiedFiles}</span>`:''}
-        ${st.unregistered?`<span class="badge b-mut" style="font-size:10px">未登记 ${st.unregistered}</span>`:''}
+      <div style="padding-bottom:14px;flex:1;min-width:0">
+        <div style="font-size:12.5px;font-weight:${on?'600':'400'};color:${on?'#e6ebf3':'#9aa5b4'}">${esc(st.name)}</div>
+        <div class="dim" style="font-size:10.5px;margin-top:2px">${st.artifacts?`${st.artifacts} 项成果`:''}${st.counts.draft?` · <span style="color:var(--warn)">${st.counts.draft} 待确认</span>`:''}${st.unregistered?` · <span style="color:#7c8798">${st.unregistered} 未登记</span>`:''}</div>
       </div>
-      <div class="dim mono" style="font-size:10.5px;margin-top:7px">${st.fileCount} 个文件</div>
     </div>`;
   }).join("");
 
-  return `
-  <div class="grid4" style="margin-bottom:14px">
-    <div class="card"><div class="muted" style="font-size:12px">成果总数</div><div class="kpi">${s.total||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">已确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${s.draft||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">异常</div>
-      <div class="kpi" style="color:${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)?'var(--bad)':'var(--dim)'}">${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)}</div>
-      <div class="dim" style="font-size:11px;margin-top:3px">改动 ${s.modified||0} · 缺失 ${s.missing||0} · 失效依赖 ${s.staleDeps||0}</div></div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">${cards}</div>
-  <div class="dim" style="font-size:12px;margin-top:14px">登记表：${esc(d.registryPath||"")} · 只读，不修改项目文件</div>`;
+  const detail = sStageBody(sel);
+  return `<div style="display:flex;gap:16px;align-items:flex-start">
+    <div class="panel" style="width:260px;flex-shrink:0">
+      <div class="ph"><span>工作流</span><span class="dim">00 → 09</span></div>
+      <div class="pb" style="padding:14px 14px 0">${rail}</div>
+    </div>
+    <div style="flex:1;min-width:0">${detail}</div>
+  </div>`;
 }
 
-/* ---------- 阶段详情 ---------- */
-function sStage(){
+/* ---------- 阶段详情主体（供工作流右侧复用） ---------- */
+function sStageBody(no){
   const d = STG.data;
-  if(!d) { if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
-  const no = state.stage || (d.stages[0]||{}).no;
-  const st = stageOf(no) || d.stages[0];
+  if(!d) return '';
+  const st = (d.stages||[]).find(x=>x.no===no) || (d.stages||[])[0] || {};
   const items = (d.artifacts||[]).filter(a=>a.stage===no);
   const rows = items.map(a=>{
     const c = ART_COLOR[a.status]||"var(--dim)";
     const stale = (a.staleDeps||[]).length;
+    const lo = (a.local&&a.local.local)||'none';
+    const localBadge = lo==='confirmed'?'<span class="badge b-ok" style="font-size:9.5px">本地已确认</span>'
+      : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'';
     return `<tr>
       <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[a.status]||a.status}</span></td>
-      <td><div style="font-size:12.5px">${esc(a.kind||"")}</div>
+      <td><div style="font-size:12.5px">${esc(a.kind||"")} ${localBadge}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewFile('${esc(a.path)}')">${esc(a.path)}</div></td>
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
@@ -1195,24 +1194,25 @@ function sStage(){
     </tr>`;
   }).join("");
 
-  const nav = (d.stages||[]).map(x=>
-    `<span onclick="go('stage',{stage:'${x.no}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11.5px;
-      border:1px solid ${x.no===no?'var(--acc)':'var(--line)'};color:${x.no===no?'var(--acc)':'#8b95a6'}">${x.no}</span>`).join(" ");
-
-  return `
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${nav}</div>
-  <div class="panel">
+  return `<div class="panel">
     <div class="ph"><span><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
       <span class="dim">${esc(st.desc)} · ${st.fileCount} 个文件 · ${items.length} 项成果</span></div>
     <div class="pb">
       ${items.length?`<table>
-        <thead><tr><th style="width:70px">状态</th><th>成果</th><th style="width:150px">范围</th>
-          <th style="width:70px;text-align:right">大小</th><th style="width:70px;text-align:center">哈希</th>
-          <th style="width:70px;text-align:center">依赖</th><th style="width:150px;text-align:right">操作</th></tr></thead>
+        <thead><tr><th style="width:64px">状态</th><th>成果</th><th style="width:140px">范围</th>
+          <th style="width:64px;text-align:right">大小</th><th style="width:64px;text-align:center">哈希</th>
+          <th style="width:64px;text-align:center">依赖</th><th style="width:140px;text-align:right">操作</th></tr></thead>
         <tbody>${rows}</tbody></table>`
         :'<div class="dim" style="font-size:12.5px">这一阶段还没有登记成果'+(st.fileCount?`（目录里有 ${st.fileCount} 个文件，未登记）`:'')+'</div>'}
-    </div>
-  </div>`;
+    </div></div>`;
+}
+
+/* ---------- 阶段详情 ---------- */
+function sStage(){
+  const d = STG.data;
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
+  const no = state.stage || (d.stages[0]||{}).no;
+  return sStageBody(no);
 }
 
 /* ---------- 待确认 ---------- */
@@ -1235,6 +1235,16 @@ function sPending(){
         <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button></td>
     </tr>`;
   }).join("");
+  const s = d.summary||{};
+  const kpis = `<div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">成果总数</div><div class="kpi">${s.total||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">含本地确认 ${s.localConfirmed||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${s.draft||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">异常</div>
+      <div class="kpi" style="color:${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)?'var(--bad)':'var(--dim)'}">${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)}</div>
+      <div class="dim" style="font-size:11px;margin-top:3px">改动 ${s.modified||0} · 缺失 ${s.missing||0} · 失效依赖 ${s.staleDeps||0}</div></div>
+  </div>`;
   const unreg = (d.unregistered||[]);
   const unregHtml = unreg.length ? `<div class="panel" style="margin-top:14px">
     <div class="ph"><span>未登记的文档</span><span class="dim">目录里有文件，但 artifact-state.json 里没有记录 · 可在工作台直接确认（记在 制作运行/确认状态.json）</span></div>
@@ -1259,7 +1269,7 @@ function sPending(){
           <button class="btn ok" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','pass')">确认</button>
           <button class="btn warn" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','revise')">退回</button>
         </td></tr>`;}).join("")}</tbody></table></div></div>` : "";
-  return `<div class="panel">
+  return kpis + `<div class="panel">
     <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入本工作台的决策记录（不改项目登记表）</span></div>
     <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
       <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
