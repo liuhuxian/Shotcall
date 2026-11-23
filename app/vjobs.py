@@ -182,10 +182,18 @@ def reconcile(project: Path = None) -> int:
         if project is None:
             continue
         for u in parse_units(project, sc):
-            units[u["prompt"].strip()] = (sc, u["id"])
+            units[u["prompt"].strip()] = (sc, u)
     if not units:
         return 0
     n = 0
+    # 老记录补参考图（之前认领时没存）
+    with _lock:
+        for jid, j in _jobs.items():
+            if j.get("status") in ("running", "waiting") and not j.get("refs"):
+                hit = units.get((j.get("prompt") or "").strip())
+                if hit:
+                    j["refs"] = [r["file"] for r in (hit[1].get("refs") or []) if r.get("exists")]
+                    n += 1
     for card in range(8):
         port = 8188 + card
         try:
@@ -205,7 +213,8 @@ def reconcile(project: Path = None) -> int:
                         text = ins["prompt"].strip()
                 if text not in units:
                     continue
-                sc, uid = units[text]
+                sc, unit_obj = units[text]
+                uid = unit_obj["id"]
                 running_ids = set(q.get("runningIds") or [])
                 st = "running" if pid in running_ids else "waiting"
                 with _lock:
@@ -218,7 +227,8 @@ def reconcile(project: Path = None) -> int:
                         if (j.get("scene") == sc and j.get("unit") == uid
                                 and j.get("status") in ("running", "queued", "dispatched")
                                 and not j.get("promptId")):
-                            _jobs[jid].update({"promptId": pid, "card": card, "status": st})
+                            _jobs[jid].update({"promptId": pid, "card": card,
+                                               "status": st, "pidAt": time.time()})
                             n += 1
                             matched = True
                             break
@@ -233,7 +243,10 @@ def reconcile(project: Path = None) -> int:
                         _jobs[jid] = {"id": jid, "batch": "adopted", "scene": sc, "unit": uid,
                                       "seq": None, "seconds": None, "frames": None,
                                       "seed": seed, "status": st, "card": card,
-                                      "promptId": pid, "file": None, "error": None,
+                                      "promptId": pid, "pidAt": time.time(),
+                                      "refs": [r["file"] for r in (unit_obj.get("refs") or [])
+                                               if r.get("exists")],
+                                      "file": None, "error": None,
                                       "queuedAt": time.time(), "startedAt": None,
                                       "prompt": text, "source": "adopted"}
                         _order.append(jid)
@@ -282,7 +295,10 @@ def sweep() -> int:
                     _jobs[jid]["error"] = "执行被中断"
                     n += 1
                     continue
-                if pid not in alive and pid not in hist_ids:
+                # 给刚送达的任务 2 分钟宽限，避免"提交后、注册前"被误判
+                fresh = (time.time() - (j.get("pidAt") or j.get("startedAt")
+                                        or j.get("queuedAt") or 0)) < 180
+                if pid not in alive and pid not in hist_ids and not fresh:
                     _jobs[jid]["status"] = "aborted"
                     _jobs[jid]["error"] = "已中断或丢失"
                     n += 1

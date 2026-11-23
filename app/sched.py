@@ -23,6 +23,7 @@ _state = {
 }
 _pending = []             # 等待分配的任务（dict: id, kind, run()）
 AUTO_SCALE = False        # 手动管理模式：不自动开卡、不自动收卡
+MAX_PER_CARD = 3          # 每张卡最多堆几个任务（送达即安全，不再等卡空）
 _runners = {}             # job_id -> callable(port) 真正干活的函数
 
 
@@ -206,17 +207,20 @@ def _worker():
             busy = _busy_cards()
             with _lock:
                 enabled = set(_enabled())
-            free = []
-            for c in cards:
-                if c["index"] not in enabled or c["index"] in busy or c["index"] in _state["draining"]:
-                    continue
-                try:                       # ComfyUI 里还有活儿就别再堆
+            # 送达即安全：不再等卡空闲，直接按"当前负载最轻"的卡派出去，
+            # 让 ComfyUI 自己排队；每卡堆到 MAX_PER_CARD 为止。
+            def load_of(c):
+                # 只数 ComfyUI 自己的队列：我们派过去的任务本来就在里面，重复累加会顶满上限
+                try:
                     q = gpus.queue_of(c["port"])
-                    if q["running"] or q["pending"]:
-                        continue
                 except Exception:
-                    pass
-                free.append(c)
+                    return MAX_PER_CARD          # 查不到就不派
+                return len(q.get("runningIds") or []) + len(q.get("pendingIds") or [])
+
+            cand = [c for c in cards
+                    if c["index"] in enabled and c["index"] not in _state["draining"]]
+            cand.sort(key=lambda c: load_of(c))
+            free = [c for c in cand if load_of(c) < MAX_PER_CARD]
             with _lock:
                 batch = [_pending.pop(0) for _ in range(min(len(free), len(_pending)))]
             for item, card in zip(batch, free):
