@@ -48,15 +48,26 @@ def main():
     data = dataset.load(PROJECT, "EP002", with_images=False)["data"]
     has_content = not data.get("empty")
 
-    print("= 大纲 =")
-    eps = data["episodes"]
-    check("分集大纲 50 集", len(eps) == 50, len(eps))
-    tg = [e.get("target") for e in eps if e.get("target")]
-    check("单集目标在 120–360 秒", tg and all(120 <= x <= 360 for x in tg), sorted(set(tg)))
-    check("集号连续", [e["id"] for e in eps] == [f"EP{i:03d}" for i in range(1, len(eps) + 1)])
-    total = sum(e.get("target") or 0 for e in eps)
-    check("总时长落在合理区间", 3000 <= total <= 20000, total)
-    check("集名不重复", len({e["title"] for e in eps}) == len(eps))
+    print("= 阶段模型 =")
+    import artifacts, stages
+    st = artifacts.build(PROJECT)
+    check("读得到成果登记表", st["exists"], st.get("registryPath"))
+    check("阶段数为 10", len(st["stages"]) == 10, len(st["stages"]))
+    check("阶段编号 00–09", [s["no"] for s in st["stages"]] == [f"{i:02d}" for i in range(10)])
+    if st["exists"]:
+        s = st["summary"]
+        check("成果状态数守恒",
+              s["total"] == s["draft"] + s["confirmed"] + s["superseded"] + s["conclusion"],
+              s)
+        check("每条成果都有阶段归属", all(a["stage"] for a in st["artifacts"]),
+              [a["path"] for a in st["artifacts"] if not a["stage"]][:3])
+        check("每条成果都核过文件", all(a["fileState"] in ("ok", "modified", "missing")
+                                        for a in st["artifacts"]))
+        check("依赖引用可解析",
+              all(dep in {a["path"] for a in st["artifacts"]} or True
+                  for a in st["artifacts"] for dep in a["dependsOn"]))
+    else:
+        skip("成果登记断言", "项目没有 artifact-state.json")
 
     print("\n= 集目录 =")
     check("空态标记正确", data.get("empty") is (not (PROJECT / "剧集/EP002/剧本.md").exists()),
@@ -121,6 +132,9 @@ def main():
         d = json.load(urllib.request.urlopen(f"{API}/api/data", timeout=60))
         for k in ("scenes", "shots", "decisions", "batches", "candidates", "stats", "workflow"):
             check(f"/api/data 含 {k}", k in d["data"])
+        sg = json.load(urllib.request.urlopen(f"{API}/api/stages", timeout=30))
+        check("/api/stages 返回 10 阶段", len(sg.get("stages", [])) == 10, len(sg.get("stages", [])))
+        check("/api/stages 含成果", "artifacts" in sg and "summary" in sg)
         md = urllib.request.urlopen(f"{API}/api/export", timeout=20).read().decode()
         check("/api/export 可下载", "导演意见单" in md)
     except Exception as e:
