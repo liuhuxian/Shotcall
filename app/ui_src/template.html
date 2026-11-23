@@ -686,6 +686,7 @@ function genUnitRow(u){
         style="width:52px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:2px 6px;font-size:12px">
       ${running?`<span class="badge b-acc" style="font-size:10px">${running.status==='running'?'生成中':'排队'}</span>`:''}
       ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
+      ${(u.storyboard&&u.storyboard.path)?`<span class="badge" style="font-size:10px;border-color:var(--acc);color:var(--acc)">分镜图 第${u.storyboard.row}行</span>`:''}
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
         onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">
         ${GEN.open && GEN.open[u.id] ? '收起' : '审核稿'}</button>
@@ -695,7 +696,12 @@ function genUnitRow(u){
         ${r.exists?`<img src="/api/proj/file?p=${encodeURIComponent(r.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(r.file)}')"
             style="width:100%;height:74px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">`
           :`<div style="height:74px;border-radius:6px;border:1px dashed var(--bad);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bad)">缺图</div>`}
-        <div class="mono dim" style="font-size:10px;margin-top:3px">Picture ${r.n}${(u.assetIds||[])[r.n-1]?' · '+esc(u.assetIds[r.n-1]):''}</div>
+        <div class="mono dim" style="font-size:10px;margin-top:3px">${
+          (()=>{ const sb=u.storyboard||{};
+                 if(sb.pictureIndex===r.n)
+                   return 'Picture '+r.n+' · <span style="color:var(--acc)">分镜图 第'+(sb.row||'?')+'行 格'+(sb.panels||[]).join('·')+'</span>';
+                 const aid=(u.assetIds||[])[r.n-1];
+                 return 'Picture '+r.n+(aid?' · '+esc(aid):''); })()}</div>
       </div>`).join("")}
     </div>`:''}
     ${GEN.open && GEN.open[u.id]?`<div style="padding:0 13px 12px">
@@ -885,6 +891,31 @@ async function loadShots(scene, force){
   return SHOTS[scene];
 }
 
+let SB = {};
+async function loadStoryboards(scene){
+  if(SB[scene]) return SB[scene];
+  try{ SB[scene] = (await (await fetch('/api/storyboards?scene='+encodeURIComponent(scene))).json()).items || []; }
+  catch(e){ SB[scene] = []; }
+  return SB[scene];
+}
+
+function storyboardStrip(scene){
+  const items = SB[scene];
+  if(items === undefined){ loadStoryboards(scene).then(()=>render()); return ''; }
+  if(!items.length) return '';
+  return `<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>分镜图</span><span class="dim">${items.length} 张 · 点开可放大</span></div>
+    <div class="pb" style="display:flex;gap:10px;flex-wrap:wrap">
+      ${items.map(it=>`<div style="width:240px">
+        <img src="/api/proj/file?p=${encodeURIComponent(it.file)}"
+          onclick="openZoom('/api/proj/file?p=${encodeURIComponent(it.file)}')"
+          style="width:100%;height:135px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+        <div class="mono dim" style="font-size:10px;margin-top:3px">${esc(it.name)}</div>
+        <div class="dim" style="font-size:10px">${esc(it.time)} · ${it.sizeMB} MB</div>
+      </div>`).join("")}
+    </div></div>`;
+}
+
 function sShots(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
@@ -905,6 +936,7 @@ function sShots(){
   </tr>`).join("");
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+  ${storyboardStrip(scene)}
   <div class="panel">
     <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
       <span class="dim">${esc(info.episode||"")} · ${esc(info.interior||"")} · ${esc(info.time||"")} · ${sh.length} 镜 · ${info.duration||0}s</span></div>

@@ -1040,6 +1040,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"scene": sc, "units": vjobs.parse_units(PROJECT, sc)},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/storyboards":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sc = qs.get("scene", ["N001"])[0]
+            d = PROJECT / "09-镜头与视频提示词/镜头规划" / sc / "分镜图"
+            items = []
+            if d.is_dir():
+                for f in sorted(d.glob("*.png")):
+                    st = f.stat()
+                    items.append({"file": str(f.relative_to(PROJECT)), "name": f.name,
+                                  "sizeMB": round(st.st_size / 2 ** 20, 2),
+                                  "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime))})
+            self._send(200, json.dumps({"scene": sc, "items": items}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/gen/history":
             qh = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             inc = qh.get("deleted", ["0"])[0] in ("1", "true", "yes")

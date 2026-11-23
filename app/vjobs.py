@@ -118,7 +118,8 @@ def parse_sync_refs(project: Path, scene: str) -> dict:
         refs = []
         for i, path in enumerate(u.get("referenceImages") or [], 1):
             refs.append({"n": i, "file": path, "exists": (project / path).exists()})
-        out[u.get("id")] = {"refs": refs, "assetIds": u.get("assetIds") or []}
+        out[u.get("id")] = {"refs": refs, "assetIds": u.get("assetIds") or [],
+                            "storyboard": u.get("storyboardReference") or None}
     return out
 
 
@@ -146,6 +147,13 @@ def parse_units(project: Path, scene: str) -> list:
         s = sync.get(u["id"]) or {}
         u["refs"] = s.get("refs") or []
         u["assetIds"] = [a.split("--")[-1] for a in (s.get("assetIds") or [])]
+        sb = s.get("storyboard") or {}
+        u["storyboard"] = ({
+            "path": sb.get("path"),
+            "pictureIndex": sb.get("pictureIndex"),
+            "row": sb.get("row"),
+            "panels": sb.get("panels") or [],
+        } if sb.get("path") else None)
     return attach_zh(out, scene)
 
 
