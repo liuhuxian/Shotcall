@@ -309,7 +309,7 @@ def list_jobs(batch: str = None) -> list:
         return [_jobs[j] for j in _order if not batch or _jobs[j]["batch"] == batch]
 
 
-def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 8,
+def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
                 ref_images: list = None) -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
@@ -368,7 +368,7 @@ def _api(port, path, payload=None, timeout=120):
 
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
-           width=1344, height=768, steps=8) -> dict:
+           width=1344, height=768, steps=20) -> dict:
     """units: [{"unit": {...}, "count": n}]；seed 给了就按 seed, seed+1, ... 递增。"""
     batch = time.strftime("VID-%Y%m%d-%H%M%S")
     tasks = []

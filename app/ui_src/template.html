@@ -615,6 +615,9 @@ function sGen(){
     <div class="pb">
       ${units.length?units.map(genUnitRow).join(""):'<div class="dim" style="font-size:12.5px">该场还没有视频提示词（需要 09 阶段先编译）。</div>'}
       <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="dim" style="font-size:11.5px">步数</span>
+        <input type="number" min="4" max="40" value="${GEN.steps||20}" onchange="GEN.steps=Math.max(4,Math.min(40,parseInt(this.value)||20))"
+          style="width:64px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
         <span class="dim" style="font-size:11.5px">种子</span>
         <input type="number" min="0" placeholder="留空=随机" value="${esc(GEN.seed||"")}"
           onchange="GEN.seed=this.value"
@@ -633,7 +636,7 @@ async function submitGen(){
   const total = units.reduce((a,b)=>a+b.count,0);
   const seedRaw = String(GEN.seed||"").trim();
   const r = await fetch('/api/gen/submit', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({scene: GEN.scene, units, seed: seedRaw||null})});
+    body: JSON.stringify({scene: GEN.scene, units, seed: seedRaw||null, steps: GEN.steps||20})});
   const j = await r.json();
   if(!r.ok) return toast(j.error||"提交失败");
   toast("已提交 "+j.jobs.length+" 条（共 "+total+" 次）：" + j.batch);

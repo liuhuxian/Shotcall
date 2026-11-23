@@ -1234,9 +1234,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("没有可提交的单元")
                 seed = body.get("seed")
                 seed = int(seed) if str(seed).strip().isdigit() else None
-                res = vjobs.submit(PROJECT, scene, units, seed=seed)
+                steps = body.get("steps")
+                steps = int(steps) if str(steps).isdigit() else 20
+                res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps)
                 store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
-                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元" +
+                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步" +
                                             (f"，种子 {seed}" if seed is not None else "，种子随机")}])
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
