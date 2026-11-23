@@ -408,7 +408,8 @@ def backend_state() -> dict:
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch"), "promptId": j.get("promptId"),
                          "refs": len(j.get("usedRefs") or j.get("refs") or []),
-                         "steps": j.get("steps")})
+                         "steps": j.get("steps"),
+                         "execStartedAt": j.get("execStartedAt")})
     for j in img_jobs:
         if j["status"] in ("queued", "running", "starting", "waiting", "dispatched"):
             JOBS.append({"id": j["id"], "kind": "image", "unit": j.get("dir") or j.get("asset"),
@@ -438,11 +439,15 @@ def backend_state() -> dict:
             j["status"] = "dispatched"      # 已派出但还没在 ComfyUI 队列里看到
 
     # 单元内的第几次：已有产物数 + 在途顺序
-    # 渲染速率：8 步实测约 3.3 秒/帧，按步数线性折算
+    # 渲染速率：优先用本机实测（完成任务的 渲染秒/帧），没有就用 6.8 秒/帧（20 步实测均值）
+    measured = [(j.get("renderSec") or 0) / j["frames"]
+                for j in vid_jobs
+                if j.get("renderSec") and j.get("frames") and (j.get("steps") or 20) == 20]
+    measured = [x for x in measured if x > 0.5]
+    RATE_20 = sum(measured) / len(measured) if measured else 6.8
+
     def rate_of(steps, frames):
-        base = 3.3
-        sp = steps or 8
-        return base * (sp / 8.0)
+        return RATE_20 * ((steps or 20) / 20.0)
 
     import re as _r
     def count_results(scene, unit):
@@ -466,10 +471,18 @@ def backend_state() -> dict:
         f = j.get("frames") or 0
         steps = j.get("steps") or 20
         total = f * rate_of(steps, f) if f else None
-        el = (time.time() - (j.get("startedAt") or time.time())) if j["status"] in ("running", "waiting") else 0
+        # 已用 = 真正开始渲染到现在；还没开始就报等待时间
+        if j["status"] == "running":
+            el = time.time() - (j.get("execStartedAt") or j.get("startedAt") or time.time())
+        elif j["status"] in ("waiting", "queued"):
+            el = 0
+        else:
+            el = 0
         j["totalSec"] = round(total) if total else None
         j["elapsedSec"] = round(el) if el else None
-        j["etaSec"] = round(total - el) if (total and el and j["status"] == "running") else None
+        j["etaSec"] = round(max(0, total - el)) if (total and el and j["status"] == "running") else None
+        j["execStartedAt"] = j.get("execStartedAt")
+        j["waitSec"] = round(time.time() - (j.get("queuedAt") or time.time())) if j["status"] in ("waiting", "queued") else None
     JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
     # 8 张卡全景（用户手动管理算力时用）
     inst_by_card = {i["card"]: i for i in inst}
@@ -492,7 +505,8 @@ def backend_state() -> dict:
             "hasInstance": c["index"] in inst_by_card,
             "instance": inst_by_card.get(c["index"]),
         })
-    return {"instances": inst, "cards": all_cards, "jobs": JOBS, "startable": startable,
+    return {"ratePerFrame": round(RATE_20, 2),
+            "instances": inst, "cards": all_cards, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
                         "pendingLocal": sum(1 for j in JOBS if j["status"] == "queued"),
                         "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),

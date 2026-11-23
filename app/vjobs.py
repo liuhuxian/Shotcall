@@ -186,6 +186,16 @@ def reconcile(project: Path = None) -> int:
     if not units:
         return 0
     n = 0
+    changed = False
+    # 老记录补规格与参考图
+    with _lock:
+        for j in _jobs.values():
+            if j.get("status") in ("running", "waiting") and not j.get("frames"):
+                hit = units.get((j.get("prompt") or "").strip())
+                if hit:
+                    j["seconds"] = hit[1].get("seconds")
+                    j["frames"] = frames_of(hit[1].get("seconds") or 10)
+                    j.setdefault("steps", 20)
     # 老记录补参考图（之前认领时没存）
     with _lock:
         for jid, j in _jobs.items():
@@ -201,6 +211,23 @@ def reconcile(project: Path = None) -> int:
                 q = json.loads(r.read().decode())
         except Exception:
             continue
+        # 先记"真正开始渲染"的时间：只要出现在 running 里就记一次
+        def _ids(rows):
+            out = set()
+            for x in rows or []:
+                try:
+                    if isinstance(x, (list, tuple)) and len(x) > 1:
+                        out.add(x[1])
+                except Exception:
+                    pass
+            return out
+        run_now = _ids(q.get("queue_running"))
+        if run_now:
+            with _lock:
+                for jj in _jobs.values():
+                    if jj.get("promptId") in run_now and not jj.get("execStartedAt"):
+                        jj["execStartedAt"] = time.time()
+                        changed = True
         entries = (q.get("queue_running") or []) + (q.get("queue_pending") or [])
         for e in entries:
             try:
@@ -217,6 +244,11 @@ def reconcile(project: Path = None) -> int:
                 uid = unit_obj["id"]
                 running_ids = set(q.get("runningIds") or [])
                 st = "running" if pid in running_ids else "waiting"
+                if st == "running":
+                    with _lock:
+                        for jj in _jobs.values():
+                            if jj.get("promptId") == pid and not jj.get("execStartedAt"):
+                                jj["execStartedAt"] = time.time()
                 with _lock:
                     used = {(_jobs.get(x) or {}).get("promptId") for x in _order}
                     if pid in used:          # 这个 pid 已经有任务认领了，别再重复分配
@@ -241,7 +273,10 @@ def reconcile(project: Path = None) -> int:
                             if (node or {}).get("class_type") == "RandomNoise":
                                 seed = ((node or {}).get("inputs") or {}).get("noise_seed")
                         _jobs[jid] = {"id": jid, "batch": "adopted", "scene": sc, "unit": uid,
-                                      "seq": None, "seconds": None, "frames": None,
+                                      "seq": None,
+                                      "seconds": unit_obj.get("seconds"),
+                                      "frames": frames_of(unit_obj.get("seconds") or 10),
+                                      "steps": 20,
                                       "seed": seed, "status": st, "card": card,
                                       "promptId": pid, "pidAt": time.time(),
                                       "refs": [r["file"] for r in (unit_obj.get("refs") or [])
@@ -253,7 +288,7 @@ def reconcile(project: Path = None) -> int:
                         n += 1
             except Exception:
                 continue
-    if n:
+    if n or changed:
         _save()
     return n
 
@@ -373,8 +408,11 @@ def recover(project: Path) -> list:
                     unit = owner.get("unit") or "X"
                     f = _save_video(project, port, outs[-1], scene, unit, owner.get("seed") or seed)
                     with _lock:
+                        fin = time.time()
                         owner.update({"status": "done", "file": str(f.relative_to(project)),
-                                      "finishedAt": time.time()})
+                                      "finishedAt": fin})
+                        if owner.get("execStartedAt"):
+                            owner["renderSec"] = round(fin - owner["execStartedAt"], 1)
                         known.add((scene, unit, owner.get("seed") or seed))
                     _save()
                     saved.append(str(f.relative_to(project)))
