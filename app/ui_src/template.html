@@ -729,12 +729,35 @@ function genUnitRow(u){
   </div>`;
 }
 
+let VER = {list:null, pinned:null, current:null};
+
+async function loadVersions(scene, force){
+  if(VER.list && VER.scene===scene && !force) return VER;
+  try{
+    const j = await (await fetch('/api/gen/versions?scene='+encodeURIComponent(scene))).json();
+    VER = {list:j.versions||[], pinned:j.pinned, current:(GEN.units&&GEN.units[0]?GEN.units[0].source:null), scene};
+  }catch(e){}
+  return VER;
+}
+
+async function pinVersion(name){
+  const r = await fetch('/api/gen/version', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scene: GEN.scene, file: name})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||"切换失败");
+  toast(j.pinned ? ('已锁定 '+name) : '已恢复自动取最新版');
+  await loadVersions(GEN.scene, true);
+  await loadGen(GEN.scene, true);
+  render();
+}
+
 function sGen(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
   const scene = state.scene && d.scenes.some(s=>s.id===state.scene) ? state.scene : (d.scenes[0]||{}).id;
   state.scene = scene;
-  if(GEN.scene !== scene || !GEN.loaded){ loadGen(scene).then(()=>render()); }
+  if(GEN.scene !== scene || !GEN.loaded){ loadGen(scene).then(()=>{ loadVersions(scene,true).then(()=>render()); }); }
+  if(!VER.list || VER.scene !== scene){ loadVersions(scene).then(()=>render()); }
   const tabs = (d.scenes||[]).map(s=>`<span onclick="go('gen',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
     border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
   const units = GEN.units||[];
@@ -745,6 +768,11 @@ function sGen(){
     <div class="ph"><span>${scene} 生成单元</span>
       <span class="dim" style="display:flex;gap:10px;align-items:center">
         ${units.length} 个单元 · 已选 ${picked.length}${units[0]?` · 来源 ${esc(units[0].source||"")}`:''}
+        <select onchange="pinVersion(this.value)"
+          title="切换提示词版本"
+          style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:2px 6px;font-size:11px">
+          ${(VER.list||[]).map(v=>`<option value="${esc(v.name)}" ${(VER.pinned||VER.current)===v.name?'selected':''}>v${String(v.version).padStart(3,'0')}${VER.pinned===v.name?' · 锁定':''}</option>`).join("")}
+        </select>
         <button class="btn ghost" style="font-size:11px;padding:2px 10px"
           onclick="GEN.showHistory=!GEN.showHistory; if(GEN.showHistory){HIST.data=null;loadHistory(true).then(()=>render());} render()">
           ${GEN.showHistory?'收起历史':'生成历史'}</button>

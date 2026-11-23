@@ -61,6 +61,35 @@ def frames_of(sec: float) -> int:
 
 
 ZH_FILE = Path(__file__).parent / "prompt_zh.json"
+PIN_FILE = Path(__file__).parent / "run" / "prompt_pins.json"
+
+
+def load_pins() -> dict:
+    try:
+        return json.loads(PIN_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_pin(scene: str, name) -> dict:
+    pins = load_pins()
+    if name:
+        pins[scene] = name
+    else:
+        pins.pop(scene, None)
+    PIN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PIN_FILE.write_text(json.dumps(pins, ensure_ascii=False, indent=1), encoding="utf-8")
+    return pins
+
+
+def list_versions(d: Path) -> list:
+    out = []
+    for f in sorted(d.glob("minimax-h3-ref2va*.md")):
+        m = re.search(r"-v(\d{3})(?:-\d+)?\.md$", f.name)
+        out.append({"name": f.name, "version": int(m.group(1)) if m else 0,
+                    "sizeKB": round(f.stat().st_size / 1024),
+                    "mtime": int(f.stat().st_mtime)})
+    return sorted(out, key=lambda x: x["version"])
 
 
 def load_zh() -> dict:
@@ -85,7 +114,10 @@ def attach_zh(units: list, scene: str) -> list:
 
 
 def latest_prompt_file(d: Path):
-    """同一目录可能有 v001/v002…，取版本号最大的那份。"""
+    """默认取版本号最大的；若该场被锁定到某一版，则用锁定的那一版。"""
+    pinned = (load_pins() or {}).get(d.name)
+    if pinned and (d / pinned).exists():
+        return d / pinned
     files = list(d.glob("minimax-h3-ref2va*.md"))   # 只认 Ref2VA 提示词，不做兜底
     if not files:
         return None

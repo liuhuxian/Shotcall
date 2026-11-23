@@ -1053,6 +1053,15 @@ class Handler(BaseHTTPRequestHandler):
                                   "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime))})
             self._send(200, json.dumps({"scene": sc, "items": items}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/gen/versions":
+            qv = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sc = qv.get("scene", ["N001"])[0]
+            d = PROJECT / vjobs.VP_DIR / sc
+            pins = vjobs.load_pins()
+            self._send(200, json.dumps({"scene": sc, "pinned": pins.get(sc),
+                                        "versions": vjobs.list_versions(d) if d.is_dir() else []},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/gen/history":
             qh = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             inc = qh.get("deleted", ["0"])[0] in ("1", "true", "yes")
@@ -1369,6 +1378,23 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("未知操作")
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/gen/version":
+            try:
+                body = self._json_body()
+                sc = body.get("scene") or "N001"
+                name = body.get("file") or None
+                if name:
+                    f = PROJECT / vjobs.VP_DIR / sc / name
+                    if not f.exists():
+                        raise ValueError("版本文件不存在")
+                pins = vjobs.save_pin(sc, name)
+                self._send(200, json.dumps({"ok": True, "pinned": pins.get(sc)},
+                                           ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
