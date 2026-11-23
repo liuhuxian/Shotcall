@@ -1361,6 +1361,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/gen/cancel":
+            try:
+                body = self._json_body()
+                ids = body.get("ids") or ([body["id"]] if body.get("id") else [])
+                if not ids:
+                    raise ValueError("没有指定任务")
+                res = vjobs.cancel_jobs(ids)
+                self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/gen/delete":
             try:
                 body = self._json_body()

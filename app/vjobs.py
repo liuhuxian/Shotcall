@@ -524,7 +524,9 @@ def _api(port, path, payload=None, timeout=120):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+        raw = r.read().decode()
+    # ComfyUI 的 /queue、/interrupt 成功时返回空体，不能当 JSON 解析
+    return json.loads(raw) if raw.strip() else {}
 
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
@@ -616,6 +618,51 @@ def _execute(project: Path, jid: str, job: dict):
             if jid in _jobs:
                 _jobs[jid].update({"status": "failed", "error": str(e)})
         _save()
+
+
+def cancel_jobs(ids: list) -> dict:
+    """停掉指定任务：排队中的从 ComfyUI 队列删掉，正在跑的才中断。"""
+    ids = list(ids)
+    out = {"cancelled": [], "interrupted": [], "notFound": []}
+    dropped = set(sched.cancel_pending(ids))
+    for jid in ids:
+        j = _jobs.get(jid)
+        if not j:
+            out["notFound"].append(jid)
+            continue
+        pid = j.get("promptId")
+        card = j.get("card")
+        if jid in dropped:
+            with _lock:
+                j["status"] = "cancelled"
+            out["cancelled"].append(jid)
+            continue
+        if not pid or card is None:
+            with _lock:
+                j["status"] = "cancelled"
+            out["cancelled"].append(jid)
+            continue
+        port = 8188 + int(card)
+        try:
+            q = gpus.queue_of(port)
+            if pid in (q.get("pendingIds") or []):
+                _api(port, "/queue", {"delete": [pid]})     # 只删这一条
+                with _lock:
+                    j["status"] = "cancelled"
+                out["cancelled"].append(jid)
+            elif pid in (q.get("runningIds") or []):
+                _api(port, "/interrupt", {})                # 中断当前
+                with _lock:
+                    j["status"] = "interrupted"
+                out["interrupted"].append(jid)
+            else:
+                with _lock:
+                    j["status"] = "cancelled"
+                out["cancelled"].append(jid)
+        except Exception as e:
+            out.setdefault("errors", []).append(f"{jid}: {e}")
+    _save()
+    return out
 
 
 def cancel(ids: list) -> int:

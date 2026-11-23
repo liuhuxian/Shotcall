@@ -499,6 +499,26 @@ function cardsGrid(d){
   </div>`;
 }
 
+async function stopJob(id, btn){
+  const now = Date.now();
+  if(!BK.stopUntil || BK.stopArm !== id || BK.stopUntil < now){
+    BK.stopArm = id; BK.stopUntil = now + 5000;
+    if(btn) btn.textContent = '确认停止';
+    toast("再点一次停止该任务（5 秒内有效）");
+    setTimeout(()=>{ if(BK.stopUntil && BK.stopUntil < Date.now()){ BK.stopArm = null; render(); } }, 5200);
+    return;
+  }
+  BK.stopArm = null;
+  const r = await fetch('/api/gen/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ids:[id]})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || "停止失败");
+  const msg = (j.interrupted||[]).length ? "已中断当前任务"
+            : (j.cancelled||[]).length ? "已从队列移除" : "没有可停止的任务";
+  toast(msg);
+  await loadBackend(true); render();
+}
+
 function queueHtml(d){
   const jobs = d.jobs || [];
   if(!jobs.length) return `<div class="panel" style="margin-top:6px">
@@ -522,12 +542,16 @@ function queueHtml(d){
         : '已等 '+Math.round((j.waitSec||0)/60)+' 分'}</td>
       <td class="dim mono" style="width:110px">${j.etaSec!=null?('约 '+Math.ceil(j.etaSec/60)+' 分后完成'):(j.totalSec?('预计 '+Math.round(j.totalSec/60)+' 分'):'—')}</td>
       <td class="dim mono" style="font-size:10.5px">${esc((j.id||'').slice(-22))}</td>
+      <td style="text-align:right;width:76px">
+        <button class="btn warn" style="font-size:10px;padding:1px 7px"
+          onclick="stopJob('${esc(j.id)}', this)">${BK.stopArm===j.id?'确认停止':'停止'}</button>
+      </td>
     </tr>`;
   }).join("");
   const run = jobs.filter(j=>j.status==='running').length;
   return `<div class="panel" style="margin-top:6px">
     <div class="ph"><span>生成队列</span><span class="dim">${jobs.length} 项 · 生成中 ${run} · 排队 ${jobs.length-run} · 预估按 ${d.ratePerFrame||6.8} 秒/帧（本机实测）</span></div>
-    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>卡</th><th>规格</th><th>参考</th><th>时间</th><th>预计</th><th>任务号</th></tr></thead>
+    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>卡</th><th>规格</th><th>参考</th><th>时间</th><th>预计</th><th>任务号</th><th style="text-align:right">操作</th></tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
 }
 

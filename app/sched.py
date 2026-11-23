@@ -113,6 +113,19 @@ def _least_loaded(cards: list, enabled: set, require_comfy_idle: bool = False) -
                                     c["state"] == "offline"))["index"]
 
 
+def cancel_pending(ids) -> list:
+    """把还没派出去的任务从待派表里拿掉。"""
+    ids = set(ids)
+    dropped = []
+    with _lock:
+        for i in range(len(_pending) - 1, -1, -1):
+            if _pending[i]["id"] in ids:
+                dropped.append(_pending.pop(i)["id"])
+        for jid in dropped:
+            _runners.pop(jid, None)
+    return dropped
+
+
 def pending_ids() -> set:
     """还压在本调度层、没送进 ComfyUI 的任务 id。"""
     with _lock:
