@@ -1079,6 +1079,11 @@ class Handler(BaseHTTPRequestHandler):
                                   "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime))})
             self._send(200, json.dumps({"scene": sc, "items": items}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/gen/recipe":
+            self._send(200, json.dumps({"current": vjobs.current_recipe(),
+                                        "all": [{"name": k, **v} for k, v in vjobs.RECIPES.items()]},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/gen/versions":
             qv = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = qv.get("scene", ["N001"])[0]
@@ -1423,6 +1428,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/gen/recipe":
+            try:
+                body = self._json_body()
+                cur = vjobs.set_recipe(body.get("name") or "")
+                self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/gen/version":
             try:
                 body = self._json_body()
@@ -1497,7 +1512,7 @@ class Handler(BaseHTTPRequestHandler):
                 seed = body.get("seed")
                 seed = int(seed) if str(seed).strip().isdigit() else None
                 steps = body.get("steps")
-                steps = int(steps) if str(steps).isdigit() else 20
+                steps = int(steps) if str(steps).isdigit() else vjobs.current_recipe()["steps"]
                 size = str(body.get("size") or "1216x672")
                 try:
                     w, h = [int(x) for x in size.lower().split("x")]

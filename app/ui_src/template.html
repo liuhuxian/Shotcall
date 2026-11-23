@@ -412,6 +412,49 @@ function sWorkflow(){
 
 /* ---------- 总览 ---------- */
 
+/* ---------- 当前工作流（算力页） ---------- */
+let RCP = {data:null};
+
+async function loadRecipe(force){
+  if(RCP.data && !force) return RCP.data;
+  try{ RCP.data = await (await fetch('/api/gen/recipe')).json(); }catch(e){ RCP.data = null; }
+  return RCP.data;
+}
+
+async function pickRecipe(name){
+  const r = await fetch('/api/gen/recipe', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||"切换失败");
+  toast("工作流已切换：" + j.current.label);
+  await loadRecipe(true); render();
+}
+
+function recipePanel(){
+  const d = RCP.data;
+  if(!d){ loadRecipe().then(()=>render()); return `<div class="panel"><div class="pb dim">读取出图工作流…</div></div>`; }
+  const cur = d.current || {};
+  const cards = (d.all||[]).map(r=>{
+    const on = r.name === cur.name;
+    return `<div onclick="pickRecipe('${r.name}')"
+      style="cursor:pointer;border:1px solid ${on?'var(--acc)':'var(--line)'};border-radius:8px;
+             background:${on?'rgba(90,160,255,.07)':'var(--panel)'};padding:10px 12px">
+      <div style="display:flex;align-items:center;gap:7px">
+        <b style="font-size:12.5px;color:${on?'var(--acc)':'#c9d2e0'}">${esc(r.label)}</b>
+        ${on?'<span class="badge" style="font-size:9.5px;border-color:var(--acc);color:var(--acc)">当前</span>':''}
+      </div>
+      <div class="dim mono" style="font-size:10.5px;margin-top:5px">
+        ${r.steps} 步 · ${r.lora?'LoRA '+esc(r.lora.split('_').slice(2,4).join('_')):'无 LoRA'}
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>出图工作流</span><span class="dim">当前：${esc(cur.label||'')} · 点卡片切换</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${cards}</div>
+    <div class="dim" style="padding:0 13px 10px;font-size:10.5px">生成台提交时按此工作流建图（步数/是否挂 LoRA）；分辨率仍在生成台单独选。</div>
+  </div>`;
+}
+
 /* ---------- 算力 ---------- */
 let BK = {data:null, xz:{}};   // xz: 二次确认缓存
 
@@ -571,6 +614,7 @@ function sBackend(){
       <div class="dim" style="font-size:10.5px;margin-top:3px">ComfyUI 内 ${s.queueTotal||0} 项</div></div>
     <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
+  ${recipePanel()}
   ${cardsGrid(d)}
   ${queueHtml(d)}
   <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认 · 自动扩缩已关闭</div>`;

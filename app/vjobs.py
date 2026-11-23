@@ -47,6 +47,35 @@ PLAN_DIR = "09-镜头与视频提示词/镜头规划"
 VP_DIR = "09-镜头与视频提示词/视频提示词"
 RESULT_DIR = "09-镜头与视频提示词/生成结果"
 
+RECIPE_FILE = Path(__file__).parent / "run" / "gen_recipe.json"
+
+RECIPES = {
+    "base20":   {"label": "原模型 20 步（验收基准）", "lora": None, "steps": 20},
+    "base12":   {"label": "原模型 12 步（快测）",     "lora": None, "steps": 12},
+    "turbo4":   {"label": "turbo_4step LoRA · 4 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 4},
+    "turbo8":   {"label": "turbo_4step LoRA · 8 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 8},
+}
+
+
+def current_recipe() -> dict:
+    name = "base20"
+    try:
+        name = json.loads(RECIPE_FILE.read_text(encoding="utf-8")).get("name") or "base20"
+    except Exception:
+        pass
+    if name not in RECIPES:
+        name = "base20"
+    return {"name": name, **RECIPES[name]}
+
+
+def set_recipe(name: str) -> dict:
+    if name not in RECIPES:
+        raise ValueError("未知工作流")
+    RECIPE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RECIPE_FILE.write_text(json.dumps({"name": name}, ensure_ascii=False), encoding="utf-8")
+    return current_recipe()
+
+
 MODELS = dict(
     unet="minimax_h3_ref2va_pruned_bf16.safetensors",
     clip="qwen3vl_32b_minimax_h3_bf16.safetensors",
@@ -519,7 +548,7 @@ def list_jobs(batch: str = None) -> list:
 
 
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
-                ref_images: list = None) -> dict:
+                ref_images: list = None, lora: str = None) -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
@@ -543,6 +572,12 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
         "14": {"class_type": "SaveVideo", "inputs": {"video": ["13", 0], "filename_prefix": "gen/unit",
                                                      "format": "auto", "codec": "auto"}},
     }
+    if lora:
+        # 加速 LoRA：接在 UNET 之后，模型输入改指向 LoRA 输出
+        g["20"] = {"class_type": "LoraLoaderModelOnly",
+                   "inputs": {"model": ["1", 0], "lora_name": lora, "strength_model": 1.0}}
+        g["7"]["inputs"]["model"] = ["20", 0]
+        g["8"]["inputs"]["model"] = ["20", 0]
     for i, name in enumerate(ref_images or []):
         nid = str(40 + i)
         g[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
@@ -591,6 +626,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
             job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
+                   "lora": current_recipe().get("lora"),
                    "seed": (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1),
                    "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
                    "status": "queued", "card": None, "file": None, "error": None,
@@ -630,7 +666,8 @@ def _execute(project: Path, jid: str, job: dict):
                 _jobs[jid]["usedRefs"] = ref_names
         _save()
         g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
-                        job["seed"], job["steps"], ref_images=ref_names)
+                        job["seed"], job["steps"], ref_images=ref_names,
+                        lora=job.get("lora"))
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:
