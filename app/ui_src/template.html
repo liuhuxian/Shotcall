@@ -562,6 +562,7 @@ async function loadGen(scene, force){
       fetch('/api/gen/jobs').then(x=>x.json()),
     ]);
     GEN.units = u.units||[]; GEN.results = r.results||[]; GEN.jobs = j.jobs||[];
+    GEN.resSig = JSON.stringify((r.results||[]).map(x=>[x.file, x.mtime]));
     GEN.loaded = true;
   }catch(e){ GEN.loaded = true; }
 }
@@ -1816,6 +1817,18 @@ async function pollTick(){
 
 async function pollProgOnce(){
   try{
+    // 生成台：只看该场产物有没有新增，别的抖动一律不重绘
+    if(state.tab === 'gen'){
+      if(!GEN.scene) return false;
+      const r = await fetch('/api/gen/results?scene='+encodeURIComponent(GEN.scene)).then(x=>x.json()).catch(()=>null);
+      if(!r) return false;
+      const sig = JSON.stringify((r.results||[]).map(x=>[x.file, x.mtime]));
+      if(sig === GEN.resSig) return false;
+      const first = GEN.resSig === undefined;
+      GEN.resSig = sig;
+      GEN.results = r.results || [];
+      return !first;
+    }
     try{
       const sg = await fetch('/api/stages?sig=1').then(r=>r.json());
       if(sg && sg.sig && STG.sig && sg.sig !== STG.sig){
