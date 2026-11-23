@@ -383,7 +383,7 @@ def _guess_render(j: dict):
         return None
 
 
-def gen_history() -> dict:
+def gen_history(include_deleted: bool = False) -> dict:
     """导演台生成过的视频历史：以磁盘文件为准，任务记录补充耗时/规格。"""
     root = PROJECT / vjobs.RESULT_DIR
     by_file = {}
@@ -412,11 +412,30 @@ def gen_history() -> dict:
                 "source": j.get("source") or ("workbench" if j else "disk"),
                 "refs": len(j.get("refs") or []),
             })
+    if include_deleted:
+        present = {i["file"] for i in items}
+        for j in vjobs.list_jobs():
+            if j.get("status") == "deleted" and j.get("file") and j["file"] not in present:
+                f = j.get("file")
+                items.append({
+                    "file": f, "name": f.split("/")[-1],
+                    "unit": j.get("unit") or f.split("/")[-2],
+                    "seed": j.get("seed"), "scene": j.get("scene") or "N001",
+                    "sizeMB": None, "mtime": int(j.get("deletedAt") or j.get("finishedAt") or 0),
+                    "time": time.strftime("%m-%d %H:%M", time.localtime(j.get("deletedAt") or 0))
+                            if j.get("deletedAt") else "—",
+                    "w": None, "h": None,
+                    "frames": j.get("frames"), "steps": j.get("steps"),
+                    "renderSec": j.get("renderSec") or _guess_render(j),
+                    "source": "deleted", "refs": len(j.get("refs") or []),
+                    "deleted": True,
+                })
     items.sort(key=lambda x: x["mtime"], reverse=True)
     known = [i for i in items if i.get("renderSec") and i.get("frames")]
     rate = round(sum(i["renderSec"] / i["frames"] for i in known) / len(known), 2) if known else None
     return {"items": items, "count": len(items),
-            "totalMB": round(sum(i["sizeMB"] for i in items), 1),
+            "totalMB": round(sum(i["sizeMB"] for i in items
+                                 if isinstance(i.get("sizeMB"), (int, float))), 1),
             "ratePerFrame": rate,
             "measured": len(known)}
 
@@ -1022,7 +1041,9 @@ class Handler(BaseHTTPRequestHandler):
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/history":
-            self._send(200, json.dumps(gen_history(), ensure_ascii=False).encode("utf-8"),
+            qh = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            inc = qh.get("deleted", ["0"])[0] in ("1", "true", "yes")
+            self._send(200, json.dumps(gen_history(inc), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/jobs":
             self._send(200, json.dumps({"jobs": vjobs.list_jobs()}, ensure_ascii=False).encode("utf-8"),

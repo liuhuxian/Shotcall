@@ -556,7 +556,8 @@ let HIST = {data:null};
 
 async function loadHistory(force){
   if(HIST.data && !force) return HIST.data;
-  try{ HIST.data = await (await fetch('/api/gen/history')).json(); }catch(e){ HIST.data = {items:[]}; }
+  const q = HIST.showDeleted ? '?deleted=1' : '';
+  try{ HIST.data = await (await fetch('/api/gen/history' + q)).json(); }catch(e){ HIST.data = {items:[]}; }
   return HIST.data;
 }
 
@@ -570,8 +571,8 @@ function sHistory(){
   const d = HIST.data;
   if(!d){ loadHistory().then(()=>render()); return `<div class="dim">读取历史…</div>`; }
   const items = d.items||[];
-  const rows = items.map(x=>`<tr>
-    <td class="dim mono" style="font-size:11px;width:88px">${esc(x.time)}</td>
+  const rows = items.map(x=>`<tr style="${x.deleted?'opacity:.55':''}">
+    <td class="dim mono" style="font-size:11px;width:88px">${esc(x.time)}${x.deleted?' <span class="badge b-mut" style="font-size:9px">已删</span>':''}</td>
     <td class="mono" style="width:70px">${esc(x.unit)}</td>
     <td class="dim mono" style="font-size:10.5px;width:96px">${x.seed??'—'}</td>
     <td class="dim mono" style="font-size:11px;width:96px">${x.w&&x.h?x.w+'×'+x.h:'—'}</td>
@@ -580,10 +581,11 @@ function sHistory(){
     <td class="mono" style="font-size:11.5px;width:88px;text-align:right">${fmtDur(x.renderSec)}</td>
     <td class="dim mono" style="font-size:11px;width:66px;text-align:right">${x.sizeMB} MB</td>
     <td style="width:150px;text-align:right">
+      ${x.deleted ? '<span class="dim" style="font-size:10.5px">文件已删除</span>' : `
       <button class="btn ghost" style="font-size:10.5px;padding:2px 8px"
         onclick="playHist('${esc(x.file)}')">播放</button>
       <a class="btn ghost" style="font-size:10.5px;padding:2px 8px;text-decoration:none"
-        href="/api/proj/file?p=${encodeURIComponent(x.file)}" download>下载</a>
+        href="/api/proj/file?p=${encodeURIComponent(x.file)}" download>下载</a>`}
     </td>
   </tr>`).join("");
   return `
@@ -593,11 +595,19 @@ function sHistory(){
     <div class="card"><div class="muted" style="font-size:12px">实测速率</div>
       <div class="kpi">${d.ratePerFrame?d.ratePerFrame:'—'}<small>秒/帧</small></div>
       <div class="dim" style="font-size:10.5px;margin-top:3px">来自 ${d.measured||0} 条有记录的</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">记录方式</div>
-      <div class="dim" style="font-size:11.5px;line-height:1.7">耗时只在导演台提交时记录；<br>早期任务显示「—」</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">当前视图</div>
+      <div class="kpi" style="font-size:16px">${HIST.showDeleted?'含已删除':'仅现存'}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">耗时只在导演台提交时记录</div></div>
   </div>
   <div class="panel"><div class="ph"><span>生成历史</span>
-    <span class="dim">${items.length} 条 · 按完成时间倒序</span></div>
+    <span class="dim" style="display:flex;gap:10px;align-items:center">
+      ${items.length} 条 · 按完成时间倒序
+      <label style="cursor:pointer;user-select:none">
+        <input type="checkbox" ${HIST.showDeleted?'checked':''}
+          onchange="HIST.showDeleted=this.checked;HIST.data=null;loadHistory(true).then(()=>render())"
+          style="vertical-align:middle"> 显示已删除
+      </label>
+    </span></div>
     <div class="pb">${items.length?`<table><thead><tr>
       <th>完成时间</th><th>单元</th><th>种子</th><th>分辨率</th><th style="text-align:right">帧数</th>
       <th style="text-align:right">步数</th><th style="text-align:right">耗时</th><th style="text-align:right">大小</th>
