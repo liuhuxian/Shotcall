@@ -621,11 +621,12 @@ function sAssetsPage(){
           <div class="mono dim" style="font-size:10px">${esc(a.id)}</div>
           <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div>
           <div style="margin-top:4px">${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
-            :`<span class="badge b-mut" style="font-size:9.5px">未绑定</span>`}</div>
+            :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
+            :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}</div>
         </div></div>`;
     }).join("");
     return `<div class="panel" style="margin-bottom:14px">
-      <div class="ph"><span>${typeName[tp]||tp}</span><span class="dim">${items.length} 项 · 已绑定 ${items.filter(x=>x.bound).length}</span></div>
+      <div class="ph"><span>${typeName[tp]||tp}</span><span class="dim">${items.length} 项 · 已绑定 ${items.filter(x=>x.bound).length} · 已忽略 ${items.filter(x=>x.ignored).length}</span></div>
       <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div></div>`;
   }).join("");
   return `
@@ -634,7 +635,9 @@ function sAssetsPage(){
     <div class="card"><div class="muted" style="font-size:12px">已绑定</div><div class="kpi" style="color:var(--ok)">${s.bound||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">角色 / 场景 / 道具</div>
       <div class="kpi" style="font-size:20px">${s.character||0} / ${s.scene||0} / ${s.prop||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">未绑定</div><div class="kpi" style="color:var(--warn)">${(s.total||0)-(s.bound||0)}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">已忽略</div>
+      <div class="kpi" style="color:#5c6474">${s.ignored||0}</div>
+      <div class="dim" style="font-size:11px;margin-top:3px">作者明确不生成${s.unbound?` · 待补 ${s.unbound}`:''}</div></div>
   </div>
   ${cloudBar()}
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>

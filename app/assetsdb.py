@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """图像资产索引：解析 07-图像资产/assets-*.md 的资产条目与最新绑定快照。"""
+import json
 import re
 from pathlib import Path
 
 ASSET_DIR = "07-图像资产"
+WB_PROJECT = "00-项目管理/工作台/project.json"
 BIND_GLOB = "资产绑定/asset-bindings-*.md"
 
 SECTION_TYPE = [("角色", "character"), ("场景", "scene"), ("道具", "prop"), ("辅助", "extra")]
@@ -78,6 +80,25 @@ def parse_bindings(project: Path) -> dict:
     return out
 
 
+def parse_ignored(project: Path) -> dict:
+    """工作台里被删槽（trashedSlots）= 作者明确忽略、不生成的资产。"""
+    f = project / WB_PROJECT
+    if not f.exists():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out = {}
+    for item in d.get("trashedSlots") or []:
+        slot = item.get("slot") or {}
+        for key in {slot.get("id", ""), slot.get("stateId", "")}:
+            if key:
+                out[key] = {"label": slot.get("label", ""), "kind": slot.get("kind", ""),
+                            "removedAt": item.get("removedAt")}
+    return out
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     binds = parse_bindings(project)
@@ -88,13 +109,18 @@ def build(project: Path) -> dict:
             if cand:
                 short.setdefault(cand, v)
         short.setdefault(k, v)
+    ignored = parse_ignored(project)
     for a in assets:
         base = a["id"].split("／")[0].strip()
+        ig = ignored.get(a["id"]) or ignored.get(base)
+        a["ignored"] = bool(ig)
+        a["ignoredAt"] = (ig or {}).get("removedAt")
         b = (short.get(a["id"]) or short.get(a["id"].replace("-", "--"))
              or short.get(base) or short.get(base + "-A"))
         a["binding"] = b
         a["bound"] = bool(b and b.get("exists"))
     bound = sum(1 for a in assets if a["bound"])
+    ign = sum(1 for a in assets if a["ignored"])
     return {
         "doc": str(latest_asset_doc(project).relative_to(project)) if latest_asset_doc(project) else None,
         "bindingsFile": str(sorted((project / ASSET_DIR).glob(BIND_GLOB))[-1].relative_to(project))
@@ -103,6 +129,8 @@ def build(project: Path) -> dict:
         "summary": {
             "total": len(assets),
             "bound": bound,
+            "ignored": ign,
+            "unbound": len(assets) - bound - ign,
             "character": sum(1 for a in assets if a["type"] == "character"),
             "scene": sum(1 for a in assets if a["type"] == "scene"),
             "prop": sum(1 for a in assets if a["type"] == "prop"),
