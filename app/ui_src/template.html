@@ -475,10 +475,11 @@ function cardsGrid(d){
       </div>
       ${inst ? `
         <div class="mono dim" style="font-size:10px;margin-bottom:6px">
-          pid ${inst.pid||'—'} · ComfyUI ${inst.queue?inst.queue.run+'跑'+inst.queue.pend+'排':'0'}
-          ${inst.job?` · ${esc(inst.job.label)}`:''}
+          pid ${inst.pid||'—'} · ComfyUI：${inst.queue?inst.queue.run:0} 在跑${(inst.queue&&inst.queue.pend)?` · ${inst.queue.pend} 已送达待跑`:''}
+          ${inst.job?` · 当前 ${esc(inst.job.label)}`:''}
         </div>
         <div class="bar" style="margin:0 0 8px"><i style="width:${prog}%;background:var(--acc)"></i></div>
+        ${(d.summary&&d.summary.pendingLocal)?`<div class="dim" style="font-size:10px;margin-bottom:6px;color:var(--warn)">全台还有 ${d.summary.pendingLocal} 项在等空闲卡</div>`:''}
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'interrupt','中断')">${xz('interrupt'+c.card)?'确认？':'中断'}</button>
           <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'clear','清空队列')">清队</button>
