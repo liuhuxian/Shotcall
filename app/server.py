@@ -25,6 +25,8 @@ import re
 import artifacts
 import assetsdb
 import cloudimg
+import comfyctl
+import comfywatch
 import dataset
 import gpus
 import imagegen
@@ -333,6 +335,59 @@ def _script_title(ep_dir: Path):
     except OSError:
         return None
     return None
+
+
+def backend_state() -> dict:
+    """算力页：只列**已启动**的实例。"""
+    cards = gpus.probe()
+    live = [c for c in cards if c["state"] != "offline"]
+    img_jobs = imgjobs.list_jobs()
+    vid_jobs = vjobs.list_jobs()
+    inst = []
+    for c in live:
+        port = c["port"]
+        st = comfywatch.instance_state(port)
+        pids = comfyctl._pids_on(port)
+        pid = pids[0] if pids else None
+        started = None
+        if pid:
+            try:
+                up_s = float(open("/proc/uptime").read().split()[0])
+                ticks = float(open(f"/proc/{pid}/stat").read().split()[21])
+                started = max(0.0, up_s - ticks / 100.0)
+            except Exception:
+                started = None
+        job = None
+        for j in (img_jobs + vid_jobs):
+            if j.get("card") == c["index"] and j.get("status") in ("running", "starting"):
+                job = {"kind": ("video" if j in vid_jobs else "image"),
+                       "label": j.get("unit") or j.get("dir") or j.get("asset") or j["id"],
+                       "id": j["id"],
+                       "elapsed": round(time.time() - (j.get("startedAt") or time.time())),
+                       "promptId": j.get("promptId")}
+                break
+        vm = comfywatch.vram(c["index"]) or {}
+        inst.append({
+            "card": c["index"], "port": port, "pid": pid,
+            "uptimeSec": round(started) if started else None,
+            "state": c["state"], "enabled": c["index"] in set(sched.snapshot().get("enabled") or []),
+            "vramUsedGB": vm.get("usedGB"), "vramTotalGB": vm.get("totalGB", c.get("vramTotalGB")),
+            "executing": st.get("executing"), "progress": st.get("progress"),
+            "queue": st.get("queue"), "error": st.get("error"), "job": job,
+        })
+    running_cards = {i["card"] for i in inst}
+    startable = []
+    for c in cards:
+        if c["index"] in running_cards:
+            continue
+        vm = comfywatch.vram(c["index"]) or {}
+        used = vm.get("usedGB")
+        if used is not None and used < 8:
+            startable.append({"card": c["index"], "vramUsedGB": used})
+    return {"instances": inst, "startable": startable,
+            "summary": {"instances": len(inst),
+                        "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),
+                        "running": sum(1 for i in inst if i.get("executing"))}}
 
 
 def _novel_path() -> str:
@@ -749,6 +804,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
+        elif path == "/api/backend":
+            self._send(200, json.dumps(backend_state(), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/backend/log":
+            q7 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            card = int(q7.get("card", ["0"])[0])
+            f = Path(comfyctl.COMFY_LOG) / f"comfy-card{card}.log"
+            tail = ""
+            if f.exists():
+                try:
+                    tail = "\n".join(f.read_text(encoding="utf-8", errors="ignore").splitlines()[-60:])
+                except Exception as e:
+                    tail = f"读取失败：{e}"
+            self._send(200, json.dumps({"card": card, "tail": tail}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/cloud/status":
             self._send(200, json.dumps(cloudimg.status(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -1026,6 +1096,42 @@ class Handler(BaseHTTPRequestHandler):
                     evidence=payload()["data"].get("files") or {},
                 )
                 self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/backend/action":
+            try:
+                body = self._json_body()
+                act = body.get("action")
+                card = int(body.get("card", -1))
+                out = {"action": act, "card": card}
+                if act == "start":
+                    out["result"] = comfyctl.start(card, wait=120)
+                    sched.set_cards(list(set(sched.snapshot().get("enabled") or []) | {card}))
+                elif act == "stop":
+                    out["result"] = comfyctl.stop(card)
+                elif act == "restart":
+                    comfyctl.stop(card)
+                    time.sleep(3)
+                    out["result"] = comfyctl.start(card, wait=120)
+                elif act == "interrupt":
+                    port = comfyctl.BASE_PORT + card
+                    req = urllib.request.Request(f"http://127.0.0.1:{port}/interrupt", data=b"{}",
+                                                 headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=10).read()
+                    out["result"] = {"ok": True}
+                elif act == "clear":
+                    port = comfyctl.BASE_PORT + card
+                    req = urllib.request.Request(f"http://127.0.0.1:{port}/queue",
+                                                 data=json.dumps({"clear": True}).encode(),
+                                                 headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=10).read()
+                    out["result"] = {"ok": True}
+                else:
+                    raise ValueError("未知操作")
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),

@@ -210,6 +210,8 @@ def _execute(project: Path, jid: str, job: dict):
         g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
                         job["seed"], job["steps"])
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
+        with _lock:
+            _jobs[jid]["promptId"] = pid
         t0 = time.time()
         while time.time() - t0 < 7200:
             time.sleep(10)

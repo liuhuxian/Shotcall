@@ -262,14 +262,14 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","阶段看板"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["gen","生成台"],["pending","待确认"],["verify","校验"]];
+    ["gen","生成台"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {backend:"算力", stages:"阶段看板", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -404,6 +404,100 @@ function sWorkflow(){
 }
 
 /* ---------- 总览 ---------- */
+
+/* ---------- 算力 ---------- */
+let BK = {data:null, xz:{}};   // xz: 二次确认缓存
+
+async function loadBackend(force){
+  if(BK.data && !force) return BK.data;
+  try{ BK.data = await (await fetch('/api/backend')).json(); }catch(e){ BK.data = null; }
+  return BK.data;
+}
+
+function confirmGate(key, label, fn){
+  const now = Date.now();
+  const armed = BK.xz[key] && BK.xz[key] > now;
+  if(!armed){
+    BK.xz[key] = now + 5000;
+    render();
+    toast("再点一次确认" + label + "（5 秒内有效）");
+    return;
+  }
+  delete BK.xz[key];
+  fn();
+}
+
+async function backendAction(card, action, label){
+  const run = async ()=>{
+    const r = await fetch('/api/backend/action', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action, card})});
+    const j = await r.json();
+    if(!r.ok) return toast(j.error||"操作失败");
+    toast(label + "：卡" + card + " 已执行");
+    await loadBackend(true); render();
+  };
+  if(action === 'interrupt' || action === 'stop' || action === 'restart'){
+    confirmGate(action+card, (action==='interrupt'?'中断':action==='stop'?'停止':'重启'), run);
+  } else { run(); }
+}
+
+function sBackend(){
+  const d = BK.data;
+  if(!d){ loadBackend().then(()=>render()); return `<div class="dim">读取实例…</div>`; }
+  const s = d.summary||{};
+  const rows = (d.instances||[]).map(i=>{
+    const prog = i.progress && i.progress.max ? Math.round(i.progress.value/i.progress.max*100) : 0;
+    const vram = i.vramUsedGB, tot = i.vramTotalGB || 79;
+    const vpct = vram ? Math.min(100, Math.round(vram/tot*100)) : 0;
+    const up = i.uptimeSec ? (i.uptimeSec>3600? Math.round(i.uptimeSec/3600)+" 小时" : Math.round(i.uptimeSec/60)+" 分钟") : "—";
+    const xz = (k)=>BK.xz[k] && BK.xz[k]>Date.now();
+    return `<div class="panel" style="margin-bottom:12px">
+      <div class="ph"><span>卡 ${i.card} · 端口 ${i.port}</span>
+        <span class="dim">pid ${i.pid||"—"} · 已运行 ${up} · ${i.enabled?'已启用':'未启用'}</span></div>
+      <div class="pb">
+        <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px">
+          <span class="dim" style="font-size:11.5px;width:64px">显存</span>
+          <div class="bar" style="flex:1;margin:0"><i style="width:${vpct}%;background:${vpct>85?'var(--bad)':vpct>60?'var(--warn)':'var(--ok)'}"></i></div>
+          <span class="mono dim" style="font-size:11px;width:96px;text-align:right">${vram!=null?vram+' / '+tot+' GB':'未知'}</span>
+        </div>
+        <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px">
+          <span class="dim" style="font-size:11.5px;width:64px">进度</span>
+          <div class="bar" style="flex:1;margin:0"><i style="width:${prog}%;background:var(--acc)"></i></div>
+          <span class="mono dim" style="font-size:11px;width:96px;text-align:right">${i.progress?i.progress.value+'/'+i.progress.max+' 步':'空闲'}</span>
+        </div>
+        <div class="dim" style="font-size:11.5px;margin-bottom:8px">
+          任务：${i.job?`<b style="color:#c9d2e0">${esc(i.job.label)}</b> · ${i.job.kind==='video'?'视频':'图片'} · 已用 ${Math.round(i.job.elapsed/60)} 分钟`:'<span class="dim">无</span>'}
+          · 队列 ${i.queue?i.queue.pend:0} 项
+          ${i.error?` · <span style="color:var(--bad)">${esc(i.error)}</span>`:''}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'interrupt','中断')">
+            ${xz('interrupt'+i.card)?'确认中断？':'中断当前'}</button>
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'clear','清空队列')">清空队列</button>
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'restart','重启实例')">
+            ${xz('restart'+i.card)?'确认重启？':'重启实例'}</button>
+          <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'stop','停止实例')">
+            ${xz('stop'+i.card)?'确认停止？':'停止实例'}</button>
+        </div>
+      </div></div>`;
+  }).join("");
+  const startable = (d.startable||[]).map(x=>
+    `<button class="btn ghost" style="font-size:11.5px;padding:4px 12px" onclick="backendAction(${x.card},'start','启动实例')">
+      启动卡 ${x.card}（已用 ${x.vramUsedGB} GB）</button>`).join(" ");
+  return `
+  <div class="grid4" style="margin-bottom:14px">
+    <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">排队任务</div><div class="kpi">${s.queueTotal||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">可启动的空卡</div><div class="kpi">${(d.startable||[]).length}</div></div>
+  </div>
+  ${rows || '<div class="panel"><div class="pb dim">没有已启动的实例。</div></div>'}
+  <div class="panel" style="margin-top:6px">
+    <div class="ph"><span>可启动</span><span class="dim">显存占用低于 8 GB、且没有实例的卡</span></div>
+    <div class="pb">${startable||'<span class="dim" style="font-size:12px">没有空卡可用</span>'}</div>
+  </div>
+  <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认</div>`;
+}
 
 /* ---------- 生成台 ---------- */
 let GEN = {scene:null, units:[], results:[], jobs:[], draft:{}, poll:null};
@@ -1626,6 +1720,13 @@ async function cancelAllQueued(){
 
 async function pollProgOnce(){
   try{
+    if(state.tab==='backend'){
+      const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
+      if(b){ const sig=JSON.stringify([b.instances.map(i=>[i.card,i.progress,i.queue,i.job&&i.job.elapsed]),b.startable]);
+        if(sig!==BK.sig){ BK.sig=sig; BK.data=b; render(); } }
+      POLL_T = setTimeout(()=>startPoller(true), 3000);
+      return;
+    }
     const p = await fetch('/api/comfy/progress').then(r=>r.json());
     const j = await fetch('/api/img/jobs').then(r=>r.json());
     const sig = JSON.stringify([p, (j.jobs||[]).map(x=>[x.id,x.status,x.startedAt])]);
@@ -2360,6 +2461,8 @@ function render(){
     html = sShots();
   } else if (state.tab === "gen") {
     html = sGen();
+  } else if (state.tab === "backend") {
+    html = sBackend();
   } else if (state.tab === "stage") {
     html = sStage();
   } else if (state.tab === "pending") {
