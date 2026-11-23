@@ -286,7 +286,9 @@ def sweep() -> int:
                     _jobs[jid]["status"] = "aborted"
                     _jobs[jid]["error"] = "已中断或丢失"
                     n += 1
-            elif (time.time() - (j.get("queuedAt") or 0)) > 900:
+            elif (jid not in sched.pending_ids()
+                  and (time.time() - (j.get("queuedAt") or 0)) > 900):
+                # 还在本台待派表里的不算丢，只有真正掉链子的才清
                 _jobs[jid]["status"] = "aborted"
                 _jobs[jid]["error"] = "长时间未送达 ComfyUI"
                 n += 1
