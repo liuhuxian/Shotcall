@@ -313,10 +313,27 @@ def sweep() -> int:
     return n
 
 
-def recover(project: Path) -> list:
-    """从 ComfyUI 的 /history 里认领"没人认领"的产出（进程重启后的孤儿任务）。
+def _save_video(project: Path, port: int, item: dict, scene: str, unit: str, seed) -> Path:
+    q = urllib.parse.urlencode({"filename": item["filename"],
+                                "subfolder": item.get("subfolder", ""), "type": "output"})
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/view?{q}", timeout=900) as r:
+        data = r.read()
+    out = project / RESULT_DIR / scene / unit / f"{seed}.mp4"
+    k = 2
+    while out.exists():
+        out = project / RESULT_DIR / scene / unit / f"{seed}_{k}.mp4"
+        k += 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    return out
 
-    按提示词全文匹配单元，命中就下载并登记为 done。
+
+def recover(project: Path) -> list:
+    """把 ComfyUI 历史里的成片收回项目。
+
+    两种来源：
+      1. 我们自己派出去的任务（有 promptId）→ 补文件、标完成
+      2. 完全没人认领的（重启后遗留）→ 按提示词匹配单元，建 RECOVER 记录
     """
     units = {}
     for sc in {j.get("scene") for j in _jobs.values() if j.get("scene")} or {"N001"}:
@@ -334,43 +351,58 @@ def recover(project: Path) -> list:
             continue
         for pid, entry in (hist or {}).items():
             try:
+                outs = [i for v in (entry.get("outputs") or {}).values()
+                        for i in v.get("images", []) if i.get("filename", "").endswith(".mp4")]
+                if not outs:
+                    continue
                 nodes = (entry.get("prompt") or [None, None, {}])[2] or {}
-                text = seed = None
+                text, seed = None, None
                 for node in nodes.values():
                     ins = node.get("inputs") or {}
                     if node.get("class_type") == "MiniMaxH3ReferenceToVideo" and isinstance(ins.get("prompt"), str):
                         text = ins["prompt"].strip()
                     if node.get("class_type") == "RandomNoise":
                         seed = ins.get("noise_seed")
+
+                # ① 已登记的任务：按 promptId 命中
+                owner = next((j for j in _jobs.values() if j.get("promptId") == pid), None)
+                if owner is not None:
+                    if owner.get("file"):
+                        continue
+                    scene = owner.get("scene") or "N001"
+                    unit = owner.get("unit") or "X"
+                    f = _save_video(project, port, outs[-1], scene, unit, owner.get("seed") or seed)
+                    with _lock:
+                        owner.update({"status": "done", "file": str(f.relative_to(project)),
+                                      "finishedAt": time.time()})
+                        known.add((scene, unit, owner.get("seed") or seed))
+                    _save()
+                    saved.append(str(f.relative_to(project)))
+                    continue
+
+                # ② 无名产物：按提示词匹配单元
                 if not text or text not in units:
                     continue
-                sc, u = units[text]
-                if (sc, u["id"], seed) in known:
+                sc, unit_obj = units[text]
+                uid = unit_obj["id"]
+                if (sc, uid, seed) in known:
                     continue
-                items = [i for v in (entry.get("outputs") or {}).values() for i in v.get("images", [])]
-                vids = [i for i in items if i.get("filename", "").endswith(".mp4")]
-                if not vids:
-                    continue
-                v = vids[-1]
-                q = urllib.parse.urlencode({"filename": v["filename"],
-                                            "subfolder": v.get("subfolder", ""), "type": "output"})
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/view?{q}", timeout=600) as r:
-                    data = r.read()
-                out = project / RESULT_DIR / sc / u["id"] / f"{seed}.mp4"
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_bytes(data)
-                jid = f"RECOVER-{u['id']}-{seed}"
+                f = _save_video(project, port, outs[-1], sc, uid, seed)
+                jid = f"RECOVER-{uid}-{seed}"
                 with _lock:
-                    _jobs[jid] = {"id": jid, "batch": "recovered", "scene": sc, "unit": u["id"],
-                                  "seq": None, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
+                    _jobs[jid] = {"id": jid, "batch": "recovered", "scene": sc, "unit": uid,
+                                  "seq": None, "seconds": unit_obj["seconds"],
+                                  "frames": frames_of(unit_obj["seconds"]),
                                   "seed": seed, "status": "done", "card": card,
-                                  "file": str(out.relative_to(project)), "source": "recovered",
-                                  "queuedAt": time.time(), "startedAt": None, "prompt": text}
+                                  "file": str(f.relative_to(project)), "source": "recovered",
+                                  "queuedAt": time.time(), "startedAt": None, "prompt": text,
+                                  "refs": [r["file"] for r in (unit_obj.get("refs") or []) if r.get("exists")]}
                     _order.append(jid)
-                    known.add((sc, u["id"], seed))
+                    known.add((sc, uid, seed))
                 _save()
-                saved.append(str(out.relative_to(project)))
-            except Exception:
+                saved.append(str(f.relative_to(project)))
+            except Exception as e:
+                print(f"[recover] 卡{card} {pid[:8]} 失败：{type(e).__name__} {e}", flush=True)
                 continue
     return saved
 
