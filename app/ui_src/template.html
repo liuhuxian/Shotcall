@@ -613,8 +613,17 @@ function genUnitRow(u){
       </div>`:''}
     ${mine.length?`<div style="padding:0 13px 12px;display:flex;gap:8px;flex-wrap:wrap">
       ${mine.map((r,idx)=>`<div style="width:180px">
-        <video src="/api/proj/file?p=${encodeURIComponent(r.file)}" controls preload="metadata"
-          style="width:100%;border-radius:6px;border:1px solid var(--line)"></video>
+        <div style="position:relative">
+          <video src="/api/proj/file?p=${encodeURIComponent(r.file)}" controls preload="metadata"
+            data-vid="1"
+            onmouseenter="GEN.hoverVid=this"
+            ondblclick="toggleFs(this)"
+            style="width:100%;border-radius:6px;border:1px solid var(--line);display:block"></video>
+          <button onclick="toggleFs(this.parentElement.querySelector('video'))"
+            title="全屏（快捷键 F）"
+            style="position:absolute;top:5px;right:5px;background:rgba(10,12,16,.72);border:1px solid var(--line);
+                   color:#c9d2e0;border-radius:5px;font-size:11px;padding:2px 6px;cursor:pointer;line-height:1.4">⛶</button>
+        </div>
         <div class="mono dim" style="font-size:10px;margin-top:3px">#${idx+1} · ${esc(r.time||"")} · ${r.kb} KB</div>
       </div>`).join("")}</div>`:''}
   </div>`;
@@ -654,10 +663,26 @@ function sGen(){
           style="width:130px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
         <button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成</button>
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="loadGen(GEN.scene,true).then(()=>render())">刷新</button>
-        <span class="dim" style="font-size:11.5px">卡由调度后端分配，结果落到 09-…/生成结果/${scene}/</span>
+        <span class="dim" style="font-size:11.5px">卡由调度后端分配，结果落到 09-…/生成结果/${scene}/ · 视频可双击或按 F 全屏</span>
       </div>
     </div></div>`;
 }
+
+function toggleFs(v){
+  if(!v) return;
+  if(document.fullscreenElement){ document.exitFullscreen(); return; }
+  (v.requestFullscreen ? v.requestFullscreen() : Promise.resolve()).catch(()=>{});
+}
+
+document.addEventListener('keydown', ev=>{
+  const tag = (ev.target && ev.target.tagName) || '';
+  if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if(ev.key === 'f' || ev.key === 'F'){
+    const v = GEN.hoverVid || (document.fullscreenElement && document.fullscreenElement.tagName === 'VIDEO'
+      ? document.fullscreenElement : null);
+    if(v){ ev.preventDefault(); toggleFs(v); }
+  }
+});
 
 async function submitGen(){
   const units = (GEN.units||[]).filter(u=>GEN.draft[u.id]!==false)
