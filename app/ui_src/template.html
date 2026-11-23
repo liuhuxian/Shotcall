@@ -2927,7 +2927,7 @@ function render(){
   else {
     const m=document.querySelector(".modal"); if(m && !state.candModal) m.remove();
   }
-  { const vl = viewerLayer(); if(vl){ const host=document.getElementById("viewerhost"); if(host) host.innerHTML = vl; } }
+  { const host=document.getElementById("viewerhost"); if(host) host.innerHTML = viewerLayer(); }
 }
 function showDraftModal(){
   const m=document.createElement("div");
