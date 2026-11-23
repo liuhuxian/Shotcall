@@ -41,3 +41,9 @@ venv/
 .DS_Store
 Thumbs.db
 cloud-image.json
+
+# ---- 生成物：项目专属数据，不入库 ----
+app/prompt_zh.json
+
+# ---- 日志 ----
+*.log
