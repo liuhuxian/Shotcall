@@ -685,6 +685,9 @@ function genUnitRow(u){
             onmouseenter="GEN.hoverVid=this"
             ondblclick="toggleFs(this)"
             style="width:100%;border-radius:6px;border:1px solid var(--line);display:block"></video>
+          <button onclick="genDelete('${esc(r.file)}',this)" title="删除这条（点两次）"
+            style="position:absolute;top:5px;left:5px;background:rgba(10,12,16,.72);border:1px solid var(--line);
+                   color:#c9d2e0;border-radius:5px;font-size:11px;padding:2px 6px;cursor:pointer;line-height:1.4">✕</button>
           <button onclick="toggleFs(this.parentElement.querySelector('video'))"
             title="全屏（快捷键 F）"
             style="position:absolute;top:5px;right:5px;background:rgba(10,12,16,.72);border:1px solid var(--line);
@@ -732,6 +735,26 @@ function sGen(){
         <span class="dim" style="font-size:11.5px">卡由调度后端分配，结果落到 09-…/生成结果/${scene}/ · 视频可双击或按 F 全屏</span>
       </div>
     </div></div>`;
+}
+
+async function genDelete(file, btn){
+  const key = 'del:' + file;
+  const now = Date.now();
+  if(!GEN.delArm || GEN.delArm.key !== key || GEN.delArm.until < now){
+    GEN.delArm = {key, until: now + 5000};
+    if(btn) btn.textContent = '确认删除';
+    toast("再点一次删除这条视频（5 秒内有效）");
+    setTimeout(()=>{ if(GEN.delArm && GEN.delArm.until < Date.now()){ GEN.delArm = null; render(); } }, 5200);
+    return;
+  }
+  GEN.delArm = null;
+  const r = await fetch('/api/gen/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({file})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || "删除失败");
+  toast("已删除：" + file.split('/').pop());
+  await loadGen(GEN.scene, true);
+  render();
 }
 
 function toggleFs(v){

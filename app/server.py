@@ -1340,6 +1340,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/gen/delete":
+            try:
+                body = self._json_body()
+                rel = str(body.get("file") or "")
+                f = (PROJECT / rel).resolve()
+                root = (PROJECT / vjobs.RESULT_DIR).resolve()
+                if not str(f).startswith(str(root)) or f.suffix.lower() != ".mp4":
+                    raise ValueError("只能删除 09-…/生成结果 下的视频")
+                if not f.exists():
+                    raise ValueError("文件不存在")
+                f.unlink()
+                removed = vjobs.mark_deleted(rel)
+                self._send(200, json.dumps({"ok": True, "file": rel, "records": removed},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/gen/submit":
             try:
                 body = self._json_body()

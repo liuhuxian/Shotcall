@@ -450,6 +450,20 @@ def recover(project: Path) -> list:
     return saved
 
 
+def mark_deleted(rel: str) -> int:
+    """文件被删后，把对应任务记录标成 deleted，避免历史里指向空文件。"""
+    n = 0
+    with _lock:
+        for j in _jobs.values():
+            if j.get("file") == rel:
+                j["status"] = "deleted"
+                j["deletedAt"] = time.time()
+                n += 1
+    if n:
+        _save()
+    return n
+
+
 def list_jobs(batch: str = None) -> list:
     with _lock:
         return [_jobs[j] for j in _order if not batch or _jobs[j]["batch"] == batch]
