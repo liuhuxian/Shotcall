@@ -725,6 +725,7 @@ function histPanel(){
     <td class="mono" style="width:62px">${esc(x.unit)}</td>
     <td class="dim mono" style="font-size:10.5px;width:92px">${x.seed??'—'}</td>
     <td class="dim mono" style="font-size:11px;width:92px">${x.w&&x.h?x.w+'×'+x.h:'—'}</td>
+    <td class="mono" style="font-size:10.5px;width:104px;color:#8fa3bd">${esc(x.recipe||'—')}</td>
     <td class="dim mono" style="font-size:11px;width:58px;text-align:right">${x.frames?x.frames+' 帧':'—'}</td>
     <td class="dim mono" style="font-size:11px;width:46px;text-align:right">${x.steps?x.steps+' 步':'—'}</td>
     <td class="mono" style="font-size:11.5px;width:84px;text-align:right">${fmtDur(x.renderSec)}</td>
@@ -747,7 +748,7 @@ function histPanel(){
         </label>
       </span></div>
     <div class="pb">${items.length?`<table><thead><tr>
-      <th>完成时间</th><th>单元</th><th>种子</th><th>分辨率</th><th style="text-align:right">帧数</th>
+      <th>完成时间</th><th>单元</th><th>种子</th><th>分辨率</th><th>工作流</th><th style="text-align:right">帧数</th>
       <th style="text-align:right">步数</th><th style="text-align:right">耗时</th><th style="text-align:right">大小</th>
       <th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table>`
       :'<div class="dim" style="font-size:12.5px">还没有生成记录。</div>'}</div>

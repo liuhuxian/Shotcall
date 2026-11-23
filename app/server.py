@@ -375,6 +375,22 @@ def _probe_video(f: Path) -> dict:
     return out
 
 
+def _recipe_label(j: dict) -> str:
+    """历史任务的工作流标签：优先用记录，没有就按 LoRA/步数反推。"""
+    name = j.get("recipe")
+    if name and name in vjobs.RECIPES:
+        r = vjobs.RECIPES[name]
+        return f"{name} · {j.get('steps') or r['steps']} 步"
+    lora = j.get("lora")
+    steps = j.get("steps")
+    if lora:
+        short = "turbo4" if "4step" in lora else "lora"
+        return f"{short} · {steps or '?'} 步"
+    if steps:
+        return f"base20 · {steps} 步"      # 裸模型系列，步数如实记
+    return "—"
+
+
 def _guess_render(j: dict):
     """老记录把渲染耗时存在 seconds 里；片长只有十几秒，用 60 秒做分界。"""
     s = j.get("seconds")
@@ -411,6 +427,7 @@ def gen_history(include_deleted: bool = False) -> dict:
                 "steps": j.get("steps"),
                 "renderSec": j.get("renderSec") or _guess_render(j),
                 "source": j.get("source") or ("workbench" if j else "disk"),
+                "recipe": _recipe_label(j) if j else "—",
                 "refs": len(j.get("refs") or []),
             })
     if include_deleted:
@@ -428,7 +445,8 @@ def gen_history(include_deleted: bool = False) -> dict:
                     "w": None, "h": None,
                     "frames": j.get("frames"), "steps": j.get("steps"),
                     "renderSec": j.get("renderSec") or _guess_render(j),
-                    "source": "deleted", "refs": len(j.get("refs") or []),
+                    "source": "deleted", "recipe": _recipe_label(j),
+                    "refs": len(j.get("refs") or []),
                     "deleted": True,
                 })
     items.sort(key=lambda x: x["mtime"], reverse=True)
