@@ -838,13 +838,15 @@ class Handler(BaseHTTPRequestHandler):
             out = []
             if root.is_dir():
                 import re as _re
-                for f in sorted(root.rglob("*.mp4")):
+                for f in sorted(root.rglob("*.mp4"), key=lambda x: x.stat().st_mtime):
                     m = _re.match(r"(U\d{3})", f.stem)
+                    mt = f.stat().st_mtime
                     out.append({"file": str(f.relative_to(PROJECT)),
                                 "unit": m.group(1) if m else f.parent.name,
                                 "group": f.parent.name, "name": f.name,
+                                "time": time.strftime("%m-%d %H:%M", time.localtime(mt)),
                                 "kb": max(1, f.stat().st_size // 1024),
-                                "mtime": f.stat().st_mtime})
+                                "mtime": mt})
             self._send(200, json.dumps({"scene": sc, "results": out}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/scenes":
@@ -1144,12 +1146,22 @@ class Handler(BaseHTTPRequestHandler):
                 want = body.get("units") or []
                 ops = vjobs.parse_units(PROJECT, scene)
                 by = {u["id"]: u for u in ops}
-                units = [by[x] for x in want if x in by]
+                units = []
+                for x in want:
+                    if isinstance(x, dict):
+                        u = by.get(x.get("id"))
+                        if u:
+                            units.append({"unit": u, "count": int(x.get("count") or 1)})
+                    elif x in by:
+                        units.append({"unit": by[x], "count": 1})
                 if not units:
                     raise ValueError("没有可提交的单元")
-                res = vjobs.submit(PROJECT, scene, units)
+                seed = body.get("seed")
+                seed = int(seed) if str(seed).strip().isdigit() else None
+                res = vjobs.submit(PROJECT, scene, units, seed=seed)
                 store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
-                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元"}])
+                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元" +
+                                            (f"，种子 {seed}" if seed is not None else "，种子随机")}])
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:

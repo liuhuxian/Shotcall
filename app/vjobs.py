@@ -174,21 +174,26 @@ def _api(port, path, payload=None, timeout=120):
         return json.loads(r.read().decode())
 
 
-def submit(project: Path, scene: str, units: list, width=1344, height=768, steps=8) -> dict:
+def submit(project: Path, scene: str, units: list, seed: int = None,
+           width=1344, height=768, steps=8) -> dict:
+    """units: [{"unit": {...}, "count": n}]；seed 给了就按 seed, seed+1, ... 递增。"""
     batch = time.strftime("VID-%Y%m%d-%H%M%S")
     tasks = []
-    for u in units:
-        jid = f"{batch}-{u['id']}"
-        job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
-               "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
-               "width": width, "height": height, "steps": steps,
-               "seed": random.randint(1, 2 ** 31 - 1),
-               "status": "queued", "card": None, "file": None, "error": None,
-               "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"]}
-        with _lock:
-            _jobs[jid] = job
-            _order.append(jid)
-        tasks.append({"id": jid, "run": _runner(project, jid)})
+    for item in units:
+        u = item["unit"]
+        count = max(1, int(item.get("count") or 1))
+        for k in range(count):
+            jid = f"{batch}-{u['id']}-{k+1}" if count > 1 else f"{batch}-{u['id']}"
+            job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
+                   "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
+                   "width": width, "height": height, "steps": steps,
+                   "seed": (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1),
+                   "status": "queued", "card": None, "file": None, "error": None,
+                   "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"]}
+            with _lock:
+                _jobs[jid] = job
+                _order.append(jid)
+            tasks.append({"id": jid, "run": _runner(project, jid)})
     sched.submit("video", tasks)
     return {"batch": batch, "jobs": [t["id"] for t in tasks]}
 

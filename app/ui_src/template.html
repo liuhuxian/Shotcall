@@ -527,6 +527,10 @@ function genUnitRow(u){
       <b class="mono" style="font-size:12.5px">${u.id}</b>
       <span class="dim" style="font-size:11.5px">${u.seconds} 秒 · ${esc(u.shots)}</span>
       <span class="dim" style="font-size:11px">${u.prompt.length} 字</span>
+      <span class="dim" style="font-size:11px;margin-left:6px">次数</span>
+      <input type="number" min="1" max="9" value="${(GEN.count||{})[u.id]||1}"
+        onchange="GEN.count=GEN.count||{};GEN.count['${u.id}']=Math.max(1,Math.min(9,parseInt(this.value)||1))"
+        style="width:52px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:2px 6px;font-size:12px">
       ${running?`<span class="badge b-acc" style="font-size:10px">${running.status==='running'?'生成中':'排队'}</span>`:''}
       ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
@@ -555,10 +559,10 @@ function genUnitRow(u){
       ${!u.zh?'<div class="dim" style="font-size:11px;margin-top:4px">该单元还没有中文审核稿。</div>':''}
       </div>`:''}
     ${mine.length?`<div style="padding:0 13px 12px;display:flex;gap:8px;flex-wrap:wrap">
-      ${mine.map(r=>`<div style="width:180px">
+      ${mine.map((r,idx)=>`<div style="width:180px">
         <video src="/api/proj/file?p=${encodeURIComponent(r.file)}" controls preload="metadata"
           style="width:100%;border-radius:6px;border:1px solid var(--line)"></video>
-        <div class="mono dim" style="font-size:10px;margin-top:3px">${esc(r.name)} · ${r.kb} KB</div>
+        <div class="mono dim" style="font-size:10px;margin-top:3px">#${idx+1} · ${esc(r.time||"")} · ${r.kb} KB</div>
       </div>`).join("")}</div>`:''}
   </div>`;
 }
@@ -579,8 +583,12 @@ function sGen(){
     <div class="ph"><span>${scene} 生成单元</span><span class="dim">${units.length} 个单元 · 已选 ${picked.length}</span></div>
     <div class="pb">
       ${units.length?units.map(genUnitRow).join(""):'<div class="dim" style="font-size:12.5px">该场还没有视频提示词（需要 09 阶段先编译）。</div>'}
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-        <button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成 ${picked.length} 个单元</button>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="dim" style="font-size:11.5px">种子</span>
+        <input type="number" min="0" placeholder="留空=随机" value="${esc(GEN.seed||"")}"
+          onchange="GEN.seed=this.value"
+          style="width:130px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
+        <button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成</button>
         <button class="btn ghost" style="font-size:11.5px;padding:4px 10px" onclick="loadGen(GEN.scene,true).then(()=>render())">刷新</button>
         <span class="dim" style="font-size:11.5px">卡由调度后端分配，结果落到 09-…/生成结果/${scene}/</span>
       </div>
@@ -588,13 +596,16 @@ function sGen(){
 }
 
 async function submitGen(){
-  const units = (GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).map(u=>u.id);
+  const units = (GEN.units||[]).filter(u=>GEN.draft[u.id]!==false)
+    .map(u=>({id:u.id, count:(GEN.count||{})[u.id]||1}));
   if(!units.length) return toast("没有选中单元");
+  const total = units.reduce((a,b)=>a+b.count,0);
+  const seedRaw = String(GEN.seed||"").trim();
   const r = await fetch('/api/gen/submit', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({scene: GEN.scene, units})});
+    body: JSON.stringify({scene: GEN.scene, units, seed: seedRaw||null})});
   const j = await r.json();
   if(!r.ok) return toast(j.error||"提交失败");
-  toast("已提交 "+j.jobs.length+" 个单元：" + j.batch);
+  toast("已提交 "+j.jobs.length+" 条（共 "+total+" 次）：" + j.batch);
   setTimeout(()=>loadGen(GEN.scene,true).then(()=>render()), 3000);
 }
 
