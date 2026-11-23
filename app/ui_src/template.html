@@ -459,14 +459,15 @@ function queueHtml(d){
       <td class="dim mono" style="width:70px">${j.card!=null?('卡'+j.card):'待分配'}</td>
       <td class="dim mono" style="width:80px">${j.seconds?j.seconds+'秒/'+j.frames+'帧':''}</td>
       <td class="dim" style="width:70px">${j.kind==='video'?(j.refs?('参考图 '+j.refs+' 张'):'无参考图'):'—'}</td>
-      <td class="dim mono" style="width:80px">${running?('已用 '+Math.round(wait/60)+' 分'):('已等 '+Math.round(wait/60)+' 分')}</td>
+      <td class="dim mono" style="width:92px">${running?('已用 '+Math.round(wait/60)+' 分'):('已等 '+Math.round(wait/60)+' 分')}</td>
+      <td class="dim mono" style="width:110px">${j.etaSec!=null?('约 '+Math.ceil(j.etaSec/60)+' 分后完成'):(j.totalSec?('预计 '+Math.round(j.totalSec/60)+' 分'):'—')}</td>
       <td class="dim mono" style="font-size:10.5px">${esc((j.id||'').slice(-22))}</td>
     </tr>`;
   }).join("");
   const run = jobs.filter(j=>j.status==='running').length;
   return `<div class="panel" style="margin-top:6px">
     <div class="ph"><span>生成队列</span><span class="dim">${jobs.length} 项 · 生成中 ${run} · 排队 ${jobs.length-run}</span></div>
-    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>卡</th><th>规格</th><th>参考</th><th>时间</th><th>任务号</th></tr></thead>
+    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>卡</th><th>规格</th><th>参考</th><th>时间</th><th>预计</th><th>任务号</th></tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
 }
 

@@ -437,6 +437,12 @@ def backend_state() -> dict:
             j["status"] = "dispatched"      # 已派出但还没在 ComfyUI 队列里看到
 
     # 单元内的第几次：已有产物数 + 在途顺序
+    # 渲染速率：8 步实测约 3.3 秒/帧，按步数线性折算
+    def rate_of(steps, frames):
+        base = 3.3
+        sp = steps or 8
+        return base * (sp / 8.0)
+
     import re as _r
     def count_results(scene, unit):
         root = PROJECT / vjobs.RESULT_DIR / (scene or "N001")
@@ -455,6 +461,17 @@ def backend_state() -> dict:
         base = count_results(*key)
         seen[key] = seen.get(key, 0) + 1
         j["seq"] = base + seen[key]
+        # 预计耗时：按帧数与步数折算；只在"生成中"给倒计时
+        f = j.get("frames") or 0
+        steps = 20
+        for jj in vid_jobs:
+            if jj.get("id") == j.get("id"):
+                steps = jj.get("steps") or 20
+        total = f * rate_of(steps, f) if f else None
+        el = (time.time() - (j.get("startedAt") or time.time())) if j["status"] in ("running", "waiting") else 0
+        j["totalSec"] = round(total) if total else None
+        j["elapsedSec"] = round(el) if el else None
+        j["etaSec"] = round(total - el) if (total and el and j["status"] == "running") else None
     JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
     return {"instances": inst, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
