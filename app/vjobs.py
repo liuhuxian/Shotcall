@@ -148,6 +148,32 @@ def parse_units(project: Path, scene: str) -> list:
     return attach_zh(out, scene)
 
 
+def resume(project: Path) -> list:
+    """进程重启后，把"还在排队、从没进过 ComfyUI"的任务重新交给调度。"""
+    todo = []
+    with _lock:
+        for jid in _order:
+            j = _jobs.get(jid) or {}
+            if j.get("status") == "queued" and not j.get("resubmitted"):
+                _jobs[jid]["resubmitted"] = True
+                todo.append(dict(j))
+    if not todo:
+        return []
+    units = {u["id"]: u for u in parse_units(project, todo[0].get("scene") or "N001")}
+    tasks = []
+    for j in todo:
+        u = units.get(j.get("unit"))
+        if not u:
+            continue
+        with _lock:
+            _jobs[j["id"]].update({"status": "queued", "prompt": u["prompt"]})
+        tasks.append({"id": j["id"], "run": _runner(project, j["id"])})
+    _save()
+    if tasks:
+        sched.submit("video", tasks)
+    return [t["id"] for t in tasks]
+
+
 def recover(project: Path) -> list:
     """从 ComfyUI 的 /history 里认领"没人认领"的产出（进程重启后的孤儿任务）。
 
@@ -316,7 +342,9 @@ def _execute(project: Path, jid: str, job: dict):
                         job["seed"], job["steps"])
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
-            _jobs[jid]["promptId"] = pid
+            if jid in _jobs:
+                _jobs[jid]["promptId"] = pid
+        _save()                      # 立刻落盘：重启后还能认出这条任务在 ComfyUI 里的位置
         t0 = time.time()
         while time.time() - t0 < 7200:
             time.sleep(10)

@@ -83,9 +83,28 @@ def set_cards(want: list) -> dict:
     return {"enabled": sorted(cur), "stopped": stopped, "draining": draining}
 
 
-def _least_loaded(cards: list, enabled: set) -> int:
+def _least_loaded(cards: list, enabled: set, require_comfy_idle: bool = False) -> int:
+    """挑卡：跳过正在回收的、以及 ComfyUI 里还有活儿的卡。
+
+    require_comfy_idle=True 时，只有 ComfyUI 自己的队列也空了才会派新任务——
+    避免把任务堆到同一张卡上，也避免"记录说在跑、实际在 ComfyUI 里排队"。
+    """
     cand = [c for c in cards
             if c["index"] in enabled and c["index"] not in _state["draining"]]
+    if not cand:
+        return None
+    if require_comfy_idle:
+        idle = []
+        for c in cand:
+            if _state["jobs"].get(c["index"]):
+                continue
+            try:
+                q = gpus.queue_of(c["port"])
+            except Exception:
+                continue
+            if not q["running"] and not q["pending"]:
+                idle.append(c)
+        cand = idle
     if not cand:
         return None
     return min(cand, key=lambda c: (len(_state["jobs"].get(c["index"], ())),
@@ -179,9 +198,17 @@ def _worker():
             busy = _busy_cards()
             with _lock:
                 enabled = set(_enabled())
-            free = [c for c in cards
-                    if c["index"] in enabled and c["index"] not in busy
-                    and c["index"] not in _state["draining"]]
+            free = []
+            for c in cards:
+                if c["index"] not in enabled or c["index"] in busy or c["index"] in _state["draining"]:
+                    continue
+                try:                       # ComfyUI 里还有活儿就别再堆
+                    q = gpus.queue_of(c["port"])
+                    if q["running"] or q["pending"]:
+                        continue
+                except Exception:
+                    pass
+                free.append(c)
             with _lock:
                 batch = [_pending.pop(0) for _ in range(min(len(free), len(_pending)))]
             for item, card in zip(batch, free):

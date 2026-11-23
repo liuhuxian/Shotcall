@@ -404,7 +404,7 @@ def backend_state() -> dict:
                          "status": j["status"], "card": j.get("card"),
                          "frames": j.get("frames"), "seconds": j.get("seconds"),
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
-                         "batch": j.get("batch")})
+                         "batch": j.get("batch"), "promptId": j.get("promptId")})
     for j in img_jobs:
         if j["status"] in ("queued", "running", "starting"):
             JOBS.append({"id": j["id"], "kind": "image", "unit": j.get("dir") or j.get("asset"),
@@ -412,7 +412,16 @@ def backend_state() -> dict:
                          "card": j.get("card"), "frames": None, "seconds": None,
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch")})
-    JOBS.sort(key=lambda x: (x["status"] != "running", x.get("queuedAt") or 0))
+    # 修正状态：我们的记录说 running，但 ComfyUI 当前跑的不是它 → 实际在 ComfyUI 里排队
+    live_exec = {i["card"]: i["executing"] for i in inst}
+    for j in JOBS:
+        pid = j.get("promptId")
+        ex = live_exec.get(j.get("card"))
+        if j["status"] == "running" and pid and ex and pid != ex:
+            j["status"] = "waiting"
+        elif j["status"] == "running" and pid and not ex:
+            j["status"] = "waiting"
+    JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
     return {"instances": inst, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
                         "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),
@@ -1376,6 +1385,12 @@ def main():
     srv.serve_forever()
 
 
+try:
+    _resumed = vjobs.resume(PROJECT)
+    if _resumed:
+        print("[resume] 重新排队：", _resumed, flush=True)
+except Exception as _e:
+    print("[resume] 出错：", _e, flush=True)
 threading.Thread(target=_video_recovery_loop, daemon=True).start()
 
 
