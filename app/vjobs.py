@@ -60,6 +60,31 @@ def attach_zh(units: list, scene: str) -> list:
     return units
 
 
+def parse_sync_refs(project: Path, scene: str) -> dict:
+    """从视频提示词 md 的 yoko-shots 块里取每单元的参考图与资产 ID。"""
+    d = project / VP_DIR / scene
+    if not d.is_dir():
+        return {}
+    f = next(iter(sorted(d.glob("minimax-h3-ref2va*.md"))), None) or next(iter(sorted(d.glob("*.md"))), None)
+    if not f:
+        return {}
+    txt = f.read_text(encoding="utf-8")
+    m = re.search(r"```yoko-shots\n(.*?)\n```", txt, re.S)
+    if not m:
+        return {}
+    try:
+        units = json.loads(m.group(1))
+    except Exception:
+        return {}
+    out = {}
+    for u in units:
+        refs = []
+        for i, path in enumerate(u.get("referenceImages") or [], 1):
+            refs.append({"n": i, "file": path, "exists": (project / path).exists()})
+        out[u.get("id")] = {"refs": refs, "assetIds": u.get("assetIds") or []}
+    return out
+
+
 def parse_units(project: Path, scene: str) -> list:
     """从视频提示词 md 里解析生成单元：U001 / 时长 / 六段提示词正文。"""
     d = project / VP_DIR / scene
@@ -79,6 +104,11 @@ def parse_units(project: Path, scene: str) -> list:
             "prompt": (pm.group(1).strip() if pm else ""),
             "source": f.name,
         })
+    sync = parse_sync_refs(project, scene)
+    for u in out:
+        s = sync.get(u["id"]) or {}
+        u["refs"] = s.get("refs") or []
+        u["assetIds"] = s.get("assetIds") or []
     return attach_zh(out, scene)
 
 
