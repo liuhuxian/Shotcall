@@ -60,12 +60,25 @@ def attach_zh(units: list, scene: str) -> list:
     return units
 
 
+def latest_prompt_file(d: Path):
+    """同一目录可能有 v001/v002…，取版本号最大的那份。"""
+    files = list(d.glob("minimax-h3-ref2va*.md")) or list(d.glob("minimax-h3*.md")) or list(d.glob("*.md"))
+    if not files:
+        return None
+
+    def ver(f: Path):
+        m = re.search(r"-v(\d{3})(?:-\d+)?\.md$", f.name)
+        return (int(m.group(1)) if m else 0, f.stat().st_mtime)
+
+    return max(files, key=ver)
+
+
 def parse_sync_refs(project: Path, scene: str) -> dict:
     """从视频提示词 md 的 yoko-shots 块里取每单元的参考图与资产 ID。"""
     d = project / VP_DIR / scene
     if not d.is_dir():
         return {}
-    f = next(iter(sorted(d.glob("minimax-h3-ref2va*.md"))), None) or next(iter(sorted(d.glob("*.md"))), None)
+    f = latest_prompt_file(d)
     if not f:
         return {}
     txt = f.read_text(encoding="utf-8")
@@ -90,7 +103,7 @@ def parse_units(project: Path, scene: str) -> list:
     d = project / VP_DIR / scene
     if not d.is_dir():
         return []
-    f = next(iter(sorted(d.glob("minimax-h3-ref2va*.md"))), None) or next(iter(sorted(d.glob("*.md"))), None)
+    f = latest_prompt_file(d)
     if not f:
         return []
     txt = f.read_text(encoding="utf-8")
@@ -108,7 +121,7 @@ def parse_units(project: Path, scene: str) -> list:
     for u in out:
         s = sync.get(u["id"]) or {}
         u["refs"] = s.get("refs") or []
-        u["assetIds"] = s.get("assetIds") or []
+        u["assetIds"] = [a.split("--")[-1] for a in (s.get("assetIds") or [])]
     return attach_zh(out, scene)
 
 

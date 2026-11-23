@@ -580,7 +580,8 @@ function sGen(){
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
   <div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>${scene} 生成单元</span><span class="dim">${units.length} 个单元 · 已选 ${picked.length}</span></div>
+    <div class="ph"><span>${scene} 生成单元</span>
+      <span class="dim">${units.length} 个单元 · 已选 ${picked.length}${units[0]?` · 来源 ${esc(units[0].source||"")}`:''}</span></div>
     <div class="pb">
       ${units.length?units.map(genUnitRow).join(""):'<div class="dim" style="font-size:12.5px">该场还没有视频提示词（需要 09 阶段先编译）。</div>'}
       <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
