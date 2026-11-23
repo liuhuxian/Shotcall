@@ -75,13 +75,15 @@ def queue_of(port: int) -> dict:
         return {"running": 0, "pending": 0, "promptId": None}
     run = q.get("queue_running") or []
     pend = q.get("queue_pending") or []
-    pid = None
-    if run:
+    def _pid(x):
         try:
-            pid = run[0][1] if isinstance(run[0], (list, tuple)) and len(run[0]) > 1 else None
+            return x[1] if isinstance(x, (list, tuple)) and len(x) > 1 else None
         except Exception:
-            pid = None
-    return {"running": len(run), "pending": len(pend), "promptId": pid}
+            return None
+    pid = _pid(run[0]) if run else None
+    return {"running": len(run), "pending": len(pend), "promptId": pid,
+            "runningIds": [p for p in (_pid(x) for x in run) if p],
+            "pendingIds": [p for p in (_pid(x) for x in pend) if p]}
 
 
 def is_night(now=None) -> bool:

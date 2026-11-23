@@ -341,6 +341,7 @@ def _video_recovery_loop():
     """每 30 秒认领一次孤儿产物：进程重启后仍在 ComfyUI 里跑完的任务。"""
     while True:
         try:
+            vjobs.reconcile(PROJECT)
             got = vjobs.recover(PROJECT)
             if got:
                 print("[recover] 认领视频：", got, flush=True)
@@ -412,15 +413,46 @@ def backend_state() -> dict:
                          "card": j.get("card"), "frames": None, "seconds": None,
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch")})
-    # 修正状态：我们的记录说 running，但 ComfyUI 当前跑的不是它 → 实际在 ComfyUI 里排队
-    live_exec = {i["card"]: i["executing"] for i in inst}
+    # 状态：以 ComfyUI 实际队列为准
+    run_ids, pend_ids, card_of = set(), set(), {}
+    for c in cards:
+        if c["state"] == "offline":
+            continue
+        q = gpus.queue_of(c["port"])
+        run_ids |= set(q.get("runningIds") or [])
+        pend_ids |= set(q.get("pendingIds") or [])
+        for pid in (q.get("runningIds") or []) + (q.get("pendingIds") or []):
+            card_of[pid] = c["index"]
     for j in JOBS:
         pid = j.get("promptId")
-        ex = live_exec.get(j.get("card"))
-        if j["status"] == "running" and pid and ex and pid != ex:
+        if pid and pid in run_ids:
+            j["status"] = "running"
+            j["card"] = card_of.get(pid, j.get("card"))
+        elif pid and pid in pend_ids:
             j["status"] = "waiting"
-        elif j["status"] == "running" and pid and not ex:
-            j["status"] = "waiting"
+            j["card"] = card_of.get(pid, j.get("card"))
+        elif j["status"] == "running":
+            j["status"] = "dispatched"      # 已派出但还没在 ComfyUI 队列里看到
+
+    # 单元内的第几次：已有产物数 + 在途顺序
+    import re as _r
+    def count_results(scene, unit):
+        root = PROJECT / vjobs.RESULT_DIR / (scene or "N001")
+        if not root.is_dir():
+            return 0
+        n = 0
+        for f in root.rglob("*.mp4"):
+            m = _r.match(r"(U\d{3})", f.stem)
+            if (m.group(1) if m else f.parent.name) == unit:
+                n += 1
+        return n
+    seen = {}
+    JOBS.sort(key=lambda x: (x.get("queuedAt") or 0))
+    for j in JOBS:
+        key = (j.get("scene"), j.get("unit"))
+        base = count_results(*key)
+        seen[key] = seen.get(key, 0) + 1
+        j["seq"] = base + seen[key]
     JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
     return {"instances": inst, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),

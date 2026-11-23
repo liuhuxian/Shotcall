@@ -447,13 +447,13 @@ function queueHtml(d){
     <div class="ph"><span>生成队列</span><span class="dim">没有排队或运行中的任务</span></div></div>`;
   const now = Date.now()/1000;
   const rows = jobs.map((j,i)=>{
-    const running = j.status === 'running' || j.status === 'starting';
-    const wait = running ? (j.startedAt ? Math.round(now - j.startedAt) : 0)
-                         : (j.queuedAt ? Math.round(now - j.queuedAt) : 0);
-    const color = running ? 'var(--acc)' : 'var(--dim)';
+    const LABEL = {running:'生成中', waiting:'ComfyUI 排队', dispatched:'已派发', queued:'待派卡'};
+    const running = j.status === 'running';
+    const wait = j.startedAt ? Math.round(now - j.startedAt) : (j.queuedAt ? Math.round(now - j.queuedAt) : 0);
+    const color = running ? 'var(--acc)' : (j.status === 'waiting' ? 'var(--warn)' : 'var(--dim)');
     return `<tr style="border-left:2px solid ${color}">
       <td class="mono dim" style="width:34px">${i+1}</td>
-      <td style="width:78px"><span class="badge ${running?'b-acc':'b-mut'}" style="font-size:10px">${running?'生成中':'排队'}</span></td>
+      <td style="width:78px"><span class="badge ${running?'b-acc':(j.status==='waiting'?'b-warn':'b-mut')}" style="font-size:10px">${LABEL[j.status]||j.status}</span></td>
       <td class="mono" style="width:74px">${j.unit||'—'}${j.seq?` #${j.seq}`:''}</td>
       <td class="dim" style="width:56px">${j.kind==='video'?'视频':'图片'}</td>
       <td class="dim mono" style="width:70px">${j.card!=null?('卡'+j.card):'待分配'}</td>

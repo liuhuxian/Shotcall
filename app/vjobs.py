@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import gpus
 import imagegen
 import sched
 import store
@@ -172,6 +173,73 @@ def resume(project: Path) -> list:
     if tasks:
         sched.submit("video", tasks)
     return [t["id"] for t in tasks]
+
+
+def reconcile(project: Path = None) -> int:
+    """按**提示词全文**把任务对回 ComfyUI 队列里的 prompt_id（不靠顺序猜）。"""
+    units = {}
+    for sc in {j.get("scene") for j in _jobs.values() if j.get("scene")} or {"N001"}:
+        if project is None:
+            continue
+        for u in parse_units(project, sc):
+            units[u["prompt"].strip()] = (sc, u["id"])
+    if not units:
+        return 0
+    n = 0
+    for card in range(8):
+        port = 8188 + card
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/queue", timeout=3) as r:
+                q = json.loads(r.read().decode())
+        except Exception:
+            continue
+        entries = (q.get("queue_running") or []) + (q.get("queue_pending") or [])
+        for e in entries:
+            try:
+                pid = e[1]
+                graph = e[2] or {}
+                text = None
+                for node in graph.values():
+                    ins = (node or {}).get("inputs") or {}
+                    if (node or {}).get("class_type") == "MiniMaxH3ReferenceToVideo" and isinstance(ins.get("prompt"), str):
+                        text = ins["prompt"].strip()
+                if text not in units:
+                    continue
+                sc, uid = units[text]
+                running_ids = set(q.get("runningIds") or [])
+                st = "running" if pid in running_ids else "waiting"
+                with _lock:
+                    matched = False
+                    for jid in _order:
+                        j = _jobs.get(jid) or {}
+                        if (j.get("scene") == sc and j.get("unit") == uid
+                                and j.get("status") in ("running", "queued", "dispatched")
+                                and not j.get("promptId")):
+                            _jobs[jid].update({"promptId": pid, "card": card, "status": st})
+                            n += 1
+                            matched = True
+                            break
+                    if not matched and not any((_jobs.get(x) or {}).get("promptId") == pid
+                                               for x in _order):
+                        # ComfyUI 里有、我们没登记的任务：直接认领，别让它隐形
+                        jid = f"ADOPT-{pid[:8]}"
+                        seed = None
+                        for node in graph.values():
+                            if (node or {}).get("class_type") == "RandomNoise":
+                                seed = ((node or {}).get("inputs") or {}).get("noise_seed")
+                        _jobs[jid] = {"id": jid, "batch": "adopted", "scene": sc, "unit": uid,
+                                      "seq": None, "seconds": None, "frames": None,
+                                      "seed": seed, "status": st, "card": card,
+                                      "promptId": pid, "file": None, "error": None,
+                                      "queuedAt": time.time(), "startedAt": None,
+                                      "prompt": text, "source": "adopted"}
+                        _order.append(jid)
+                        n += 1
+            except Exception:
+                continue
+    if n:
+        _save()
+    return n
 
 
 def recover(project: Path) -> list:
