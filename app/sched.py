@@ -18,14 +18,20 @@ _state = {
     "assign": {},         # 卡号 -> 当前任务的 kind（仅用于展示）
     "jobs": {},           # 卡号 -> 正在跑的 job id 集合
     "manual": set(),      # 用户手动开启/指定的卡，白天不自动回收
+    "disabled": set(),    # 被显式停用的卡（即使实例在线也不派活）
+    "autoscaled": set(),  # 由调度器自己扩出来的卡，白天闲时可以回收
 }
 _pending = []             # 等待分配的任务（dict: id, kind, run()）
 _runners = {}             # job_id -> callable(port) 真正干活的函数
 
 
 def _enabled() -> set:
+    """有实例在线就默认可用；只有一张都没开时，才按夜间/白天策略给默认卡。"""
+    online = {c["index"] for c in gpus.probe() if c["state"] != "offline"}
     if _state["enabled"] is None:
-        _state["enabled"] = set(gpus.default_selection(gpus.probe()))
+        _state["enabled"] = set(online) or set(gpus.default_selection(gpus.probe()))
+    _state["enabled"] |= (online - _state["disabled"])      # 新上线的自动纳入
+    _state["enabled"] -= _state["disabled"]
     return _state["enabled"]
 
 
@@ -68,6 +74,8 @@ def set_cards(want: list) -> dict:
                 stopped.append(idx)
         cur.discard(idx)
     _state["manual"] |= want                  # 确认过的卡视为手动指定，白天不回收
+    _state["disabled"] -= want                # 重新启用的从停用集合里移除
+    _state["disabled"] |= (set(cur) - want)   # 被移出的记下来，避免自动纳入
     for idx in want - cur:
         cur.add(idx)
     with _lock:
@@ -142,6 +150,7 @@ def _autoscale(cards: list) -> None:
     with _lock:
         for c in free[:need]:
             _enabled().add(c["index"])
+            _state["autoscaled"].add(c["index"])
 
 
 def _run_one(item: dict, idx: int) -> None:
@@ -194,8 +203,8 @@ def _housekeeping():
                 with _lock:
                     idle = not _pending and not any(_state["jobs"].values())
                 if idle:
-                    keep = set(gpus.default_selection(gpus.probe())) | _state["manual"]
-                    for idx in set(_enabled()) - keep:
+                    # 只回收"调度器自己扩出来的卡"，用户手动开的实例不动
+                    for idx in (_state["autoscaled"] - _state["manual"]):
                         _state["draining"].add(idx)
             for idx in list(_state["draining"]):
                 c = probes.get(idx)
@@ -208,6 +217,7 @@ def _housekeeping():
                     comfyctl.stop(idx)
                     _state["draining"].discard(idx)
                     _enabled().discard(idx)
+                    _state["autoscaled"].discard(idx)
         except Exception:
             traceback.print_exc()
         time.sleep(5)
