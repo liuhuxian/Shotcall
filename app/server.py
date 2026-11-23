@@ -473,7 +473,28 @@ def backend_state() -> dict:
         j["elapsedSec"] = round(el) if el else None
         j["etaSec"] = round(total - el) if (total and el and j["status"] == "running") else None
     JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
-    return {"instances": inst, "jobs": JOBS, "startable": startable,
+    # 8 张卡全景（用户手动管理算力时用）
+    inst_by_card = {i["card"]: i for i in inst}
+    all_cards = []
+    for c in cards:
+        vm = comfywatch.vram(c["index"]) or {}
+        used, total = vm.get("usedGB"), vm.get("totalGB")
+        pct = round(used / total * 100) if (used is not None and total) else None
+        if pct is None:
+            state = "unknown"
+        elif pct >= 80:
+            state = "full"
+        elif pct >= 15:
+            state = "busy"
+        else:
+            state = "free"
+        all_cards.append({
+            "card": c["index"], "port": c["port"],
+            "usedGB": used, "totalGB": total, "pct": pct, "state": state,
+            "hasInstance": c["index"] in inst_by_card,
+            "instance": inst_by_card.get(c["index"]),
+        })
+    return {"instances": inst, "cards": all_cards, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
                         "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),
                         "running": sum(1 for i in inst if i.get("executing"))}}

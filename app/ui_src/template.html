@@ -429,16 +429,67 @@ function confirmGate(key, label, fn){
 
 async function backendAction(card, action, label){
   const run = async ()=>{
+    if(action === 'start'){ BK.starting = card; render(); }
     const r = await fetch('/api/backend/action', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({action, card})});
     const j = await r.json();
     if(!r.ok) return toast(j.error||"操作失败");
+    BK.starting = null;
     toast(label + "：卡" + card + " 已执行");
     await loadBackend(true); render();
   };
   if(action === 'interrupt' || action === 'stop' || action === 'restart'){
     confirmGate(action+card, (action==='interrupt'?'中断':action==='stop'?'停止':'重启'), run);
   } else { run(); }
+}
+
+function cardColor(st){
+  return st === 'free' ? 'var(--ok)' : st === 'busy' ? 'var(--warn)'
+       : st === 'full' ? 'var(--bad)' : 'var(--dim)';
+}
+
+function cardsGrid(d){
+  const cards = d.cards || [];
+  const cells = cards.map(c=>{
+    const color = cardColor(c.state);
+    const inst = c.instance;
+    const xz = (k)=>BK.xz[k] && BK.xz[k] > Date.now();
+    const prog = inst && inst.progress && inst.progress.max
+      ? Math.round(inst.progress.value / inst.progress.max * 100) : 0;
+    return `<div style="border:1px solid ${color};border-radius:9px;background:var(--panel);padding:10px 12px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+        <i class="dot" style="background:${color};width:8px;height:8px"></i>
+        <b style="font-size:13px">卡 ${c.card}</b>
+        <span class="dim mono" style="font-size:10.5px">:${c.port}</span>
+        <span class="dim" style="margin-left:auto;font-size:10.5px">${c.hasInstance?'实例运行中':'未启动'}</span>
+      </div>
+      <div class="bar" style="margin:0 0 4px"><i style="width:${c.pct||0}%;background:${color}"></i></div>
+      <div class="mono dim" style="font-size:10.5px;margin-bottom:8px">
+        ${c.usedGB!=null ? c.usedGB+' / '+c.totalGB+' GB · '+c.pct+'%' : '显存读取失败'}
+      </div>
+      ${inst ? `
+        <div class="mono dim" style="font-size:10px;margin-bottom:6px">
+          pid ${inst.pid||'—'} · 队列 ${inst.queue?inst.queue.run+'跑'+inst.queue.pend+'排':'0'}
+          ${inst.job?` · ${esc(inst.job.label)}`:''}
+        </div>
+        <div class="bar" style="margin:0 0 8px"><i style="width:${prog}%;background:var(--acc)"></i></div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'interrupt','中断')">${xz('interrupt'+c.card)?'确认？':'中断'}</button>
+          <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'clear','清空队列')">清队</button>
+          <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'restart','重启')">${xz('restart'+c.card)?'确认？':'重启'}</button>
+          <button class="btn warn" style="font-size:10.5px;padding:2px 8px" onclick="backendAction(${c.card},'stop','停止')">${xz('stop'+c.card)?'确认？':'停止'}</button>
+        </div>` : `
+        <button class="btn acc" style="font-size:11px;padding:3px 10px;width:100%"
+          ${BK.starting===c.card?'disabled':''}
+          onclick="backendAction(${c.card},'start','启动实例')">
+          ${BK.starting===c.card?'启动中…':'启动实例'}</button>`}
+    </div>`;
+  }).join("");
+  return `<div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>显卡占用</span>
+      <span class="dim">绿=空闲 · 橙=有占用 · 红=接近满载 · 手动启停，不自动扩缩</span></div>
+    <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${cells}</div>
+  </div>`;
 }
 
 function queueHtml(d){
@@ -473,61 +524,20 @@ function queueHtml(d){
 
 function sBackend(){
   const d = BK.data;
-  if(!d){ loadBackend().then(()=>render()); return `<div class="dim">读取实例…</div>`; }
+  if(!d){ loadBackend().then(()=>render()); return `<div class="dim">读取算力…</div>`; }
   const s = d.summary||{};
-  const rows = (d.instances||[]).map(i=>{
-    const prog = i.progress && i.progress.max ? Math.round(i.progress.value/i.progress.max*100) : 0;
-    const vram = i.vramUsedGB, tot = i.vramTotalGB || 79;
-    const vpct = vram ? Math.min(100, Math.round(vram/tot*100)) : 0;
-    const up = i.uptimeSec ? (i.uptimeSec>3600? Math.round(i.uptimeSec/3600)+" 小时" : Math.round(i.uptimeSec/60)+" 分钟") : "—";
-    const xz = (k)=>BK.xz[k] && BK.xz[k]>Date.now();
-    return `<div class="panel" style="margin-bottom:12px">
-      <div class="ph"><span>卡 ${i.card} · 端口 ${i.port}</span>
-        <span class="dim">pid ${i.pid||"—"} · 已运行 ${up} · ${i.enabled?'已启用':'未启用'}</span></div>
-      <div class="pb">
-        <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px">
-          <span class="dim" style="font-size:11.5px;width:64px">显存</span>
-          <div class="bar" style="flex:1;margin:0"><i style="width:${vpct}%;background:${vpct>85?'var(--bad)':vpct>60?'var(--warn)':'var(--ok)'}"></i></div>
-          <span class="mono dim" style="font-size:11px;width:96px;text-align:right">${vram!=null?vram+' / '+tot+' GB':'未知'}</span>
-        </div>
-        <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px">
-          <span class="dim" style="font-size:11.5px;width:64px">进度</span>
-          <div class="bar" style="flex:1;margin:0"><i style="width:${prog}%;background:var(--acc)"></i></div>
-          <span class="mono dim" style="font-size:11px;width:96px;text-align:right">${i.progress?i.progress.value+'/'+i.progress.max+' 步':'空闲'}</span>
-        </div>
-        <div class="dim" style="font-size:11.5px;margin-bottom:8px">
-          任务：${i.job?`<b style="color:#c9d2e0">${esc(i.job.label)}</b> · ${i.job.kind==='video'?'视频':'图片'} · 已用 ${Math.round(i.job.elapsed/60)} 分钟`:'<span class="dim">无</span>'}
-          · 队列 ${i.queue?i.queue.pend:0} 项
-          ${i.error?` · <span style="color:var(--bad)">${esc(i.error)}</span>`:''}
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'interrupt','中断')">
-            ${xz('interrupt'+i.card)?'确认中断？':'中断当前'}</button>
-          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'clear','清空队列')">清空队列</button>
-          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'restart','重启实例')">
-            ${xz('restart'+i.card)?'确认重启？':'重启实例'}</button>
-          <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="backendAction(${i.card},'stop','停止实例')">
-            ${xz('stop'+i.card)?'确认停止？':'停止实例'}</button>
-        </div>
-      </div></div>`;
-  }).join("");
-  const startable = (d.startable||[]).map(x=>
-    `<button class="btn ghost" style="font-size:11.5px;padding:4px 12px" onclick="backendAction(${x.card},'start','启动实例')">
-      启动卡 ${x.card}（已用 ${x.vramUsedGB} GB）</button>`).join(" ");
+  const cards = d.cards||[];
+  const free = cards.filter(c=>!c.hasInstance && c.state==='free').length;
   return `
   <div class="grid4" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">排队任务</div><div class="kpi">${s.queueTotal||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">可启动的空卡</div><div class="kpi">${(d.startable||[]).length}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
-  ${rows || '<div class="panel"><div class="pb dim">没有已启动的实例。</div></div>'}
+  ${cardsGrid(d)}
   ${queueHtml(d)}
-  <div class="panel" style="margin-top:6px">
-    <div class="ph"><span>可启动</span><span class="dim">显存占用低于 8 GB、且没有实例的卡</span></div>
-    <div class="pb">${startable||'<span class="dim" style="font-size:12px">没有空卡可用</span>'}</div>
-  </div>
-  <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认</div>`;
+  <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认 · 自动扩缩已关闭</div>`;
 }
 
 /* ---------- 生成台 ---------- */

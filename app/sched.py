@@ -22,6 +22,7 @@ _state = {
     "autoscaled": set(),  # 由调度器自己扩出来的卡，白天闲时可以回收
 }
 _pending = []             # 等待分配的任务（dict: id, kind, run()）
+AUTO_SCALE = False        # 手动管理模式：不自动开卡、不自动收卡
 _runners = {}             # job_id -> callable(port) 真正干活的函数
 
 
@@ -194,7 +195,8 @@ def _worker():
     while True:
         try:
             cards = gpus.probe()
-            _autoscale(cards)
+            if AUTO_SCALE:
+                _autoscale(cards)
             busy = _busy_cards()
             with _lock:
                 enabled = set(_enabled())
@@ -221,6 +223,8 @@ def _worker():
 
 
 def _housekeeping():
+    if not AUTO_SCALE:
+        return
     """待关闭的卡：队列空了就关；白天批次结束后收掉自动扩出来的卡。"""
     while True:
         try:
