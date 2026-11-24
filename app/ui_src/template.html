@@ -1693,7 +1693,8 @@ let AD = null;
 async function openAsset(id){
   if(!AST.data){ await loadAssets(); }
   const a=((AST.data&&AST.data.assets)||[]).find(x=>x.id===id) || null;
-  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true};
+  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true,
+        prompt:(a&&(a.prompt||a.descriptor))||'', n:1, size:'2656x1504', steps:8};
   render();
   await loadAssetDetail();
 }
@@ -1714,13 +1715,11 @@ function adRefs(a){
 }
 async function adGenerate(){
   const a=adAsset(); if(!a) return;
-  const prompt=(document.getElementById('adPrompt')||{}).value||'';
-  if(!prompt.trim()) return toast('提示词为空');
+  const prompt=(AD.prompt||'').trim();
+  if(!prompt) return toast('提示词为空');
   if(!AD.ref) return toast('先点「引用当前」或「引用其他」选择一张参考图');
   const body={asset:a.id, mode:'edit', prompt:prompt.trim(), ref:AD.ref,
-    n:parseInt((document.getElementById('adN')||{}).value||'1'),
-    size:(document.getElementById('adSize')||{}).value||'2656x1504',
-    steps:parseInt((document.getElementById('adSteps')||{}).value||'8')};
+    n:parseInt(AD.n||1), size:AD.size||'2656x1504', steps:parseInt(AD.steps||8)};
   const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
   const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
@@ -1825,12 +1824,12 @@ function assetDetailHtml(){
           </div>`).join('')||'<div class="dim" style="font-size:11px">读取中或没有图片…</div>'}
         </div>
       </div></div>`:''}
-    <textarea id="adPrompt" style="width:100%;min-height:110px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(a.prompt||a.descriptor||'')}</textarea>
+    <textarea id="adPrompt" oninput="AD.prompt=this.value" style="width:100%;min-height:110px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(AD.prompt||'')}</textarea>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px">
-      <span class="dim" style="font-size:11px">候选</span><input id="adN" type="number" min="1" max="4" value="1" style="width:45px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
-      <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
-        <option value="2656x1504">16:9 2656×1504</option><option value="2048x1152">16:9 2048×1152</option><option value="1536x864">16:9 1536×864</option></select>
-      <span class="dim" style="font-size:11px">步数</span><select id="adSteps" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8">8</option><option value="6">6</option></select>
+      <span class="dim" style="font-size:11px">候选</span><input id="adN" type="number" min="1" max="4" value="${AD.n||1}" onchange="AD.n=this.value" style="width:45px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+      <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" onchange="AD.size=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+        ${['2656x1504','2048x1152','1536x864'].map(v=>`<option value="${v}" ${AD.size===v?'selected':''}>${v==='2656x1504'?'16:9 2656×1504':v==='2048x1152'?'16:9 2048×1152':'16:9 1536×864'}</option>`).join('')}</select>
+      <span class="dim" style="font-size:11px">步数</span><select id="adSteps" onchange="AD.steps=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8" ${String(AD.steps)==='8'?'selected':''}>8</option><option value="6" ${String(AD.steps)==='6'?'selected':''}>6</option></select>
       <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="adGenerate()">提交生成</button>
       <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadAssetDetail()">刷新</button>
     </div>`;
@@ -3393,7 +3392,23 @@ async function cancelAllQueued(){
 
 let TICK = null;
 
+function uiBusy(){
+  if(typeof VIEW !== 'undefined' && VIEW && VIEW.path) return true;
+  if(typeof AD !== 'undefined' && AD) return true;
+  if(state.tab === 'first') return true;                 // 首帧提示词编辑/选参考图时不自动重绘
+  const ae = document.activeElement;
+  const app = document.getElementById('app');
+  if(ae && app && app.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return true;
+  if(document.querySelector('#app details[open]')) return true;
+  if(typeof state !== 'undefined' && (state.candModal || state.batchModal || state.preflight)) return true;
+  if(state.tab === 'shots') return true;
+  if(state.tab === 'stages' && (state.wf || 'flow') === 'flow') return true;
+  if(document.querySelector('#assetDetail, .modal, #zoomlayer[style*="flex"]')) return true;
+  return false;
+}
+
 async function pollTick(){
+  if(uiBusy()) return;
   if(typeof VIEW !== 'undefined' && VIEW.path) return;   // 文件查看器打开时不刷新页面
   if(state.tab === 'shots') return;                      // 候选墙/视频播放时不自动重绘
   if(state.tab === 'stages' && (state.wf || 'flow') === 'flow') return;
@@ -3415,7 +3430,7 @@ async function pollTick(){
 }
 
 async function pollProgOnce(){
-  if(typeof VIEW !== 'undefined' && VIEW.path) return false;
+  if(uiBusy()) return false;
   try{
     // 生成台：只看该场产物有没有新增，别的抖动一律不重绘
     if(state.tab === 'history'){
