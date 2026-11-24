@@ -33,6 +33,7 @@ import comfyctl
 import confirms
 import comfywatch
 import dataset
+import flow
 import gpus
 import imagegen
 import imgjobs
@@ -1215,6 +1216,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/overview":
             self._send(200, json.dumps(overview(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/workflow/steps":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            scene = q.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", scene):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps(flow.steps_payload(PROJECT, scene), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/approvals":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             kind = q.get("kind", [""])[0]
@@ -1721,6 +1730,29 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 out = sched.set_cards(self._json_body().get("enabled") or [])
                 out["ok"] = True
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/workflow/register":
+            try:
+                body = self._json_body()
+                out = flow.register(PROJECT, str(body.get("step") or ""),
+                                    str(body.get("scene") or "N001"),
+                                    body.get("path"), str(body.get("outcome") or "passed"))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/workflow/confirm":
+            try:
+                body = self._json_body()
+                out = flow.confirm(PROJECT, str(body.get("step") or ""),
+                                   str(body.get("scene") or "N001"), body.get("path"))
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
