@@ -833,7 +833,8 @@ async function loadGen(scene, force){
 
 function genUnitRow(u){
   const mine = (GEN.results||[]).filter(r=>r.unit===u.id);
-  const running = (GEN.jobs||[]).find(j=>j.unit===u.id && ['running','queued','starting'].includes(j.status));
+  const running = (GEN.jobs||[]).find(j=>j.unit===u.id && ['running','queued','dispatched','starting'].includes(j.status));
+  const runLabel = running && running.status==='running' ? '生成中' : '排队';
   const picked = GEN.draft[u.id] !== false;
   return `<div style="border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px;padding:10px 13px">
@@ -851,7 +852,7 @@ function genUnitRow(u){
       <input type="number" min="1" max="9" value="${(GEN.count||{})[u.id]||1}"
         onchange="GEN.count=GEN.count||{};GEN.count['${u.id}']=Math.max(1,Math.min(9,parseInt(this.value)||1))"
         style="width:52px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:2px 6px;font-size:12px">
-      ${running?`<span class="badge b-acc" style="font-size:10px">${running.status==='running'?'生成中':'排队'}</span>`:''}
+      ${running?`<span class="badge ${running.status==='running'?'b-acc':'b-warn'}" style="font-size:10px">${runLabel}</span>`:''}
       ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
       ${(u.storyboard&&u.storyboard.path)?`<span class="badge" style="font-size:10px;border-color:var(--acc);color:var(--acc)">分镜图 第${u.storyboard.row}行</span>`:''}
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
@@ -1154,6 +1155,29 @@ function storyboardStrip(scene){
     </div></div>`;
 }
 
+function shotBadge(x){
+  const st = x.approval || {}, r = st.record;
+  if(!r) return '<span class="badge b-mut" style="font-size:10px">未审</span>';
+  if(st.stale) return '<span class="badge b-bad" style="font-size:10px">已失效</span>';
+  if(r.verdict==='pass') return '<span class="badge b-ok" style="font-size:10px">通过</span>';
+  if(r.verdict==='revise') return '<span class="badge b-warn" style="font-size:10px">需修改</span>';
+  return '<span class="badge b-mut" style="font-size:10px">待定</span>';
+}
+
+async function approveShot(scene, shot, verdict){
+  let note = '';
+  if(verdict !== 'pass'){ note = prompt('意见（可空，会写进审批记录）') || ''; }
+  const r = await fetch('/api/approval', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({kind:'shot', target: scene+'/'+shot, verdict,
+                          scope:{scene, shot}, notes: note ? [{text:note}] : []})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || '记录失败');
+  toast((verdict==='pass'?'已通过 ':verdict==='revise'?'已标需修改 ':'已标待定 ') + shot);
+  delete SHOTS[scene];
+  await loadShots(scene, true);
+  render();
+}
+
 function sShots(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
@@ -1171,6 +1195,14 @@ function sShots(){
     <td class="dim" style="font-size:11.5px">${esc((x.action||"").slice(0,60))}</td>
     <td class="dim" style="font-size:11.5px">${esc((x.firstFrame||"").slice(0,40))}</td>
     <td class="dim" style="font-size:11.5px">${esc((x.lastFrame||"").slice(0,40))}</td>
+    <td style="white-space:nowrap">
+      ${shotBadge(x)}
+      <div style="display:flex;gap:3px;margin-top:3px">
+        <button class="btn ok" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','pass')">通过</button>
+        <button class="btn warn" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','revise')">需修改</button>
+        <button class="btn ghost" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','hold')">待定</button>
+      </div>
+    </td>
   </tr>`).join("");
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
@@ -1180,7 +1212,8 @@ function sShots(){
       <span class="dim">${esc(info.episode||"")} · ${esc(info.interior||"")} · ${esc(info.time||"")} · ${sh.length} 镜 · ${info.duration||0}s</span></div>
     <div class="pb">
       ${sh.length?`<table><thead><tr><th style="width:70px">镜头</th><th style="width:50px;text-align:center">时长</th>
-        <th style="width:200px">景别</th><th>动作与表演</th><th style="width:160px">首帧状态</th><th style="width:160px">尾帧状态</th></tr></thead>
+        <th style="width:200px">景别</th><th>动作与表演</th><th style="width:160px">首帧状态</th><th style="width:160px">尾帧状态</th>
+        <th style="width:150px">审核</th></tr></thead>
         <tbody>${rows}</tbody></table>`:'<div class="dim" style="font-size:12.5px">该场尚未拆镜（需要 09 阶段生成镜头表）。</div>'}
     </div></div>`;
 }
@@ -1396,7 +1429,7 @@ function sPending(){
           <button class="btn warn" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','revise')">退回</button>
         </td></tr>`;}).join("")}</tbody></table></div></div>` : "";
   return kpis + `<div class="panel">
-    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入本工作台的决策记录（不改项目登记表）</span></div>
+    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入 approvals 审批账本（不改项目登记表）</span></div>
     <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
       <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
       <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div></div>` + unregHtml;
@@ -2176,7 +2209,8 @@ function statusBar(){
       ${cur?`<span class="mono" style="font-size:10.5px;color:var(--acc)">${esc((cur.dir||cur.asset||'').slice(0,20))}</span>`:''}
     </span>`;
   }).join("");
-  const q = (p.queued||0) + (p.pending||0);
+  const vq = (IMGST.vjobs||[]).filter(j=>['queued','dispatched','running','starting'].includes(j.status)).length;
+  const q = (p.queued||0) + (p.pending||0) + vq;
   return `<div style="display:flex;align-items:center;gap:12px;padding:8px 14px;margin-bottom:12px;
       border:1px solid var(--line);border-radius:9px;background:#0d1116;font-size:11.5px">
     <b style="font-size:12px">显卡</b>${chips||'<span class="dim">无在线实例</span>'}
@@ -2302,11 +2336,14 @@ async function pollProgOnce(){
     }catch(e){}
     const p = await fetch('/api/comfy/progress').then(r=>r.json());
     const j = await fetch('/api/img/jobs').then(r=>r.json());
-    const sig = JSON.stringify([p, (j.jobs||[]).map(x=>[x.id,x.status,x.startedAt])]);
+    const v = await fetch('/api/gen/active').then(r=>r.json()).catch(()=>({jobs:[]}));
+    const sig = JSON.stringify([p, (j.jobs||[]).map(x=>[x.id,x.status,x.startedAt]),
+                                (v.jobs||[]).map(x=>[x.id,x.status,x.queueState])]);
     const changed = sig !== IMGST.lastSig;
     IMGST.lastSig = sig;
     IMGST.prog = p;
     IMGST.jobs = j.jobs||[];
+    IMGST.vjobs = v.jobs||[];
     IMGST.seenFailed = IMGST.seenFailed || new Set();
     IMGST.notices = IMGST.notices || [];
     (IMGST.jobs||[]).forEach(x=>{
@@ -2960,10 +2997,10 @@ ${S.adapted.map(a=>`- [${a.scene.slice(-3)}] ${a.spk}："${a.text}" — 原著�
 function sEpSel(){
   const eps = D.episodes || [];
   if(!eps.length){
-    return `<button class="epbtn" onclick="toast('项目里没有 项目开发/episode-map.jsonl，选集不可用')">
+    return `<button class="epbtn" onclick="toast('本期只做 E001–E003；135 集总览推迟到下一期')">
       <span class="proj">${D.project?esc(String(D.project).split(' · ')[0]):'项目'}</span>
-      <span class="sep">·</span><i class="st" style="background:var(--bad)"></i>
-      <span class="cur">无分集数据</span></button>`;
+      <span class="sep">·</span><i class="st" style="background:var(--acc)"></i>
+      <span class="cur">E001–E003 · 本期</span></button>`;
   }
   const cur = eps.find(e=>e.id===state.ep) || eps[0];
   const dot = cur.hasScript ? "var(--acc)" : "var(--dim)";

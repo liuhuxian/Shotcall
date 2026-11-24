@@ -31,6 +31,13 @@ const loadEp=async(ep)=>{
 };
 const BOOT=async()=>{
   await loadEp();
+  try{
+    const ov = await fetch('/api/overview').then(r=>r.json());
+    if(ov && ov.scenes){
+      S = {...S, scenes: ov.scenes.count, shots: ov.shots, totalDur: ov.scenes.totalSeconds,
+           brokenOcc: 0, assetFiles: (ov.assets||{}).total || 0};
+    }
+  }catch(e){}
   if(!TICK) TICK = setInterval(pollTick, 3000);   // 全局 3 秒轮询：算力页与其它页共用
   try{
     const h = await fetch('/api/health').then(r=>r.json());
