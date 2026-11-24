@@ -898,8 +898,10 @@ def backend_state(project=None) -> dict:
             "instances": inst, "cards": all_cards, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
                         "pendingLocal": sum(1 for j in JOBS if j["status"] == "queued"),
+                        "dispatched": sum(1 for j in JOBS if j["status"] == "dispatched"),
+                        "waiting": sum(1 for j in JOBS if j["status"] == "waiting"),
                         "queueTotal": sum((i["queue"] or {}).get("pend", 0) for i in inst),
-                        "running": sum(1 for i in inst if i.get("executing"))}}
+                        "running": sum(1 for j in JOBS if j["status"] == "running")}}
 
 
 def _novel_path() -> str:

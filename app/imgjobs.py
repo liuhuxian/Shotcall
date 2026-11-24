@@ -11,6 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
+import gpus
 import imagegen
 import sched
 import store
@@ -81,16 +82,46 @@ def list_jobs(batch: str = None, project=None) -> list:
 
 
 def cancel(ids: list) -> dict:
-    """取消排队中的任务；已开始的不动。"""
-    done = []
-    with _lock:
-        for jid in ids:
+    """停止指定图片任务：未派的撤下，已在 ComfyUI 队列的删掉，正在跑的才中断。"""
+    ids = list(ids)
+    out = {"cancelled": [], "interrupted": [], "notFound": []}
+    dropped = set(sched.cancel_pending(ids))
+    for jid in ids:
+        with _lock:
             j = _jobs.get(jid)
-            if j and j["status"] == "queued":
-                j["status"] = "cancelled"
-                done.append(jid)
+            if j is None:
+                out["notFound"].append(jid)
+                continue
+            pid = j.get("promptId")
+            card = j.get("card")
+        if jid in dropped or not pid or card is None:
+            with _lock:
+                if _jobs.get(jid):
+                    _jobs[jid]["status"] = "cancelled"
+            out["cancelled"].append(jid)
+            continue
+        port = 8188 + int(card)
+        try:
+            q = gpus.queue_of(port)
+            if pid in (q.get("pendingIds") or []):
+                imagegen._post(port, "/queue", {"delete": [pid]})
+                with _lock:
+                    _jobs[jid]["status"] = "cancelled"
+                out["cancelled"].append(jid)
+            elif pid in (q.get("runningIds") or []):
+                imagegen._post(port, "/interrupt", {})
+                with _lock:
+                    _jobs[jid]["status"] = "interrupted"
+                out["interrupted"].append(jid)
+            else:
+                with _lock:
+                    _jobs[jid]["status"] = "cancelled"
+                out["cancelled"].append(jid)
+        except Exception as e:
+            out.setdefault("errors", []).append(f"{jid}: {e}")
     _save()
-    return {"cancelled": done, "count": len(done)}
+    out["count"] = len(out["cancelled"]) + len(out["interrupted"])
+    return out
 
 
 def cancel_batch(batch: str) -> dict:

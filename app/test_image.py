@@ -31,6 +31,18 @@ def main():
     check("多参考图接 image_1..3", all(gm["5"]["inputs"].get(f"images.image_{i}") for i in (1, 2, 3)),
           gm["5"]["inputs"])
 
+    # 停止：排队中的（未派发）应直接标取消
+    jid = "IMG-TEST-CANCEL-1"
+    imgjobs._jobs[jid] = {"id": jid, "status": "queued", "card": None,
+                          "promptId": None, "batch": "B1"}
+    imgjobs._order.append(jid)
+    out = imgjobs.cancel([jid])
+    check("排队中的图片任务可停止", jid in out["cancelled"], out)
+    check("停止后状态为 cancelled", imgjobs._jobs[jid]["status"] == "cancelled",
+          imgjobs._jobs[jid]["status"])
+    out2 = imgjobs.cancel(["IMG-NOT-EXIST"])
+    check("不存在的任务报 notFound", out2["notFound"] == ["IMG-NOT-EXIST"], out2)
+
     check("出图工作流可选", len(imagegen.RECIPES) >= 4 and imagegen.current_recipe().get("label"),
           imagegen.RECIPES.keys())
     d = assetsdb.build(REAL)

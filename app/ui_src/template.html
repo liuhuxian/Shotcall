@@ -680,7 +680,9 @@ async function stopJob(id, btn){
     return;
   }
   BK.stopArm = null;
-  const r = await fetch('/api/gen/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+  const job = ((BK.data && BK.data.jobs) || []).find(x=>x.id === id) || {};
+  const ep = job.kind === 'image' ? '/api/img/cancel' : '/api/gen/cancel';
+  const r = await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ids:[id]})});
   const j = await r.json();
   if(!r.ok) return toast(j.error || "停止失败");
@@ -785,8 +787,8 @@ function sBackend(){
     <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">排队任务</div>
-      <div class="kpi">${s.pendingLocal||0}<small>待派</small></div>
-      <div class="dim" style="font-size:10.5px;margin-top:3px">ComfyUI 内 ${s.queueTotal||0} 项</div></div>
+      <div class="kpi">${(s.pendingLocal||0)+(s.dispatched||0)}<small>待跑</small></div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">待派 ${s.pendingLocal||0} · 已派 ${s.dispatched||0} · ComfyUI 内 ${s.queueTotal||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
   ${recipePanel()}
