@@ -754,15 +754,18 @@ function execPanel(){
   const vRows=vids.map(x=>`<div onclick="playBackend('${esc(x.file)}')" style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #1b2028;cursor:pointer">
     <span class="badge b-ok" style="font-size:9px">▶</span>
     <span class="mono" style="font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.unit)} · ${esc(x.file.split('/').pop())}</span>
-    <span class="dim mono" style="font-size:10px;white-space:nowrap">${x.time?esc(x.time):''} ${x.sizeMB?x.sizeMB+'MB':''}</span>
+    <span class="dim mono" style="font-size:10px;white-space:nowrap">${x.time?esc(x.time):''} ${x.sizeMB?x.sizeMB+'MB':''}${
+      x.renderSec?` · 耗时 ${fmtDur(x.renderSec)}`:''}${
+      x.queueWaitSec&&x.queueWaitSec>60?` <span style="opacity:.7">(排队 ${fmtDur(x.queueWaitSec)})</span>`:''}</span>
   </div>`).join("");
   const imgsHtml=imgs.map(x=>`<div style="width:118px">
     <img src="/api/proj/file?p=${encodeURIComponent(x.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(x.file)}')"
       style="width:100%;height:74px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:zoom-in;display:block">
     <div class="dim mono" style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.label)} · ${esc(x.name)}</div>
+    <div class="dim mono" style="font-size:9px;white-space:nowrap">${x.seconds?`耗时 ${fmtDur(x.seconds)}`:''}</div>
   </div>`).join("");
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-    <div class="panel"><div class="ph"><span>视频成果</span><span class="dim">导演台任务 · 最近 ${vids.length} / ${(EXEC.videos||[]).filter(x=>x.source==='workbench').length} 条 · 点播放</span></div>
+    <div class="panel"><div class="ph"><span>视频成果</span><span class="dim">导演台任务 · 最近 ${vids.length} / ${(EXEC.videos||[]).filter(x=>x.source==='workbench').length} 条 · 耗时不含排队 · 点播放</span></div>
       <div class="pb">${vRows||'<div class="dim" style="font-size:11.5px">还没有生成过的视频。</div>'}</div></div>
     <div class="panel"><div class="ph"><span>图片成果</span><span class="dim">导演台任务 · 最近 ${imgs.length} / ${(EXEC.images||[]).filter(x=>x.source==='workbench').length} 张 · 点图放大</span></div>
       <div class="pb" style="display:flex;gap:7px;flex-wrap:wrap">${imgsHtml||'<div class="dim" style="font-size:11.5px">还没有生成过的图片。</div>'}</div></div>
