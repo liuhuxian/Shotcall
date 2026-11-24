@@ -182,7 +182,8 @@ def main():
     for name in ("test_approvals.py", "test_jobs_m1.py", "test_gpu_sampler.py",
                  "test_review_fixes.py", "test_m2_reviews.py", "test_flow.py",
                  "test_image.py", "test_firstframe.py", "test_projects.py",
-                 "test_revision.py", "test_m1_acceptance.py"):
+                 "test_revision.py", "test_gate.py", "test_agent.py",
+                 "test_m1_acceptance.py"):
         f = Path(__file__).parent / name
         if not f.exists():
             skip(name, "文件未提供")

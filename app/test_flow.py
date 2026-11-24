@@ -25,6 +25,8 @@ def main():
     check("提示词含项目根", str(REAL) in s01['prompt'], s01['prompt'][:80])
     check("09b 下一版 v012", data['steps'][-1]['nextVersion'] == 'v012',
           data['steps'][-1]['nextVersion'])
+    check("09b 依赖包含镜头规划", any("镜头规划" in x for x in data['steps'][-1].get('inputs') or []),
+          data['steps'][-1].get('inputs'))
 
     src = next(REAL.glob('.agents/skills/*/ai-film-router/scripts/artifact_guard.py')).parent
     p = Path(tempfile.mkdtemp(prefix="flow-test-"))

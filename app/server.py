@@ -25,6 +25,7 @@ from pathlib import Path
 import os
 import re
 
+import agentrunner
 import approvals
 import artifacts
 import assetsdb
@@ -213,9 +214,33 @@ def _prompt_confirm(rel: str) -> dict:
     return {"local": "none"}
 
 
+STALE_ART = ("已过期-禁止使用", "历史已替代", "已作废（不合格）", "缺文件-阻断")
+
+
+def _artifact_status(project: Path) -> dict:
+    reg = artifacts.load_registry(project)
+    return {a.get("path"): a.get("status") for a in (reg.get("artifacts") or [])}
+
+
+def _stale_targets(scene: str, units: list, rel: str) -> list:
+    """本次生成直接引用的成果文件里，已被登记表标为过期的路径。"""
+    targets = {rel}
+    for item in units:
+        u = item.get("unit") or {}
+        src = str(u.get("source") or "").strip()
+        if src:
+            targets.add(src if "/" in src else f"{vjobs.VP_DIR}/{scene}/{src}")
+    return sorted(targets)
+
+
 def _generation_gate(scene: str, units: list, rel: str) -> dict:
-    """文件级版本锁 + 镜头级确认；返回缺失清单和有效 approval ids。"""
+    """文件级版本锁 + 镜头级确认 + 成果状态锁；返回缺失清单和有效 approval ids。"""
     missing, ids = [], []
+    status = _artifact_status(PROJECT)
+    for target in _stale_targets(scene, units, rel):
+        st = status.get(target)
+        if st in STALE_ART:
+            missing.append(f"成果已过期/禁止生成：{target}（{st}）")
     frec = approvals.file_ok(PROJECT, rel)
     if not frec:
         st = approvals.state(PROJECT, "file", rel)
@@ -1228,6 +1253,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"active": str(PROJECT), "projects": projects.discover()},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/agent/tasks":
+            self._send(200, json.dumps({"items": agentrunner.list_tasks(PROJECT)}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/data":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             body = json.dumps(response(q.get("ep", [None])[0]), ensure_ascii=False).encode("utf-8")
@@ -1772,6 +1800,11 @@ class Handler(BaseHTTPRequestHandler):
                 asset = next((a for a in assets if a.get("id") == asset_id), None)
                 if not asset:
                     raise ValueError("未知资产")
+                adoc = assetsdb.latest_asset_doc(PROJECT)
+                if adoc:
+                    st = _artifact_status(PROJECT).get(str(adoc.relative_to(PROJECT)))
+                    if st in STALE_ART:
+                        raise ValueError(f"资产文档已过期，禁止出图：{adoc.name}（{st}）")
                 mode = str(body.get("mode") or "t2i")
                 prompt = str(body.get("prompt") or asset.get("prompt") or "").strip()
                 if not prompt:
@@ -1840,6 +1873,14 @@ class Handler(BaseHTTPRequestHandler):
                     f = (PROJECT / ref).resolve()
                     if not _inside(PROJECT, f) or not f.is_file():
                         raise ValueError("参考图不在项目内")
+                plan = PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}/shot-plan-v001.md"
+                if not plan.exists():
+                    plans = sorted((PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}").glob("shot-plan-v*.md"))
+                    plan = plans[-1] if plans else None
+                if plan:
+                    st = _artifact_status(PROJECT).get(str(plan.relative_to(PROJECT)))
+                    if st in STALE_ART:
+                        raise ValueError(f"镜头表已过期，禁止出首帧：{plan.name}（{st}）")
                 width = int(body.get("width") or 1536)
                 height = int(body.get("height") or 864)
                 steps = int(body.get("steps") or 6)
@@ -1886,6 +1927,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(409 if "任务" in str(e) else 400,
                            json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/agent/dispatch":
+            try:
+                body = self._json_body()
+                out = agentrunner.dispatch(PROJECT, str(body.get("step") or ""),
+                                           str(body.get("scene") or "N001"))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/workflow/batch":

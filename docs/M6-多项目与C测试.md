@@ -60,4 +60,4 @@
 
 ## 4 测试
 
-- `test_all` **46 通过 / 0 失败 / 2 跳过**；`test_projects` 7/0；`test_revision` 11/0；`test_flow` 10/0（11 卡）；`test_m1_acceptance` 80/0/2。
+- `test_all` **48 通过 / 0 失败 / 2 跳过**；`test_projects` 7/0；`test_revision` 11/0；`test_flow` 10/0（11 卡）；`test_m1_acceptance` 80/0/2。
