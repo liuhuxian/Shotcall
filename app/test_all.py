@@ -179,7 +179,8 @@ def main():
     tail = [ln for ln in r.stdout.splitlines() if ln.startswith("通过")]
     check("视频任务层测试通过", r.returncode == 0, (tail[-1] if tail else r.stdout[-200:]))
 
-    for name in ("test_approvals.py", "test_jobs_m1.py", "test_gpu_sampler.py", "test_m1_acceptance.py"):
+    for name in ("test_approvals.py", "test_jobs_m1.py", "test_gpu_sampler.py",
+                 "test_review_fixes.py", "test_m1_acceptance.py"):
         f = Path(__file__).parent / name
         if not f.exists():
             skip(name, "文件未提供")

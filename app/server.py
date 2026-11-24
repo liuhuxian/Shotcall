@@ -10,6 +10,7 @@
     GET /api/health  → 健康检查
 """
 import argparse
+import hashlib
 import json
 import tempfile
 import subprocess
@@ -17,6 +18,7 @@ import threading
 import translate
 import time
 import urllib.parse
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -170,6 +172,15 @@ def _version_of(path: str):
     return f"v{m.group(1)}" if m else ""
 
 
+def _scope_obj(scope):
+    """artifact-state 的 scope 是字符串；审批账本只收对象，这里做唯一归一。"""
+    if isinstance(scope, dict):
+        return scope
+    if isinstance(scope, str) and scope.strip():
+        return {"label": scope.strip()}
+    return {}
+
+
 def _unit_shots(unit: dict) -> list:
     """从「SH001、SH002」里取镜号；解析不到就返回空，由门禁阻断。"""
     return re.findall(r"SH\d{3}", unit.get("shots") or "")
@@ -205,6 +216,9 @@ def _generation_gate(scene: str, units: list, rel: str) -> dict:
         if not shots:
             missing.append(f"{u.get('id','?')}：无法解析覆盖镜头")
             continue
+        for r in (u.get("refs") or []):
+            if not r.get("exists"):
+                missing.append(f"{u.get('id','?')}：参考图缺失 {r.get('file','?')}")
         for sid in shots:
             st = approvals.state(PROJECT, "shot", f"{scene}/{sid}")
             rec = st.get("record")
@@ -1284,6 +1298,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/storyboards":
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = qs.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", sc):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
             d = PROJECT / "09-镜头与视频提示词/镜头规划" / sc / "分镜图"
             items = []
             if d.is_dir():
@@ -1370,6 +1387,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/scenes/shots":
             q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sid = q3.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", sid):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
             shots = scenes.shot_details(PROJECT, sid)
             for x in shots:
                 x["approval"] = approvals.state(PROJECT, "shot", f"{sid}/{x['id']}")
@@ -1634,7 +1654,7 @@ class Handler(BaseHTTPRequestHandler):
                 rec = approvals.append(
                     PROJECT, kind, target, verdict,
                     path=rel, version=body.get("version") or (_version_of(rel) if rel else None),
-                    scope=body.get("scope"), notes=notes, by=body.get("by") or "director",
+                    scope=_scope_obj(body.get("scope")), notes=notes, by=body.get("by") or "director",
                 )
                 st = approvals.state(PROJECT, kind, target)
                 self._send(200, json.dumps({"ok": True, "record": rec, "state": st},
@@ -1660,7 +1680,7 @@ class Handler(BaseHTTPRequestHandler):
                 rec = approvals.append(
                     PROJECT, "file", rel, verdict,
                     path=rel, version=body.get("version") or _version_of(rel),
-                    scope=body.get("scope") or {}, notes=notes,
+                    scope=_scope_obj(body.get("scope")), notes=notes,
                 )
                 # 兼容旧缓存：只做 best-effort，失败不影响审批账本
                 try:
@@ -1831,8 +1851,12 @@ class Handler(BaseHTTPRequestHandler):
                 units = []
                 order = [u["id"] for u in ops]
                 batch_prev = {}          # 同批里每个单元最后一条任务的 id
+                seen_units = set()
                 for x in want:
                     if isinstance(x, dict):
+                        if x.get("id") in seen_units:
+                            continue
+                        seen_units.add(x.get("id"))
                         u = by.get(x.get("id"))
                         if u:
                             idx = order.index(u["id"])
@@ -1860,27 +1884,75 @@ class Handler(BaseHTTPRequestHandler):
                     w, h = [int(x) for x in size.lower().split("x")]
                 except Exception:
                     w, h = 1344, 768
-                res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps, width=w, height=h)
+                if steps <= 0:
+                    raise ValueError("steps 必须 > 0")
+                if w % 32 or h % 32:
+                    raise ValueError(f"宽高必须是 32 的倍数：{w}x{h}")
+                batch_id = "VID-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
                 frec = approvals.file_ok(PROJECT, rel) or {}
                 unit_ids = [x["unit"]["id"] for x in units]
+                refs, seen_refs = [], set()
+                for x in units:
+                    for r in x["unit"].get("refs") or []:
+                        rp = r.get("file")
+                        if not rp or rp in seen_refs:
+                            continue
+                        seen_refs.add(rp)
+                        fp = PROJECT / rp
+                        sha = None
+                        if fp.is_file():
+                            h = hashlib.sha256()
+                            with open(fp, "rb") as fh:
+                                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                                    h.update(chunk)
+                            sha = h.hexdigest()
+                        refs.append({"path": rp, "sha256": sha, "exists": fp.is_file()})
+                recipe = vjobs.current_recipe()
                 batch_rec = {
-                    "id": res["batch"], "scene": scene, "units": unit_ids,
-                    "prompt": rel, "promptSha": frec.get("sha256"),
+                    "id": batch_id, "status": "pending", "scene": scene,
+                    "units": unit_ids, "prompt": rel, "promptSha": frec.get("sha256"),
                     "approvalIds": gate["approvalIds"],
                     "params": {"steps": steps, "width": w, "height": h, "seed": seed},
-                    "jobs": res.get("jobs") or [],
+                    "recipe": {k: recipe.get(k) for k in
+                               ("name", "lora", "steps", "sigmas", "sampler", "attention", "refSize")},
+                    "refs": refs, "jobs": [],
                     "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 }
                 bdir = store.state_dir(PROJECT) / "generation-batches"
                 bdir.mkdir(parents=True, exist_ok=True)
-                (bdir / f"{res['batch']}.json").write_text(
-                    json.dumps(batch_rec, ensure_ascii=False, indent=1), encoding="utf-8")
-                approvals.append(
-                    PROJECT, "batch", res["batch"], "pass",
-                    scope={"scene": scene, "units": unit_ids},
-                    notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
-                                   (f"，种子 {seed}" if seed is not None else "，种子随机")}],
-                )
+                bpath = bdir / f"{batch_id}.json"
+
+                def _write_batch(rec):
+                    tmp = bpath.with_name(bpath.name + ".tmp")
+                    tmp.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+                    tmp.replace(bpath)
+
+                # 先落批次与授权，再入队；写失败时不会产生任何 GPU 任务
+                _write_batch(batch_rec)
+                try:
+                    approvals.append(
+                        PROJECT, "batch", batch_id, "pass",
+                        scope={"scene": scene, "units": unit_ids},
+                        notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
+                                       (f"，种子 {seed}" if seed is not None else "，种子随机")}],
+                    )
+                except Exception as e:
+                    batch_rec.update({"status": "failed", "error": f"批次授权失败：{e}"})
+                    _write_batch(batch_rec)
+                    raise
+                try:
+                    res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps,
+                                       width=w, height=h, batch=batch_id)
+                except Exception as e:
+                    batch_rec.update({"status": "failed", "error": f"入队失败：{e}"})
+                    _write_batch(batch_rec)
+                    raise
+                batch_rec.update({"status": "submitted", "jobs": res.get("jobs") or []})
+                try:
+                    _write_batch(batch_rec)
+                except Exception as e:
+                    # 任务已经开始跑，不能再把接口报成失败；记录警告，批次文件保持 pending
+                    res["batchWarning"] = f"批次状态回写失败：{e}"
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -1993,15 +2065,9 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             return
         if path == "/api/execute":
-            try:
-                body = self._json_body()
-                out = execute_batch(body)
-                self._send(200 if out.get("ok") else 400,
-                           json.dumps(out, ensure_ascii=False).encode("utf-8"),
-                           "application/json; charset=utf-8")
-            except Exception as e:
-                self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
-                           "application/json; charset=utf-8")
+            self._send(410, json.dumps({"ok": False, "error": "旧 /api/execute 已停用；请用 /api/gen/submit（带确认门禁）"},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
             return
         if path == "/api/plan":
             try:

@@ -84,6 +84,7 @@ def shot_details(project: Path, scene: str) -> list:
 
         out.append({
             "id": sid, "start": s0, "end": s1, "duration": s1 - s0,
+            "source": str(f.relative_to(project)),
             "purpose": grab("目的与调度"),
             "size": grab("时长"),
             "light": grab("光线"),

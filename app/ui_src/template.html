@@ -1167,8 +1167,9 @@ function shotBadge(x){
 async function approveShot(scene, shot, verdict){
   let note = '';
   if(verdict !== 'pass'){ note = prompt('意见（可空，会写进审批记录）') || ''; }
+  const cur = ((SHOTS[scene]||{}).shots||[]).find(s=>s.id===shot) || {};
   const r = await fetch('/api/approval', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({kind:'shot', target: scene+'/'+shot, verdict,
+    body: JSON.stringify({kind:'shot', target: scene+'/'+shot, verdict, path: cur.source || null,
                           scope:{scene, shot}, notes: note ? [{text:note}] : []})});
   const j = await r.json();
   if(!r.ok) return toast(j.error || '记录失败');

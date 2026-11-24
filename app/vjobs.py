@@ -39,32 +39,31 @@ def _lock_path() -> Path:
 def _save():
     """原子落盘：进程间 flock 排他 + 唯一临时文件 + os.replace。
 
-    调用方**不要**在持有 _lock 时调用本函数（快照会自己取一次 _lock）。
-    临时文件与目标同目录，保证 replace 是同一文件系统内的原子替换；
-    即使两个进程同时写，也只会串行替换，不会写出半截 JSON。
+    取快照、写盘、replace 全在同一把 _lock 内完成，避免“旧快照后写”
+    覆盖新状态。调用方**不要**在持有 _lock 时调用本函数。
     """
     try:
         with _lock:
             text = json.dumps({"order": list(_order),
                                "jobs": {k: dict(v) for k, v in _jobs.items()}},
                               ensure_ascii=False)
-        JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with _lock_path().open("a+") as lf:
-            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
-            tmp = JOBS_FILE.with_name(
-                f"{JOBS_FILE.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
-            try:
-                with open(tmp, "w", encoding="utf-8") as f:
-                    f.write(text)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, JOBS_FILE)
-            finally:
-                if tmp.exists():
-                    try:
-                        tmp.unlink()
-                    except OSError:
-                        pass
+            JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with _lock_path().open("a+") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                tmp = JOBS_FILE.with_name(
+                    f"{JOBS_FILE.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+                try:
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        f.write(text)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp, JOBS_FILE)
+                finally:
+                    if tmp.exists():
+                        try:
+                            tmp.unlink()
+                        except OSError:
+                            pass
     except Exception:
         pass
 
@@ -337,17 +336,27 @@ def resume(project: Path) -> list:
         sched.mark_failed(ids)          # 让仍在调度表里的下游也一起取消
     if not todo:
         return []
-    units = {u["id"]: u for u in parse_units(project, todo[0].get("scene") or "N001")}
-    tasks = []
+    by_scene = {}
     for j in todo:
-        u = units.get(j.get("unit"))
-        if not u:
-            continue
-        with _lock:
-            _jobs[j["id"]].update({"status": "queued", "prompt": u["prompt"]})
-        tasks.append({"id": j["id"], "run": _runner(project, j["id"]),
-                      "on_cancel": lambda reason, ids=[j["id"]]:
-                          mark_cancelled(ids, reason)})
+        by_scene.setdefault(j.get("scene") or "N001", []).append(j)
+    tasks = []
+    for sc, rows in by_scene.items():
+        units = {u["id"]: u for u in parse_units(project, sc)}
+        for j in rows:
+            u = units.get(j.get("unit"))
+            if not u:
+                with _lock:
+                    if j["id"] in _jobs:
+                        _jobs[j["id"]].update({"status": "failed",
+                                               "error": f"重启后找不到单元 {j.get('unit')}"})
+                continue
+            with _lock:
+                _jobs[j["id"]].update({"status": "queued", "prompt": u["prompt"]})
+            tasks.append({"id": j["id"], "run": _runner(project, j["id"]),
+                          # 重启后必须保留依赖边，否则接续 B 会不等 A 就开跑
+                          "after": list(j.get("afterIds") or []),
+                          "on_cancel": lambda reason, ids=[j["id"]]:
+                              mark_cancelled(ids, reason)})
     _save()
     if tasks:
         sched.submit("video", tasks)
@@ -674,7 +683,8 @@ def mark_deleted(rel: str) -> int:
 
 def list_jobs(batch: str = None) -> list:
     with _lock:
-        return [_jobs[j] for j in _order if not batch or _jobs[j]["batch"] == batch]
+        # 返回浅拷贝，避免 HTTP 线程 json.dumps 时与 _execute/reconcile 的 update 竞态
+        return [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
 
 
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
@@ -824,12 +834,12 @@ def _api(port, path, payload=None, timeout=120):
 
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
-           width=1344, height=768, steps=20) -> dict:
+           width=1344, height=768, steps=20, batch: str = None) -> dict:
     """units: [{"unit": {...}, "count": n, "chain": bool, "prevUnit": id}]
 
     带 chain 的任务会自动依赖同批上一单元的最后一条任务，保证串行。
     """
-    batch = time.strftime("VID-%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+    batch = batch or (time.strftime("VID-%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4])
     recipe = current_recipe()
     plan = []            # (item, unit, k, jid, job)
     by_unit = {}         # unit_id -> [jid, ...]（按提交顺序）
@@ -896,7 +906,7 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
     """执行一条视频任务。成功返回 True；失败写 status=failed 并返回 False。"""
     try:
         with _lock:
-            if (_jobs.get(jid) or {}).get("status") == "cancelled":
+            if (_jobs.get(jid) or {}).get("status") in TERMINAL_STATUSES:
                 return False
         ref_names = []
         for i, rel in enumerate(job.get("refs") or []):
@@ -972,6 +982,8 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                 out.write_bytes(data)
                 with _lock:
                     if jid in _jobs:
+                        if _jobs[jid].get("status") in ("cancelled", "interrupted", "deleted"):
+                            return False
                         _jobs[jid].update({"status": "done",
                                            "queueState": None, "error": None,
                                            "file": str(out.relative_to(project)),
@@ -994,7 +1006,7 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
     except Exception as e:
         with _lock:
             j = _jobs.get(jid)
-            if j is not None and j.get("status") != "cancelled":
+            if j is not None and j.get("status") not in TERMINAL_STATUSES:
                 j.update({"status": "failed", "error": str(e),
                           "finishedAt": time.time()})
         _save()

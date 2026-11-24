@@ -38,6 +38,7 @@ const BOOT=async()=>{
            brokenOcc: 0, assetFiles: (ov.assets||{}).total || 0};
     }
   }catch(e){}
+  render();                                        // 用 overview 覆盖 S 后立即重绘，避免首屏 0 场
   if(!TICK) TICK = setInterval(pollTick, 3000);   // 全局 3 秒轮询：算力页与其它页共用
   try{
     const h = await fetch('/api/health').then(r=>r.json());

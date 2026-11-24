@@ -268,14 +268,12 @@ def file_ok(project, rel) -> dict | None:
         matched = False
         rec_path = rec.get("path")
         if isinstance(rec_path, str) and rec_path:
+            # 有 path 时只认 path；绝不回退 target，否则会被“另一个文件”满足
             try:
-                if _normalize_rel(project, rec_path) == want:
-                    matched = True
+                matched = _normalize_rel(project, rec_path) == want
             except ValueError:
                 matched = False
-        if not matched and rec.get("target") == rel:
-            matched = True
-        if not matched:
+        else:
             target = rec.get("target")
             if isinstance(target, str) and target:
                 try:
@@ -347,6 +345,12 @@ def append(project, kind, target, verdict, *, path=None, version=None,
     if kind == "file" or path is not None:
         raw_path = path if path is not None else target
         rel = _normalize_rel(root, raw_path)
+        if kind == "file":
+            # 文件审批的 target 必须就是 path；否则 file_ok 会张冠李戴。
+            rel_target = _normalize_rel(root, target)
+            if rel_target != rel:
+                raise ValueError("file 审批的 target 与 path 必须指向同一文件")
+            target = rel
         full = root / rel
         if not full.is_file():
             raise ValueError(f"文件不存在: {rel}")
