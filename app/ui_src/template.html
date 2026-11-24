@@ -3238,7 +3238,7 @@ function openZoom(src){
   if(!el){
     el = document.createElement("div");
     el.id = "zoomlayer";
-    el.style.cssText = "position:fixed;inset:0;background:rgba(6,8,11,.94);z-index:999;display:flex;align-items:center;justify-content:center;cursor:grab";
+    el.style.cssText = "position:fixed;inset:0;background:rgba(6,8,11,.94);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:grab";
     document.body.appendChild(el);
   }
   el.innerHTML = `<img id="zoomimg" src="${src}" style="max-width:92vw;max-height:92vh;transform:scale(1);transition:transform .08s linear;user-select:none">
