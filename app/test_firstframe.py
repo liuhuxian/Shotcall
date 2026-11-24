@@ -28,6 +28,9 @@ def main():
     check("提示词含首帧状态", "首帧状态" in s0['prompt'] and s0['firstFrame'][:4] in s0['prompt'])
     check("提示词含资产描述符", "四十三岁" in s0['prompt'], s0['prompt'][:120])
     check("参考图可选", len(s0['refs']) >= 1, s0['refs'])
+    refs=[r['file'] for r in s0['refs'][:2]]
+    hint=firstframe.with_ref_instructions(REAL, "base prompt", refs)
+    check("后端自动追加参考图用法", "参考图用法" in hint and "<Picture 1>" in hint, hint[:160])
 
     p = Path(tempfile.mkdtemp(prefix="ff-test-"))
     (p / "制作运行/首帧候选/N001/SH001").mkdir(parents=True)

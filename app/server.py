@@ -2008,6 +2008,7 @@ class Handler(BaseHTTPRequestHandler):
                     f = (PROJECT / ref).resolve()
                     if not _inside(PROJECT, f) or not f.is_file():
                         raise ValueError(f"参考图不在项目内：{ref}")
+                prompt = firstframe.with_ref_instructions(PROJECT, prompt, refs)
                 plan = PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}/shot-plan-v001.md"
                 if not plan.exists():
                     plans = sorted((PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}").glob("shot-plan-v*.md"))

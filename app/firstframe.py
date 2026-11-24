@@ -60,6 +60,39 @@ def _refs(project: Path, asset_ids: list) -> list:
     return out
 
 
+def with_ref_instructions(project: Path, prompt: str, refs: list) -> str:
+    """把参考图用法追加到提示词；UI/API 都走这里，避免只靠前端文本。"""
+    prompt = prompt or ""
+    refs = [str(x) for x in (refs or []) if str(x).strip()]
+    if not refs:
+        return prompt
+    if "参考图用法" in prompt:
+        return prompt
+    amap = {}
+    try:
+        for a in assetsdb.build(project).get("assets") or []:
+            img = (a.get("binding") or {}).get("image")
+            if img:
+                amap[img] = a.get("id") or ""
+    except Exception:
+        pass
+    lines = ["参考图用法（按上传顺序，<Picture 1> 为主参考）："]
+    for i, f in enumerate(refs[:16], 1):
+        aid = amap.get(f) or "参考图"
+        c = (aid or "").upper()[:1]
+        if c == "C":
+            role = "身份参考：保留脸型、五官、发型、眼镜、体态；服装、表情、站位、背景以文字为准；不要复制参考图的白底/多视图/拼图版式。"
+        elif c == "L":
+            role = "空间参考：只取空间布局、门窗、课桌/栏杆/楼梯关系与光源方向；不要复制空镜构图，也不要因为参考图里没人物就删人物。"
+        elif c == "P":
+            role = "道具参考：只取材质、磨损、状态与尺度；不要新增参考图外的道具。"
+        else:
+            role = "参考：只取与本镜相关的信息，不复制版式。"
+        lines.append(f"<Picture {i}> = {aid}：{role}")
+    lines.append("参考图只锁身份/空间/材质，不锁构图；与文字首帧状态冲突时以文字为准。输出单帧剧照，不是参考图的版式复制。")
+    return prompt.rstrip() + "\n\n" + "\n".join(lines)
+
+
 def shots_payload(project: Path, scene: str):
     sc = scenes.build(project)
     info = next((s for s in sc.get("scenes") or [] if s["id"] == scene), {}) or {}
