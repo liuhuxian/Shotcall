@@ -1751,6 +1751,8 @@ function ffPaintRefs(shot){
     el.style.background=on?'rgba(90,160,255,.08)':'var(--panel)';
     const chk=el.querySelector('.ffchk'); if(chk) chk.textContent=on?'✓':'';
   });
+  const hint=document.getElementById('ffrefhint-'+shot);
+  if(hint) hint.textContent=ffRefHint(shot);
 }
 function ffPickRef(shot,file){
   let arr=Array.isArray(FF.pick[shot])?FF.pick[shot].slice():[];
@@ -1765,13 +1767,35 @@ function ffAllRefs(shot){
 }
 function ffClearRefs(shot){ FF.pick[shot]=[]; ffPaintRefs(shot); }
 
+function ffRefHint(shot){
+  const st=(FF.data&&FF.data.shots||[]).find(x=>x.id===shot)||{};
+  const byFile={};
+  (st.refs||[]).forEach(r=>{ byFile[r.file]=r.asset||''; });
+  const files=Array.isArray(FF.pick[shot])?FF.pick[shot]:[];
+  if(!files.length) return '本次不使用参考图：按文字描述生成首帧。';
+  const lines=['参考图用法（提交时自动追加到提示词；按上传顺序，<Picture 1> 为主参考）：'];
+  files.forEach((f,i)=>{
+    const aid=byFile[f]||'参考图';
+    const c=(aid||'').charAt(0).toUpperCase();
+    let role='参考';
+    if(c==='C') role='身份参考：保留脸型、五官、发型、眼镜、体态；服装、表情、站位、背景以文字为准；不要复制参考图的白底/多视图/拼图版式。';
+    else if(c==='L') role='空间参考：只取空间布局、门窗、课桌/栏杆/楼梯关系与光源方向；不要复制空镜构图，也不要因为参考图里没人物就删人物。';
+    else if(c==='P') role='道具参考：只取材质、磨损、状态与尺度；不要新增参考图外的道具。';
+    lines.push(`<Picture ${i+1}> = ${aid}：${role}`);
+  });
+  lines.push('参考图只锁身份/空间/材质，不锁构图；与文字首帧状态冲突时以文字为准。输出单帧剧照，不是参考图的版式复制。');
+  return lines.join('\n');
+}
+
 async function ffGenerate(shot){
   const scene=FF.scene||'N001';
   const prompt=(document.getElementById('ffp-'+shot)||{}).value||'';
   if(!prompt.trim()) return toast('提示词为空');
   const refs=Array.isArray(FF.pick[shot])?FF.pick[shot]:[];
+  const hint=ffRefHint(shot);
+  const fullPrompt=prompt.includes('参考图用法') ? prompt : (prompt.trim()+'\n\n'+hint);
   const r=await fetch('/api/firstframe/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({scene,shot,prompt,refs,n:1,width:1536,height:864,steps:6})});
+    body:JSON.stringify({scene,shot,prompt:fullPrompt,refs,n:1,width:1536,height:864,steps:6})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
   toast('首帧已提交：'+(j.jobs||[]).join(', '));
   setTimeout(()=>loadFirst(scene,true).then(()=>render()), 5000);
@@ -1832,6 +1856,7 @@ function sFirst(){
           <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadFirst('${scene}',true).then(()=>render())">刷新</button>
           <span class="dim" style="font-size:10.5px">采用后，09b 首单元视频会取该首帧</span>
         </div>
+        <div id="ffrefhint-${sh.id}" class="dim" style="font-size:10px;line-height:1.7;white-space:pre-wrap;margin-top:6px;color:#8b97a8;border-left:2px solid var(--line);padding-left:8px">${esc(ffRefHint(sh.id))}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${cands||'<div class="dim" style="font-size:11px">还没有首帧候选。</div>'}</div>
       </div></div>`;
   }).join("");
