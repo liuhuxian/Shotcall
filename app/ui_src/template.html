@@ -827,7 +827,8 @@ async function loadGen(scene, force){
     GEN.units = u.units||[]; GEN.results = r.results||[]; GEN.jobs = j.jobs||[];
     GEN.promptFile = u.promptFile || null; GEN.confirm = u.promptConfirm || {local:'none'};
     // 勾选状态由提示词声明决定；用户手动改过后保留用户选择
-    if(!GEN.chain){ GEN.chain = {}; (u.units||[]).forEach(x=>{ GEN.chain[x.id] = !!x.chainFrom; }); }
+    if(!GEN.chain){ GEN.chain = {};
+      (u.units||[]).forEach(x=>{ GEN.chain[x.id] = !!(x.chainFrom && x.chainReady); }); }
     GEN.resSig = JSON.stringify((r.results||[]).map(x=>[x.file, x.mtime]));
     GEN.loaded = true;
   }catch(e){ GEN.loaded = true; }
@@ -849,7 +850,11 @@ function genUnitRow(u){
         title="用上一单元的最后一帧作为本镜第一帧（首帧驱动，接续最稳）">
         <input type="checkbox" ${(GEN.chain||{})[u.id]?'checked':''}
           onchange="GEN.chain=GEN.chain||{};GEN.chain['${u.id}']=this.checked"> 接上镜${
-          u.chainFrom?`<span class="dim" style="font-size:9.5px">（${esc(u.chainFrom)}${u.continuation==='same-shot'?' 同镜分段':''}）</span>`:''}
+          u.chainFrom
+            ? (u.chainReady
+                ? `<span class="dim" style="font-size:9.5px">（${esc(u.chainFrom)}${u.continuation==='same-shot'?' 同镜分段':''}）</span>`
+                : `<span class="badge b-bad" style="font-size:9.5px" title="需要先生成 ${esc(u.chainFrom)}">接续源未生成</span>`)
+            : ''}
       </label>
       <span class="dim" style="font-size:11px;margin-left:6px">次数</span>
       <input type="number" min="1" max="9" value="${(GEN.count||{})[u.id]||1}"

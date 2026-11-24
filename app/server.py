@@ -1363,6 +1363,9 @@ class Handler(BaseHTTPRequestHandler):
             q5 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = q5.get("scene", ["N001"])[0]
             units = vjobs.parse_units(PROJECT, sc)
+            for u in units:
+                cf = u.get("chainFrom")
+                u["chainReady"] = bool(cf and vjobs.latest_result(PROJECT, sc, cf))
             src = units[0]["source"] if units else None
             rel = f"{vjobs.VP_DIR}/{sc}/{src}" if src else None
             st = _prompt_confirm(rel) if rel else {"local": "none"}
@@ -2058,6 +2061,17 @@ class Handler(BaseHTTPRequestHandler):
                         units.append({"unit": by[x], "count": 1})
                 if not units:
                     raise ValueError("没有可提交的单元")
+                asked = {x["unit"]["id"] for x in units}
+                missing_src = []
+                for x in units:
+                    if not x.get("chain"):
+                        continue
+                    prev = x.get("prevUnit")
+                    if prev and prev not in asked and not vjobs.latest_result(PROJECT, scene, prev):
+                        missing_src.append(f"{x['unit']['id']} 需要 {prev} 的成片")
+                if missing_src:
+                    raise ValueError("接续源尚未生成：" + "；".join(missing_src) +
+                                     "。请把上一单元一起提交，或先生成它")
                 src = units[0]["unit"]["source"]
                 rel = f"{vjobs.VP_DIR}/{scene}/{src}"
                 gate = _generation_gate(scene, units, rel)
