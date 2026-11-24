@@ -44,7 +44,9 @@ def probe() -> list:
             free = dev.get("vram_free") or 0
             used_pct = round((total - free) / total * 100, 1) if total else 0.0
             free_gb = round(free / 2 ** 30, 1)
-            if used_pct < GREEN_PCT and qlen == 0:
+            if qlen > 0:
+                state = "busy"          # 有 ComfyUI 任务在跑/排队，不能再当“可加载”
+            elif used_pct < GREEN_PCT:
                 state = "free"          # 绿色：完全空闲
             elif free_gb >= LOAD_MIN_GB:
                 state = "loadable"      # 橙色：有占用但装得下

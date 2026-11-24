@@ -23,6 +23,7 @@ from pathlib import Path
 import os
 import re
 
+import approvals
 import artifacts
 import assetsdb
 import cloudimg
@@ -88,10 +89,19 @@ MEDIA = Path(os.environ.get("WORKBENCH_MEDIA") or (PROJECT / "剧集" / EPISODE 
 THUMB_CACHE = {}
 
 
+def _inside(root: Path, f: Path) -> bool:
+    """严格判断 f 是否在 root 内（杜绝 /a/b 与 /a/bc 的前缀绕过）。"""
+    try:
+        return f.resolve().is_relative_to(Path(root).resolve())
+    except AttributeError:            # Python < 3.9 兜底
+        r = str(Path(root).resolve()).rstrip("/") + "/"
+        return str(f.resolve()).startswith(r)
+
+
 def resolve_asset(p: str):
     root = (PROJECT / "资产").resolve()
     f = (PROJECT / p).resolve()
-    if not str(f).startswith(str(root)) or not f.is_file():
+    if not _inside(root, f) or not f.is_file():
         return None
     return f
 
@@ -107,7 +117,7 @@ def resolve_media(r: int, p: str):
         return None
     root = roots[r].resolve()
     f = (root / p).resolve()
-    if not str(f).startswith(str(root)) or not f.is_file():
+    if not _inside(root, f) or not f.is_file():
         return None
     return f
 
@@ -153,6 +163,57 @@ def list_candidates() -> list:
                         "bytes": f.stat().st_size,
                         "mtime": time.strftime("%Y-%m-%d %H:%M", time.localtime(f.stat().st_mtime))})
     return out
+
+
+def _version_of(path: str):
+    m = re.search(r"-v(\d{3})(?:-\d+)?\.md$", path or "")
+    return f"v{m.group(1)}" if m else ""
+
+
+def _unit_shots(unit: dict) -> list:
+    """从「SH001、SH002」里取镜号；解析不到就返回空，由门禁阻断。"""
+    return re.findall(r"SH\d{3}", unit.get("shots") or "")
+
+
+def _prompt_confirm(rel: str) -> dict:
+    """提示词版本的文件级确认状态；以 approvals 为准。"""
+    rec = approvals.file_ok(PROJECT, rel)
+    if rec:
+        return {"local": "confirmed", "at": rec.get("at"), "approval": rec.get("id"),
+                "sha256": rec.get("sha256"), "version": rec.get("version")}
+    st = approvals.state(PROJECT, "file", rel)
+    if st.get("record"):
+        return {"local": "stale" if st.get("stale") else "rejected",
+                "at": st["record"].get("at"), "reason": st.get("reason", ""),
+                "version": st["record"].get("version")}
+    return {"local": "none"}
+
+
+def _generation_gate(scene: str, units: list, rel: str) -> dict:
+    """文件级版本锁 + 镜头级确认；返回缺失清单和有效 approval ids。"""
+    missing, ids = [], []
+    frec = approvals.file_ok(PROJECT, rel)
+    if not frec:
+        st = approvals.state(PROJECT, "file", rel)
+        why = "已失效" if st.get("stale") else "未确认"
+        missing.append(f"提示词文件{why}：{rel}")
+    else:
+        ids.append(frec["id"])
+    for item in units:
+        u = item.get("unit") or {}
+        shots = _unit_shots(u)
+        if not shots:
+            missing.append(f"{u.get('id','?')}：无法解析覆盖镜头")
+            continue
+        for sid in shots:
+            st = approvals.state(PROJECT, "shot", f"{scene}/{sid}")
+            rec = st.get("record")
+            if not rec or rec.get("verdict") != "pass" or st.get("stale"):
+                why = "已失效" if st.get("stale") else ("未确认" if not rec else "不是通过")
+                missing.append(f"{sid}：镜头{why}")
+            else:
+                ids.append(rec["id"])
+    return {"ok": not missing, "missing": missing, "approvalIds": ids}
 
 
 def preflight(body: dict) -> dict:
@@ -614,6 +675,7 @@ def backend_state() -> dict:
                          "frames": j.get("frames"), "seconds": j.get("seconds"),
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch"), "promptId": j.get("promptId"),
+                         "queueState": j.get("queueState"),
                          "refs": len(j.get("usedRefs") or j.get("refs") or []),
                          "steps": j.get("steps"),
                          "execStartedAt": j.get("execStartedAt")})
@@ -914,6 +976,7 @@ def plan_tasks(body: dict) -> dict:
     res = pf.run({"kind": "video", "items": [{"shot": s} for s in shots]}, payload()["data"])
     if res["blockers"]:
         return {"ok": False, "blockers": res["blockers"], "warnings": res["warnings"]}
+    batch_id = "PLAN-" + time.strftime("%Y%m%d-%H%M%S")
     tasks = planner.plan(payload()["data"], shots,
                          int(body.get("candidates", 3)), body.get("tier", "draft"),
                          int(body.get("width", 1344)), int(body.get("height", 768)),
@@ -984,6 +1047,21 @@ def payload(ep: str = EPISODE, refresh: bool = False) -> dict:
                            "project": str(PROJECT)}
             _cache["by"][ep] = out
         return _cache["by"][ep]
+
+
+def overview() -> dict:
+    """新模型的页头/总览数据；不再读已废弃的 剧集/EP002 四文档。"""
+    sc = scenes.build(PROJECT)
+    ast = assetsdb.build(PROJECT)
+    st = artifacts.build(PROJECT)
+    shots = sum(int(s.get("shots") or 0) for s in sc.get("scenes") or [])
+    return {
+        "scenes": {**sc.get("summary", {}), "count": sc.get("summary", {}).get("scenes", 0)},
+        "shots": shots,
+        "assets": ast.get("summary", {}),
+        "stages": st.get("summary", {}),
+        "episodes": [{"id": e["id"], "scenes": e["scenes"]} for e in sc.get("episodes", [])],
+    }
 
 
 def current_episode() -> str:
@@ -1088,6 +1166,26 @@ class Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             body = json.dumps(response(q.get("ep", [None])[0]), ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/overview":
+            self._send(200, json.dumps(overview(), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/approvals":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            kind = q.get("kind", [""])[0]
+            target = q.get("target", [""])[0]
+            scene = q.get("scene", [""])[0]
+            items = approvals.latest(PROJECT)
+            if kind:
+                items = [x for x in items if x.get("kind") == kind]
+            if target:
+                items = [x for x in items if x.get("target") == target]
+            if scene:
+                items = [x for x in items
+                         if x.get("target", "").startswith(scene + "/")
+                         or (x.get("scope") or {}).get("scene") == scene]
+            self._send(200, json.dumps({"items": items, "summary": approvals.summary(PROJECT)},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/execute":
             self._send(200, json.dumps(exec_status(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -1100,7 +1198,7 @@ class Handler(BaseHTTPRequestHandler):
             f = (PROJECT / rel).resolve()
             root = PROJECT.resolve()
             TEXT = (".md", ".txt", ".json", ".jsonl", ".csv", ".yaml", ".yml")
-            if (not str(f).startswith(str(root)) or not f.is_file()
+            if (not _inside(root, f) or not f.is_file()
                     or f.suffix.lower() not in TEXT):
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
@@ -1121,7 +1219,7 @@ class Handler(BaseHTTPRequestHandler):
             root = PROJECT.resolve()
             IMG = (".png", ".jpg", ".jpeg", ".webp")
             VID = (".mp4", ".mov", ".webm", ".m4v")
-            if not str(f).startswith(str(root)) or not f.is_file() or f.suffix.lower() not in IMG + VID:
+            if not _inside(root, f) or not f.is_file() or f.suffix.lower() not in IMG + VID:
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
             ext = f.suffix.lower()
@@ -1178,7 +1276,7 @@ class Handler(BaseHTTPRequestHandler):
             units = vjobs.parse_units(PROJECT, sc)
             src = units[0]["source"] if units else None
             rel = f"{vjobs.VP_DIR}/{sc}/{src}" if src else None
-            st = confirms.state_of(PROJECT, rel) if rel else {"local": "none"}
+            st = _prompt_confirm(rel) if rel else {"local": "none"}
             self._send(200, json.dumps({"scene": sc, "units": units, "promptFile": rel,
                                         "promptConfirm": st},
                                        ensure_ascii=False).encode("utf-8"),
@@ -1227,6 +1325,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gen/jobs":
             self._send(200, json.dumps({"jobs": vjobs.list_jobs()}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/gen/active":
+            active = [j for j in vjobs.list_jobs()
+                      if j.get("status") in ("queued", "dispatched", "running", "starting")]
+            self._send(200, json.dumps({"jobs": active}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/gen/results":
             q6 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = q6.get("scene", ["N001"])[0]
@@ -1267,7 +1370,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/scenes/shots":
             q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sid = q3.get("scene", ["N001"])[0]
-            self._send(200, json.dumps({"scene": sid, "shots": scenes.shot_details(PROJECT, sid)},
+            shots = scenes.shot_details(PROJECT, sid)
+            for x in shots:
+                x["approval"] = approvals.state(PROJECT, "shot", f"{sid}/{x['id']}")
+            self._send(200, json.dumps({"scene": sid, "shots": shots},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/assets":
@@ -1362,8 +1468,8 @@ class Handler(BaseHTTPRequestHandler):
             raw = q.get("p", [""])[0]
             cands = [(store.state_dir(PROJECT) / raw).resolve(), (PROJECT / raw).resolve()]
             f = next((c for c in cands
-                      if (str(c).startswith(str(store.state_dir(PROJECT).resolve()))
-                          or str(c).startswith(str((PROJECT / "剧集").resolve()))) and c.is_file()), None)
+                      if (_inside(store.state_dir(PROJECT), c)
+                          or _inside(PROJECT / "剧集", c)) and c.is_file()), None)
             if not f:
                 self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
                 return
@@ -1509,24 +1615,61 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/approval":
+            try:
+                body = self._json_body()
+                kind = str(body.get("kind") or "")
+                target = str(body.get("target") or "")
+                verdict = str(body.get("verdict") or "pass")
+                rel = body.get("path") or None
+                if not kind or not target:
+                    raise ValueError("kind/target 必填")
+                if rel:
+                    f = (PROJECT / rel).resolve()
+                    if not _inside(PROJECT, f) or not f.is_file():
+                        raise ValueError("path 不在项目内或文件不存在")
+                notes = body.get("notes")
+                if isinstance(notes, str):
+                    notes = [{"text": notes}]
+                rec = approvals.append(
+                    PROJECT, kind, target, verdict,
+                    path=rel, version=body.get("version") or (_version_of(rel) if rel else None),
+                    scope=body.get("scope"), notes=notes, by=body.get("by") or "director",
+                )
+                st = approvals.state(PROJECT, kind, target)
+                self._send(200, json.dumps({"ok": True, "record": rec, "state": st},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/artifact/confirm":
             try:
                 body = self._json_body()
-                verdict = body.get("verdict") or "pass"
-                if body.get("path"):
-                    confirms.record(PROJECT, body["path"],
-                                    "confirm" if verdict == "pass" else "reject",
-                                    (body.get("note") or ""))
+                rel = str(body.get("path") or "")
+                verdict = str(body.get("verdict") or "pass")
+                if not rel:
+                    raise ValueError("path 必填")
                 if verdict not in ("pass", "revise", "hold"):
                     raise ValueError("verdict 只能是 pass / revise / hold")
-                rec = store.append(
-                    PROJECT, 1,
-                    {"type": "artifact", "id": body["path"]}, verdict,
-                    notes=[{"text": f"{body.get('stage','')} {body.get('kind','')} {body.get('scope','')}".strip()}],
-                    scope=body.get("scope"),
-                    evidence=payload()["data"].get("files") or {},
+                f = (PROJECT / rel).resolve()
+                if not _inside(PROJECT, f) or not f.is_file():
+                    raise ValueError("path 不在项目内或文件不存在")
+                notes = [{"text": body.get("note")}] if body.get("note") else []
+                rec = approvals.append(
+                    PROJECT, "file", rel, verdict,
+                    path=rel, version=body.get("version") or _version_of(rel),
+                    scope=body.get("scope") or {}, notes=notes,
                 )
-                local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
+                # 兼容旧缓存：只做 best-effort，失败不影响审批账本
+                try:
+                    confirms.record(PROJECT, rel,
+                                    "confirm" if verdict == "pass" else "reject",
+                                    (body.get("note") or ""))
+                except Exception:
+                    pass
+                local = approvals.state(PROJECT, "file", rel)
                 self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
@@ -1665,7 +1808,7 @@ class Handler(BaseHTTPRequestHandler):
                 rel = str(body.get("file") or "")
                 f = (PROJECT / rel).resolve()
                 root = (PROJECT / vjobs.RESULT_DIR).resolve()
-                if not str(f).startswith(str(root)) or f.suffix.lower() != ".mp4":
+                if not _inside(root, f) or f.suffix.lower() != ".mp4":
                     raise ValueError("只能删除 09-…/生成结果 下的视频")
                 if not f.exists():
                     raise ValueError("文件不存在")
@@ -1705,9 +1848,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("没有可提交的单元")
                 src = units[0]["unit"]["source"]
                 rel = f"{vjobs.VP_DIR}/{scene}/{src}"
-                cst = confirms.state_of(PROJECT, rel)
-                if cst.get("local") != "confirmed" and not body.get("force"):
-                    raise ValueError(f"提示词版本 {src} 尚未确认，请先在「待确认」里确认该文件")
+                gate = _generation_gate(scene, units, rel)
+                if not gate["ok"]:
+                    raise ValueError("生成门禁未通过：" + "；".join(gate["missing"]))
                 seed = body.get("seed")
                 seed = int(seed) if str(seed).strip().isdigit() else None
                 steps = body.get("steps")
@@ -1718,9 +1861,26 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     w, h = 1344, 768
                 res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps, width=w, height=h)
-                store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
-                             notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
-                                            (f"，种子 {seed}" if seed is not None else "，种子随机")}])
+                frec = approvals.file_ok(PROJECT, rel) or {}
+                unit_ids = [x["unit"]["id"] for x in units]
+                batch_rec = {
+                    "id": res["batch"], "scene": scene, "units": unit_ids,
+                    "prompt": rel, "promptSha": frec.get("sha256"),
+                    "approvalIds": gate["approvalIds"],
+                    "params": {"steps": steps, "width": w, "height": h, "seed": seed},
+                    "jobs": res.get("jobs") or [],
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                }
+                bdir = store.state_dir(PROJECT) / "generation-batches"
+                bdir.mkdir(parents=True, exist_ok=True)
+                (bdir / f"{res['batch']}.json").write_text(
+                    json.dumps(batch_rec, ensure_ascii=False, indent=1), encoding="utf-8")
+                approvals.append(
+                    PROJECT, "batch", res["batch"], "pass",
+                    scope={"scene": scene, "units": unit_ids},
+                    notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
+                                   (f"，种子 {seed}" if seed is not None else "，种子随机")}],
+                )
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -1893,25 +2053,74 @@ class Handler(BaseHTTPRequestHandler):
         print("[%s] %s" % (time.strftime("%H:%M:%S"), fmt % args))
 
 
+_bg_started = False
+
+
+def _migrate_confirms():
+    """把旧的 制作运行/确认状态.json 里仍有效的确认导入 approvals（只迁一次）。"""
+    f = PROJECT / "制作运行" / "确认状态.json"
+    if not f.exists():
+        return 0
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    n = 0
+    for rel, old in (data or {}).items():
+        if not isinstance(old, dict) or old.get("status") != "confirmed":
+            continue
+        if approvals.state(PROJECT, "file", rel).get("record"):
+            continue
+        st = confirms.state_of(PROJECT, rel)
+        if st.get("local") != "confirmed":
+            continue
+        try:
+            approvals.append(PROJECT, "file", rel, "pass", path=rel,
+                             version=_version_of(rel), notes=[{"text": "从 确认状态.json 迁移"}],
+                             by="migrated")
+            n += 1
+        except Exception:
+            pass
+    if n:
+        print(f"[migrate] 确认状态 → approvals：{n} 条", flush=True)
+    return n
+
+
+def start_background():
+    """只在真正启动服务时恢复队列/起后台线程；import server 不再有副作用。"""
+    global _bg_started
+    if _bg_started or os.environ.get("SHOTCALL_NO_BACKGROUND"):
+        return
+    _bg_started = True
+    # 调度器与采样器由各自模块的 start() 启动（幂等），import 时不启动
+    if hasattr(sched, "start"):
+        sched.start()
+    if hasattr(comfywatch, "start"):
+        comfywatch.start()
+    try:
+        _migrate_confirms()
+    except Exception as e:
+        print("[migrate] 出错：", e, flush=True)
+    try:
+        resumed = vjobs.resume(PROJECT)
+        if resumed:
+            print("[resume] 重新排队：", resumed, flush=True)
+    except Exception as e:
+        print("[resume] 出错：", e, flush=True)
+    threading.Thread(target=_video_recovery_loop, daemon=True).start()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8791)
     ap.add_argument("--host", default="127.0.0.1")
     a = ap.parse_args()
     payload()  # 预热
+    start_background()
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
-    print(f"导演工作台 P0 骨架 → http://{a.host}:{a.port}")
+    print(f"导演工作台 → http://{a.host}:{a.port}")
     print(f"  项目 {PROJECT} · {EPISODE} · 仅监听本机")
     srv.serve_forever()
-
-
-try:
-    _resumed = vjobs.resume(PROJECT)
-    if _resumed:
-        print("[resume] 重新排队：", _resumed, flush=True)
-except Exception as _e:
-    print("[resume] 出错：", _e, flush=True)
-threading.Thread(target=_video_recovery_loop, daemon=True).start()
 
 
 if __name__ == "__main__":
