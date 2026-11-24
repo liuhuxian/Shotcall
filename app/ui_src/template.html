@@ -1017,7 +1017,8 @@ function genUnitRow(u){
   const picked = GEN.draft[u.id] !== false;
   return `<div style="border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px;padding:10px 13px">
-      <input type="checkbox" ${picked?'checked':''} onchange="GEN.draft['${u.id}']=this.checked"
+      <input type="checkbox" ${picked?'checked':''}
+        onchange="GEN.draft['${u.id}']=this.checked;render()"
         style="width:15px;height:15px">
       <b class="mono" style="font-size:12.5px">${u.id}</b>
       <span class="dim" style="font-size:11.5px">${u.seconds} 秒 · ${esc(u.shots)}</span>
@@ -1172,7 +1173,7 @@ function sGen(){
           onchange="GEN.seed=this.value"
           style="width:130px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
         ${(GEN.confirm&&GEN.confirm.local==='confirmed')
-          ? `<button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成${GEN.units?`（${(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).reduce((a,u)=>a+((GEN.count||{})[u.id]||1),0)} 条）`:''}</button>`
+          ? `<button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成${(GEN.units&&(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).length)?`（${(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).reduce((a,u)=>a+((GEN.count||{})[u.id]||1),0)} 条${(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).length<(GEN.units||[]).length?` / 共 ${(GEN.units||[]).length} 单元`:''}）`:''}</button>`
           : `<button class="btn acc" disabled title="该提示词版本尚未确认">提交生成</button>
              <span class="badge b-warn" style="font-size:10.5px">提示词未确认</span>
              <button class="btn ghost" style="font-size:11px;padding:2px 9px"
