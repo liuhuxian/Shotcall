@@ -222,6 +222,7 @@ function go(tab, opts){
     VIEW = {path:null, inline:false};
   }
   Object.assign(state, opts||{}, {tab});
+  if(tab !== state.tab) { /* noop */ }
   if(tab === 'gen'){
     GEN.loaded = false;                 // 每次进生成台都重新读单元与确认状态
     render();
@@ -234,7 +235,7 @@ function go(tab, opts){
     loadBackend(true).then(()=>render());
     return;
   }
-  render();
+  renderForce();
 }
 
 /* ---------- 通用组件 ---------- */
@@ -802,6 +803,8 @@ function sBackend(){
 
 /* ---------- 文件查看器 ---------- */
 let VIEW = {path:null, data:null, loading:false, rendered:true};
+let RENDER_FORCE = false, RENDER_SKIPPED = 0;
+function renderForce(){ RENDER_FORCE = true; try{ render(); } finally{ RENDER_FORCE = false; } }
 
 function mdToHtml(md){
   const esc2 = s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -862,7 +865,7 @@ async function viewInline(path){
   setTimeout(()=>{ const el=document.getElementById("inlineView"); if(el) el.scrollIntoView({block:"start",behavior:"smooth"}); }, 60);
 }
 
-function closeView(){ VIEW = {path:null, inline:false}; render(); }
+function closeView(){ VIEW = {path:null, inline:false}; renderForce(); }
 
 document.addEventListener('keydown', ev=>{
   if(ev.key === 'Escape' && VIEW.path){ ev.preventDefault(); closeView(); }
@@ -4217,6 +4220,13 @@ function sEmptyEp(){
 }
 
 function render(){
+  // 打开文件查看器/弹窗时，重建会把滚动位置清零、内容闪一下；此时只跳过重建
+  if(typeof VIEW !== 'undefined' && VIEW && VIEW.path && VIEW.inline && !RENDER_FORCE){
+    RENDER_SKIPPED++;
+    return;
+  }
+  const scroller = document.scrollingElement || document.documentElement;
+  const keepY = scroller ? scroller.scrollTop : 0;
   nav();
   document.getElementById("epsel").innerHTML = sEpSel();
   if(document.getElementById("projsel")) document.getElementById("projsel").innerHTML = sProjSel();
@@ -4273,6 +4283,10 @@ function render(){
   { const host=document.getElementById("viewerhost"); if(host) host.innerHTML = viewerLayer(); }
   { const old=document.getElementById("assetDetail"); if(old) old.remove();
     if(AD) document.body.insertAdjacentHTML("beforeend", assetDetailHtml()); }
+  if(keepY && scroller){
+    scroller.scrollTop = keepY;
+    requestAnimationFrame(()=>{ if(scroller.scrollTop !== keepY) scroller.scrollTop = keepY; });
+  }
 }
 function showDraftModal(){
   const m=document.createElement("div");
