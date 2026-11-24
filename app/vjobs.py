@@ -880,6 +880,13 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "status": "queued", "card": None, "file": None, "error": None,
                    "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"],
                    "afterIds": []}
+            try:
+                import firstframe
+                ff = firstframe.first_for_unit(project, scene, u.get("shots") or "")
+                if ff:
+                    job["firstFrame"] = ff
+            except Exception:
+                pass
             plan.append((item, u, k, jid, job))
             by_unit[u["id"]].append(jid)
 
@@ -942,7 +949,16 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                 _jobs[jid]["usedRefs"] = ref_names
                 _jobs[jid]["usedAudios"] = audio_names
         _save()
-        if job.get("chain") and job.get("prevUnit"):
+        ff_rel = job.get("firstFrame")
+        if ff_rel and not job.get("chain") and (project / ff_rel).is_file():
+            # 分镜首帧已由导演台采用：直接走 I2V 首帧驱动
+            ff_path = project / ff_rel
+            first_name = _stage_ref(job["port"], ff_path, as_name=f"first_{jid[-10:]}{ff_path.suffix}")
+            g = build_i2v_graph(job["prompt"], job["width"], job["height"], job["frames"],
+                                job["seed"], first_name, steps=job["steps"],
+                                lora=job.get("lora"), sigmas=job.get("sigmas"),
+                                sampler=job.get("sampler"), attention=job.get("attention"))
+        elif job.get("chain") and job.get("prevUnit"):
             prev = None
             with _lock:
                 dep = (_jobs.get((job.get("afterIds") or [None])[0]) or {})

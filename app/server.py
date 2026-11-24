@@ -34,6 +34,7 @@ import confirms
 import comfywatch
 import dataset
 import flow
+import firstframe
 import gpus
 import imagegen
 import imgjobs
@@ -1459,6 +1460,14 @@ class Handler(BaseHTTPRequestHandler):
                                 "mtime": mt})
             self._send(200, json.dumps({"scene": sc, "results": out}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/firstframe/shots":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            scene = q.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", scene):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps(firstframe.shots_payload(PROJECT, scene), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/scenes":
             d = scenes.build(PROJECT)
             for sc in d.get("scenes", []):
@@ -1793,6 +1802,50 @@ class Handler(BaseHTTPRequestHandler):
                 out = sched.set_cards(self._json_body().get("enabled") or [])
                 out["ok"] = True
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/firstframe/generate":
+            try:
+                body = self._json_body()
+                scene = str(body.get("scene") or "N001")
+                shot = str(body.get("shot") or "")
+                prompt = str(body.get("prompt") or "").strip()
+                if not re.fullmatch(r"N\d{3}", scene) or not re.fullmatch(r"SH\d{3}", shot):
+                    raise ValueError("scene/shot 非法")
+                if not prompt:
+                    raise ValueError("缺首帧提示词")
+                ref = body.get("ref") or None
+                if ref:
+                    f = (PROJECT / ref).resolve()
+                    if not _inside(PROJECT, f) or not f.is_file():
+                        raise ValueError("参考图不在项目内")
+                width = int(body.get("width") or 1536)
+                height = int(body.get("height") or 864)
+                steps = int(body.get("steps") or 6)
+                n = max(1, min(2, int(body.get("n") or 1)))
+                it = {"id": shot, "name": shot, "prompt": prompt, "ref": ref, "n": n,
+                      "width": width, "height": height, "steps": steps,
+                      "seed": body.get("seed") if str(body.get("seed") or "").strip().isdigit() else None}
+                pf = imagegen.preflight([it], PROJECT)
+                if pf.get("blockers"):
+                    raise ValueError("预检阻断：" + "；".join(pf["blockers"]))
+                out = imgjobs.submit_batch(PROJECT, current_episode(), [it],
+                                           out_root=f"制作运行/首帧候选/{scene}")
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/firstframe/adopt":
+            try:
+                body = self._json_body()
+                rec = firstframe.adopt(PROJECT, str(body.get("scene") or ""),
+                                       str(body.get("shot") or ""), str(body.get("file") or ""))
+                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),

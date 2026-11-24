@@ -275,14 +275,14 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","工作流"],["flow","流程"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["gen","生成台"],["img","出图"],["backend","算力"],["pending","待确认"],["verify","校验"]];
+    ["gen","生成台"],["img","出图"],["first","首帧"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", flow:"流程", img:"出图", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", flow:"流程", img:"出图", first:"首帧", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -1401,6 +1401,75 @@ function sAssetsPage(){
   </div>
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
   ${groups}`;
+}
+
+/* ---------- 分镜首帧 ---------- */
+let FF = {data:null, scene:null};
+
+async function loadFirst(scene, force){
+  if(!force && FF.data && FF.scene===scene) return FF.data;
+  try{ FF.data = await (await fetch('/api/firstframe/shots?scene='+encodeURIComponent(scene))).json(); FF.scene=scene; }
+  catch(e){ FF.data={shots:[],error:String(e)}; }
+  return FF.data;
+}
+
+async function ffGenerate(shot){
+  const scene=FF.scene||'N001';
+  const prompt=(document.getElementById('ffp-'+shot)||{}).value||'';
+  if(!prompt.trim()) return toast('提示词为空');
+  const ref=(document.getElementById('ffref-'+shot)||{}).value||null;
+  const r=await fetch('/api/firstframe/generate',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({scene,shot,prompt,ref,n:1,width:1536,height:864,steps:6})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
+  toast('首帧已提交：'+(j.jobs||[]).join(', '));
+  setTimeout(()=>loadFirst(scene,true).then(()=>render()), 5000);
+}
+
+async function ffAdopt(shot,file){
+  const r=await fetch('/api/firstframe/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({scene:FF.scene||'N001',shot,file})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'采用失败');
+  toast('已采用首帧：'+shot);
+  FF.data=null; await loadFirst(FF.scene||'N001',true); render();
+}
+
+function sFirst(){
+  const d=SCN.data;
+  if(!d){ loadScenes().then(()=>render()); return '<div class="dim">读取场次…</div>'; }
+  const scene=state.scene && d.scenes.some(x=>x.id===state.scene) ? state.scene : 'N001';
+  state.scene=scene;
+  if(!FF.data || FF.scene!==scene){ loadFirst(scene).then(()=>render()); return '<div class="dim">读取首帧…</div>'; }
+  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('first',{scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
+    border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
+  const cards=(FF.data.shots||[]).map(sh=>{
+    const refs=sh.refs||[];
+    const refOpts=refs.map(r=>`<option value="${esc(r.file)}">${esc(r.asset)} · ${esc(r.file.split('/').pop())}</option>`).join("");
+    const cands=(sh.candidates||[]).slice(0,4).map(c=>`<div style="width:170px">
+      <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
+        style="width:100%;height:95px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+      <button class="btn ok" style="font-size:9.5px;padding:1px 6px;margin-top:3px" onclick="ffAdopt('${sh.id}','${esc(c.file)}')">采用</button>
+    </div>`).join("");
+    return `<div class="panel" style="margin-bottom:12px">
+      <div class="ph"><span><b class="mono">${sh.id}</b> · ${sh.duration}s</span>
+        <span style="display:flex;gap:8px;align-items:center">
+          ${sh.accepted?'<span class="badge b-ok" style="font-size:10px">已采用</span>':'<span class="badge b-warn" style="font-size:10px">未采用</span>'}
+          <span class="dim" style="font-size:10.5px">${esc((sh.size||'').slice(0,36))}</span></span></div>
+      <div class="pb">
+        <textarea id="ffp-${sh.id}" style="width:100%;min-height:100px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(sh.prompt||'')}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          <span class="dim" style="font-size:11px">参考图</span>
+          <select id="ffref-${sh.id}" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px;min-width:250px">
+            <option value="">不用参考图</option>${refOpts}</select>
+          <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="ffGenerate('${sh.id}')">出首帧</button>
+          <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadFirst('${scene}',true).then(()=>render())">刷新</button>
+          <span class="dim" style="font-size:10.5px">采用后，09b 首单元视频会取该首帧</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${cands||'<div class="dim" style="font-size:11px">还没有首帧候选。</div>'}</div>
+      </div></div>`;
+  }).join("");
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
+    <div class="dim" style="font-size:11.5px;margin-bottom:10px">首帧从 09a 镜头表的「首帧硬状态 + 景别/光线 + 资产描述符」拼提示词；候选落 制作运行/首帧候选；不改 09 文件。</div>
+    ${cards}`;
 }
 
 /* ---------- 出图 / 改图 · 本地 H3 Image ---------- */
@@ -3408,6 +3477,8 @@ function render(){
     html = sGen();
   } else if (state.tab === "img") {
     html = sImageGen();
+  } else if (state.tab === "first") {
+    html = sFirst();
   } else if (state.tab === "history") {
     html = sHistory();
   } else if (state.tab === "backend") {

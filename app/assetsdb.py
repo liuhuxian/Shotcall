@@ -134,6 +134,30 @@ def parse_prompts(project: Path) -> dict:
     return out
 
 
+def parse_descriptors(project: Path) -> dict:
+    """完整描述符（用于首帧提示词），回退 project.json slot.descriptor。"""
+    out = {}
+    f = latest_asset_doc(project)
+    if f:
+        txt = f.read_text(encoding="utf-8")
+        heads = list(re.finditer(r"^### ([A-Z]\d{2}(?:[-／][A-Za-z]+)?)｜(.+)$", txt, re.M))
+        for i, m in enumerate(heads):
+            body = txt[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(txt)]
+            pm = re.search(r"\*\*完整描述符\*\*\s*\n+(.*?)(?=\n\*\*|\n### |\n## |\Z)", body, re.S)
+            if pm:
+                out[m.group(1)] = pm.group(1).strip()
+    fp = project / WB_PROJECT
+    try:
+        d = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        d = {}
+    for slot in d.get("slots") or []:
+        sid = slot.get("stateId") or slot.get("id")
+        if sid and sid not in out and slot.get("descriptor"):
+            out[sid] = slot["descriptor"]
+    return out
+
+
 def write_binding(project: Path, asset: dict, image_rel: str, version: str = None) -> Path:
     """新增一份绑定快照（合并旧快照，只覆盖本资产），不覆盖既有文件。"""
     root = project / ASSET_DIR
@@ -300,6 +324,7 @@ def build(project: Path) -> dict:
     except Exception:
         pass
     prompts = parse_prompts(project)
+    descriptors = parse_descriptors(project)
     binds = parse_bindings(project)
     # 绑定键可能带 C01--C01-A，统一按短 ID 对齐
     short = {}
@@ -321,6 +346,7 @@ def build(project: Path) -> dict:
         a["binding"] = b
         a["bound"] = bool(b and b.get("exists"))
         a["prompt"] = prompts.get(a["id"]) or ""
+        a["descriptor"] = descriptors.get(a["id"]) or a.get("descriptor") or ""
     img = [a for a in assets if a.get("type") != "voice"]   # 图像资产口径保持 36 项
     vos = [a for a in assets if a.get("type") == "voice"]
     bound = sum(1 for a in img if a["bound"])
