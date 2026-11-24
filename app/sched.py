@@ -25,6 +25,8 @@ _pending = []             # 等待分配的任务（dict: id, kind, run()）
 AUTO_SCALE = False        # 手动管理模式：不自动开卡、不自动收卡
 MAX_PER_CARD = 3          # 每张卡最多堆几个任务（送达即安全，不再等卡空）
 _runners = {}             # job_id -> callable(port) 真正干活的函数
+_done = set()             # 已完成的任务 id（用于依赖判定）
+_failed = set()           # 失败的任务 id
 
 
 def _enabled() -> set:
@@ -138,7 +140,8 @@ def submit(kind: str, items: list) -> list:
     with _lock:
         for it in items:
             _runners[it["id"]] = it["run"]
-            _pending.append({"id": it["id"], "kind": kind})
+            _pending.append({"id": it["id"], "kind": kind,
+                             "after": list(it.get("after") or [])})
             ids.append(it["id"])
     _wake()
     return ids
@@ -208,6 +211,7 @@ def _run_one(item: dict, idx: int) -> None:
         with _lock:
             _state["jobs"].get(idx, set()).discard(item["id"])
             _runners.pop(item["id"], None)
+            _done.add(item["id"])
 
 
 def _worker():
@@ -235,7 +239,23 @@ def _worker():
             cand.sort(key=lambda c: load_of(c))
             free = [c for c in cand if load_of(c) < MAX_PER_CARD]
             with _lock:
-                batch = [_pending.pop(0) for _ in range(min(len(free), len(_pending)))]
+                ready, blocked, dead = [], [], []
+                for it in _pending:
+                    deps = it.get("after") or []
+                    if any(d in _failed for d in deps):
+                        dead.append(it)
+                    elif all(d in _done or d not in _runners for d in deps):
+                        ready.append(it)
+                    else:
+                        blocked.append(it)
+                for it in dead:
+                    _runners.pop(it["id"], None)
+                    _failed.add(it["id"])
+                _pending[:] = blocked
+                take = ready[:len(free)]
+                rest = ready[len(free):]
+                _pending.extend(rest)
+                batch = take
             for item, card in zip(batch, free):
                 threading.Thread(target=_run_one, args=(item, card["index"]), daemon=True).start()
             if not batch:

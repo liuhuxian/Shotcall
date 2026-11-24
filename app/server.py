@@ -1687,15 +1687,18 @@ class Handler(BaseHTTPRequestHandler):
                 by = {u["id"]: u for u in ops}
                 units = []
                 order = [u["id"] for u in ops]
+                batch_prev = {}          # 同批里每个单元最后一条任务的 id
                 for x in want:
                     if isinstance(x, dict):
                         u = by.get(x.get("id"))
                         if u:
                             idx = order.index(u["id"])
                             prev = order[idx - 1] if idx > 0 else None
-                            units.append({"unit": u, "count": int(x.get("count") or 1),
+                            n = int(x.get("count") or 1)
+                            deps = [batch_prev[prev]] if (x.get("chain") and prev in batch_prev) else []
+                            units.append({"unit": u, "count": n,
                                           "chain": bool(x.get("chain")) and bool(prev),
-                                          "prevUnit": prev})
+                                          "prevUnit": prev, "afterIds": deps})
                     elif x in by:
                         units.append({"unit": by[x], "count": 1})
                 if not units:

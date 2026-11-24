@@ -134,6 +134,48 @@ def main():
         check("重新出现后仍算在跑", vjobs._jobs["E-2"]["status"] == "running",
               vjobs._jobs["E-2"]["status"])
 
+    print("\n= 接续任务的依赖串行 =")
+    reset()
+    sent = []
+    with mock.patch.object(sched, "submit",
+                           side_effect=lambda k, items: sent.append(items) or [i["id"] for i in items]), \
+         mock.patch.object(vjobs, "parse_units", return_value=[
+             {"id": "U001-A", "prompt": "p1", "seconds": 6, "refs": [], "shots": ["SH001"]},
+             {"id": "U001-B", "prompt": "p2", "seconds": 5, "refs": [], "shots": ["SH002"]}]):
+        vjobs.submit(tmp, "N001",
+                     [{"unit": {"id": "U001-A", "prompt": "p1", "seconds": 6, "refs": [], "shots": ["SH001"]},
+                       "count": 1},
+                      {"unit": {"id": "U001-B", "prompt": "p2", "seconds": 5, "refs": [], "shots": ["SH002"]},
+                       "count": 1, "chain": True, "prevUnit": "U001-A", "afterIds": []}],
+                     steps=20)
+    items = sent[0] if sent else []
+    ids = {i["id"]: i for i in items}
+    a_id = [k for k in ids if k.endswith("U001-A")]
+    b_id = [k for k in ids if k.endswith("U001-B")]
+    check("两条任务都已入队", len(items) == 2, len(items))
+    check("A 无依赖", a_id and ids[a_id[0]]["after"] == [], ids.get(a_id[0], {}).get("after") if a_id else None)
+    check("B 依赖 A", bool(b_id) and ids[b_id[0]]["after"] == a_id,
+          ids.get(b_id[0], {}).get("after") if b_id else None)
+
+    print("\n= 调度器遵守依赖 =")
+    import sched as SC
+    with mock.patch.object(SC, "_done", set()), mock.patch.object(SC, "_failed", set()), \
+         mock.patch.object(SC, "_runners", {"A": lambda p: None, "B": lambda p: None}), \
+         mock.patch.object(SC, "_pending", [{"id": "A", "kind": "video", "after": []},
+                                            {"id": "B", "kind": "video", "after": ["A"]}]):
+        with SC._lock:
+            ready, blocked = [], []
+            for it in SC._pending:
+                deps = it.get("after") or []
+                (ready if all(d in SC._done or d not in SC._runners for d in deps) else blocked).append(it)
+        check("A 就绪、B 阻塞", [x["id"] for x in ready] == ["A"] and [x["id"] for x in blocked] == ["B"],
+              ([x["id"] for x in ready], [x["id"] for x in blocked]))
+        SC._done.add("A")
+        with SC._lock:
+            ready2 = [it for it in SC._pending
+                      if all(d in SC._done or d not in SC._runners for d in (it.get("after") or []))]
+        check("A 完成后 B 才就绪", [x["id"] for x in ready2] == ["A", "B"], [x["id"] for x in ready2])
+
     print("\n= 参考图接线 =")
     g = vjobs.build_graph("p", 1344, 768, 328, 7, 20, ref_images=["a.png", "b.png"])
     h3 = [v for v in g.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]

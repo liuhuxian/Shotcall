@@ -733,33 +733,49 @@ def _api(port, path, payload=None, timeout=120):
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
            width=1344, height=768, steps=20) -> dict:
-    """units: [{"unit": {...}, "count": n}]；seed 给了就按 seed, seed+1, ... 递增。"""
+    """units: [{"unit": {...}, "count": n, "chain": bool, "prevUnit": id}]
+
+    带 chain 的任务会自动依赖同批上一单元的最后一条任务，保证串行。
+    """
     batch = time.strftime("VID-%Y%m%d-%H%M%S")
-    tasks = []
+    recipe = current_recipe()
+    plan = []            # (item, unit, k, jid, job)
+    by_unit = {}         # unit_id -> [jid, ...]（按提交顺序）
     for item in units:
         u = item["unit"]
         count = max(1, int(item.get("count") or 1))
+        by_unit.setdefault(u["id"], [])
         for k in range(count):
             jid = f"{batch}-{u['id']}-{k+1}" if count > 1 else f"{batch}-{u['id']}"
+            seed_i = (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1)
             job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
                    "chain": bool(item.get("chain")),
                    "prevUnit": item.get("prevUnit"),
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
-                   "lora": current_recipe().get("lora"),
-                   "sigmas": current_recipe().get("sigmas"),
-                   "sampler": current_recipe().get("sampler"),
-                   "attention": current_recipe().get("attention"),
-                   "refSize": current_recipe().get("refSize"),
-                   "recipe": current_recipe().get("name"),
-                   "seed": (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1),
+                   "lora": recipe.get("lora"), "sigmas": recipe.get("sigmas"),
+                   "sampler": recipe.get("sampler"), "attention": recipe.get("attention"),
+                   "refSize": recipe.get("refSize"), "recipe": recipe.get("name"),
+                   "seed": seed_i,
                    "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
                    "status": "queued", "card": None, "file": None, "error": None,
-                   "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"]}
-            with _lock:
-                _jobs[jid] = job
-                _order.append(jid)
-            tasks.append({"id": jid, "run": _runner(project, jid)})
+                   "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"],
+                   "afterIds": []}
+            plan.append((item, u, k, jid, job))
+            by_unit[u["id"]].append(jid)
+
+    # 依赖：接续任务等同批上一单元全部完成
+    for item, u, k, jid, job in plan:
+        prev = job.get("prevUnit")
+        if job.get("chain") and prev and by_unit.get(prev):
+            job["afterIds"] = list(by_unit[prev])
+
+    tasks = []
+    for item, u, k, jid, job in plan:
+        with _lock:
+            _jobs[jid] = job
+            _order.append(jid)
+        tasks.append({"id": jid, "run": _runner(project, jid), "after": list(job["afterIds"])})
     _save()
     sched.submit("video", tasks)
     return {"batch": batch, "jobs": [t["id"] for t in tasks]}
