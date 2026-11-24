@@ -747,7 +747,7 @@ function mdToHtml(md){
 
 async function viewFile(path){
   if(!path) return;
-  VIEW = {path, data:null, loading:true, rendered:true};
+  VIEW = {path, data:null, loading:true, rendered:true, inline:false};
   render();
   try{
     const j = await (await fetch('/api/proj/text?p=' + encodeURIComponent(path))).json();
@@ -756,14 +756,26 @@ async function viewFile(path){
   render();
 }
 
-function closeView(){ VIEW = {path:null}; render(); }
+async function viewInline(path){
+  if(!path) return;
+  VIEW = {path, data:null, loading:true, rendered:true, inline:true};
+  render();
+  try{
+    const j = await (await fetch('/api/proj/text?p=' + encodeURIComponent(path))).json();
+    VIEW.data = j; VIEW.loading = false;
+  }catch(e){ VIEW.data = {error:String(e)}; VIEW.loading = false; }
+  render();
+  setTimeout(()=>{ const el=document.getElementById("inlineView"); if(el) el.scrollIntoView({block:"start",behavior:"smooth"}); }, 60);
+}
+
+function closeView(){ VIEW = {path:null, inline:false}; render(); }
 
 document.addEventListener('keydown', ev=>{
   if(ev.key === 'Escape' && VIEW.path){ ev.preventDefault(); closeView(); }
 });
 
 function viewerLayer(){
-  if(!VIEW.path) return "";
+  if(!VIEW.path || VIEW.inline) return "";
   const d = VIEW.data || {};
   const body = VIEW.loading ? '<div class="dim" style="padding:20px">读取中…</div>'
     : d.error ? `<div style="padding:20px;color:var(--bad)">${esc(d.error)}</div>`
@@ -784,6 +796,27 @@ function viewerLayer(){
       </div>
       <div style="overflow:auto;flex:1">${body}</div>
     </div></div>`;
+}
+
+function inlineViewer(){
+  if(!VIEW.path || !VIEW.inline) return "";
+  const d = VIEW.data || {};
+  const body = VIEW.loading ? '<div class="dim" style="padding:20px">读取中…</div>'
+    : d.error ? `<div style="padding:20px;color:var(--bad)">${esc(d.error)}</div>`
+    : VIEW.rendered && /\.(md|txt)$/i.test(VIEW.path)
+      ? `<div style="padding:14px 20px">${mdToHtml(d.text||'')}</div>`
+      : `<pre style="padding:14px 20px;margin:0;white-space:pre-wrap;font-size:12.5px;line-height:1.8">${esc(d.text||'')}</pre>`;
+  return `<div id="inlineView" class="panel" style="margin-top:16px">
+    <div class="ph"><span>文件审核 · ${esc((VIEW.path||'').split('/').pop())}</span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="dim mono" style="font-size:10px">${esc(VIEW.path)}</span>
+        <span class="dim" style="font-size:10.5px">${d.sizeKB!=null?d.sizeKB+' KB':''}${d.truncated?' · 已截断':''}</span>
+        <button class="btn ghost" style="font-size:10.5px;padding:2px 8px"
+          onclick="VIEW.rendered=!VIEW.rendered;render()">${VIEW.rendered?'原文':'渲染'}</button>
+        <button class="btn ghost" style="font-size:10.5px;padding:2px 8px" onclick="closeView()">收起</button>
+      </span></div>
+    <div style="max-height:520px;overflow:auto">${body}</div>
+  </div>`;
 }
 
 /* ---------- 生成历史 ---------- */
@@ -1992,7 +2025,7 @@ function sFlow(){
           <span class="dim mono" style="font-size:10.5px">${esc(st.skill)}</span></span></div>
       <div class="pb">
         <div class="dim" style="font-size:11.5px;line-height:1.8">
-          当前：${st.path?`<span class="mono" style="cursor:pointer;text-decoration:underline dotted" onclick="viewFile('${esc(st.path)}')">${esc(st.path)}</span>`:'未登记'}
+          当前：${st.path?`<span class="mono" style="cursor:pointer;text-decoration:underline dotted" onclick="viewInline('${esc(st.path)}')">${esc(st.path)}</span>`:'未登记'}
           · 下一版：<span class="mono">${esc(st.nextPath)}</span><br>
           输入：${(st.inputs||[]).map(x=>`<span class="mono">${esc(x)}</span>`).join('、')||'—'}
         </div>
@@ -2022,7 +2055,7 @@ function sFlow(){
         </details>
         <details open style="margin-top:6px"><summary class="dim" style="font-size:11.5px;cursor:pointer">版本与依赖（${(st.versions||[]).length}）· 点路径查看</summary>
           <div style="margin-top:5px">${(st.versions||[]).map(v=>`<div class="dim mono" style="font-size:10.5px;line-height:1.8;cursor:pointer;text-decoration:underline dotted"
-            onclick="viewFile('${esc(v.path)}')">
+            onclick="viewInline('${esc(v.path)}')">
             ${esc(v.version)} · ${esc(v.statusText||'')} · ${esc(v.path)} · sha ${esc((v.sha256||'').slice(0,10))}
             ${(v.dependsOn||[]).length?'· 依赖：'+v.dependsOn.map(esc).join('、'):''}</div>`).join('')||'<span class="dim" style="font-size:11px">还没有版本</span>'}</div>
         </details>
@@ -2135,7 +2168,7 @@ function sStageBody(no){
       <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[a.status]||a.status}</span></td>
       <td><div style="font-size:12.5px">${esc(a.kind||"")} ${localBadge}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
-            onclick="viewFile('${esc(a.path)}')">${esc(a.path)}</div>
+            onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
           ${g.versions.length>1?`<div class="dim" style="font-size:10px">同族 ${g.versions.length} 个版本；先在下拉选择，只确认选中的一版</div>`:''}</td>
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>
@@ -2184,7 +2217,7 @@ function sPending(){
       <td class="mono dim" style="width:40px">${a.stage}</td>
       <td><div style="font-size:12.5px">${esc(a.kind||"")}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
-            onclick="viewFile('${esc(a.path)}')">${esc(a.path)}</div>
+            onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
           ${g.drafts.length>1?`<div class="dim" style="font-size:10px">同族 ${g.drafts.length} 个候选；先选一版再确认</div>`:''}</td>
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px">依赖 ${stale}</span>`:'<span class="dim">—</span>'}</td>
@@ -2220,7 +2253,7 @@ function sPending(){
         return `<tr>
         <td class="mono dim">${u.stage}</td>
         <td class="mono" style="font-size:11px;cursor:pointer;text-decoration:underline dotted"
-            onclick="viewFile('${esc(u.path)}')">${esc(u.path)}</td>
+            onclick="viewInline('${esc(u.path)}')">${esc(u.path)}</td>
         <td class="dim mono" style="font-size:11px">${esc(u.time)}</td>
         <td class="dim mono" style="text-align:right;font-size:11px">${u.sizeKB} KB</td>
         <td style="text-align:center">${badge}</td>
@@ -2250,7 +2283,7 @@ function sArts(){
     <td class="mono dim" style="width:40px">${a.stage}</td>
     <td style="font-size:12.5px">${esc(a.kind||"")}</td>
     <td class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
-        onclick="viewFile('${esc(a.path)}')">${esc(a.path)}</td>
+        onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</td>
     <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
     <td><span class="badge" style="font-size:10px;border-color:${ART_COLOR[a.status]||'var(--dim)'};color:${ART_COLOR[a.status]||'var(--dim)'}">${ART_LABEL[a.status]||a.status}</span></td>
     <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>
@@ -2270,7 +2303,7 @@ function sVerify(){
   const rows = bad.map(a=>`<tr>
     <td class="mono dim" style="width:40px">${a.stage}</td>
     <td class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
-        onclick="viewFile('${esc(a.path)}')">${esc(a.path)}</td>
+        onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</td>
     <td style="text-align:center">${a.fileState==='modified'?'<span class="badge b-bad" style="font-size:10px">文件已改动</span>'
       :a.fileState==='missing'?'<span class="badge b-bad" style="font-size:10px">文件缺失</span>':'<span class="dim">—</span>'}</td>
     <td style="font-size:11px" class="dim">${(a.staleDeps||[]).map(x=>esc(x.path)+'：'+esc(x.reason)).join('<br>')||'—'}</td>
@@ -3909,7 +3942,7 @@ function render(){
   } else {
     html = (map[state.tab] || sStages)();
   }
-  document.getElementById("app").innerHTML = statusBar() + html;
+  document.getElementById("app").innerHTML = statusBar() + html + inlineViewer();
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
   if(state.candModal) showDraftModal();
   else {
