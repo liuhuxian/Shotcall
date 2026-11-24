@@ -14,6 +14,7 @@ import json
 import tempfile
 import subprocess
 import threading
+import translate
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1542,6 +1543,34 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("未知操作")
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/gen/translate":
+            try:
+                body = self._json_body()
+                scene = body.get("scene") or "N001"
+                want = body.get("units") or []
+                units = vjobs.parse_units(PROJECT, scene)
+                if not units:
+                    raise ValueError("该场没有提示词")
+                picked = [u for u in units if not want or u["id"] in want]
+                st = translate.available()
+                if not st["ok"]:
+                    raise ValueError(st["reason"])
+                done, failed = [], []
+                for u in picked:
+                    try:
+                        zh = translate.translate(u["prompt"])
+                        vjobs.write_zh(scene, u["id"], u["prompt"], zh)
+                        done.append({"unit": u["id"], "chars": len(zh)})
+                    except Exception as e:
+                        failed.append({"unit": u["id"], "error": str(e)[:120]})
+                self._send(200, json.dumps({"ok": True, "model": translate.MODEL,
+                                            "translated": done, "failed": failed},
+                                           ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),

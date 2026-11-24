@@ -845,6 +845,8 @@ function genUnitRow(u){
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
         onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">
         ${GEN.open && GEN.open[u.id] ? '收起' : '审核稿'}</button>
+      <button class="btn ghost" style="font-size:11px;padding:3px 9px" title="用 DeepSeek 重新翻译本单元"
+        onclick="translateUnit('${u.id}', this)">${u.zhStale?'重译':'翻译'}</button>
     </div>
     ${(u.refs||[]).length?`<div style="padding:0 13px 12px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
       ${u.refs.map(r=>`<div style="width:120px">
@@ -938,6 +940,8 @@ function sGen(){
           ${(VER.list||[]).map(v=>`<option value="${esc(v.name)}" ${(VER.pinned||VER.current)===v.name?'selected':''}>v${String(v.version).padStart(3,'0')}${VER.pinned===v.name?' · 锁定':''}</option>`).join("")}
         </select>
         <button class="btn ghost" style="font-size:11px;padding:2px 10px"
+          onclick="translateAll(this)">翻译全部</button>
+        <button class="btn ghost" style="font-size:11px;padding:2px 10px"
           onclick="GEN.showHistory=!GEN.showHistory; if(GEN.showHistory){HIST.data=null;loadHistory(true).then(()=>render());} render()">
           ${GEN.showHistory?'收起历史':'生成历史'}</button>
       </span></div>
@@ -969,6 +973,31 @@ function sGen(){
       </div>
     </div></div>
   ${GEN.showHistory ? histPanel() : ''}`;
+}
+
+async function translateUnit(unitId, btn){
+  if(btn){ btn.textContent = '翻译中…'; btn.disabled = true; }
+  const r = await fetch('/api/gen/translate', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scene: GEN.scene, units:[unitId]})});
+  const j = await r.json();
+  if(!r.ok){ toast(j.error || "翻译失败"); if(btn){ btn.textContent='翻译'; btn.disabled=false; } return; }
+  const ok = (j.translated||[])[0];
+  toast(ok ? `已翻译 ${ok.unit}（${ok.chars} 字）` : "翻译失败");
+  await loadGen(GEN.scene, true);
+  render();
+}
+
+async function translateAll(btn){
+  const ids = (GEN.units||[]).map(u=>u.id);
+  if(!ids.length) return toast("没有单元");
+  if(btn){ btn.textContent = '翻译中…'; btn.disabled = true; }
+  const r = await fetch('/api/gen/translate', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scene: GEN.scene, units: ids})});
+  const j = await r.json();
+  if(!r.ok){ toast(j.error || "翻译失败"); if(btn){ btn.textContent='翻译全部'; btn.disabled=false; } return; }
+  toast(`翻译完成：${(j.translated||[]).length} 个单元` + ((j.failed||[]).length?`，${j.failed.length} 个失败`:''));
+  await loadGen(GEN.scene, true);
+  render();
 }
 
 async function genDelete(file, btn){

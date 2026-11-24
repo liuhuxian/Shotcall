@@ -140,6 +140,17 @@ def load_zh() -> dict:
         return {}
 
 
+def write_zh(scene: str, unit_id: str, source: str, zh: str) -> dict:
+    """把译文写进 prompt_zh.json，绑定原文 sha1。"""
+    table = load_zh()
+    table.setdefault(scene, {})[unit_id] = {
+        "srcSha1": __import__("hashlib").sha1(source.encode("utf-8")).hexdigest(),
+        "zh": zh.strip() + "\n",
+    }
+    ZH_FILE.write_text(json.dumps(table, ensure_ascii=False, indent=1), encoding="utf-8")
+    return table[scene][unit_id]
+
+
 def attach_zh(units: list, scene: str) -> list:
     """给每个单元挂中文审核稿；英文原文变了就标 zhStale。"""
     table = (load_zh() or {}).get(scene, {})
