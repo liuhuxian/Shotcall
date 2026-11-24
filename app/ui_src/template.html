@@ -1475,10 +1475,10 @@ function candidateWall(scene){
             <input id="pickreason-${s.id}" placeholder="采用原因（结构化：表演/构图/接戏/声音）" value="${esc((s.adopted||{}).reason||'')}"
               style="width:100%;margin-top:7px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 7px;font-size:11px">
             <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">
-              <button class="btn ok" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','adopt')">采用选中</button>
-              <button class="btn ghost" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','alternate')">备选</button>
-              <button class="btn ghost" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','hold')">hold</button>
-              <button class="btn warn" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','redo')">重做</button>
+              <button class="btn ok" title="本镜最终选这条，进 EDL/CSV" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','adopt')">采用选中</button>
+              <button class="btn ghost" title="先留着，不进 EDL" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','alternate')">备选</button>
+              <button class="btn ghost" title="暂不决定，继续等" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','hold')">待定</button>
+              <button class="btn warn" title="这镜要重出，当前条不采用" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','redo')">重做</button>
             </div></div></div>
           <div id="pickcands-${s.id}" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${candCards}</div>`
           :`<div class="dim" style="font-size:11.5px">该镜暂无生成结果；先在生成台出片。</div>`}
@@ -1488,6 +1488,9 @@ function candidateWall(scene){
     <span class="dim" style="display:flex;gap:8px;align-items:center">${shots.length} 镜 · 已采用 ${adopted} · hold ${held}
       <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="exportPicks('csv')">导出 CSV</button>
       <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="exportPicks('edl')">导出 EDL</button></span></div>
+    <div class="dim" style="padding:0 13px 8px;font-size:10.5px;line-height:1.6">
+      采用 = 本镜最终选这条（进 EDL/CSV，一镜一条）；备选 = 先留着但不进 EDL；待定 = 暂不决定、继续等；重做 = 这镜要重出，当前条不采用。
+    </div>
     <div class="pb">${cards||'<div class="dim">没有镜头数据</div>'}</div></div>`;
 }
 
@@ -3358,6 +3361,8 @@ let TICK = null;
 
 async function pollTick(){
   if(typeof VIEW !== 'undefined' && VIEW.path) return;   // 文件查看器打开时不刷新页面
+  if(state.tab === 'shots') return;                      // 候选墙/视频播放时不自动重绘
+  if(state.tab === 'stages' && (state.wf || 'flow') === 'flow') return;
   try{
     if(state.tab === 'backend'){
       const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
