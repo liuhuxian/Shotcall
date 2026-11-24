@@ -2257,7 +2257,7 @@ function sStages(){
       <div class="ph"><span>工作流</span><span class="dim">00 → 09</span></div>
       <div class="pb" style="padding:14px 14px 0">${rail}</div>
     </div>
-    <div style="flex:1;min-width:0">${detail}</div>
+    <div style="flex:1;min-width:0">${detail}${inlineViewer()}</div>
   </div>`;
 }
 
@@ -4077,8 +4077,8 @@ function render(){
   } else {
     html = (map[state.tab] || sStages)();
   }
-  const inlineInFlow = state.tab === "stages" && (state.wf || "flow") === "flow";
-  document.getElementById("app").innerHTML = statusBar() + html + (inlineInFlow ? "" : inlineViewer());
+  const inlineInWorkflow = state.tab === "stages";
+  document.getElementById("app").innerHTML = statusBar() + html + (inlineInWorkflow ? "" : inlineViewer());
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
   if(state.candModal) showDraftModal();
   else {
