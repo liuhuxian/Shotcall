@@ -68,8 +68,8 @@ def _post(port, path, payload, timeout=60):
 
 
 def build_graph(prompt: str, width=DEFAULT_W, height=DEFAULT_H, seed=42,
-                ref_image: str = None, steps=DEFAULT_STEPS) -> dict:
-    """文生图；给了 ref_image 就是参考图改图（image_1 为要改的图）。"""
+                ref_image: str = None, steps=DEFAULT_STEPS, ref_images: list = None) -> dict:
+    """文生图；给了参考图就走 image_1（可多张 image_1..N，第一张为主图）。"""
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": UNET, "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": CLIP, "type": "minimax", "device": "default"}},
@@ -87,12 +87,15 @@ def build_graph(prompt: str, width=DEFAULT_W, height=DEFAULT_H, seed=42,
         "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
         "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "shotcall"}},
     }
-    if ref_image:
-        g["40"] = {"class_type": "LoadImage", "inputs": {"image": ref_image}}
-        g["41"] = {"class_type": "ResizeImageMaskNode",
-                   "inputs": {"input": ["40", 0], "resize_type": "scale total pixels",
-                              "resize_type.megapixels": 4, "scale_method": "area"}}
-        g["5"]["inputs"]["images.image_1"] = ["41", 0]
+    refs = list(ref_images or ([] if ref_image is None else [ref_image]))
+    for i, ref in enumerate(refs[:16]):
+        load_id = str(40 + i * 2)
+        resize_id = str(41 + i * 2)
+        g[load_id] = {"class_type": "LoadImage", "inputs": {"image": ref}}
+        g[resize_id] = {"class_type": "ResizeImageMaskNode",
+                        "inputs": {"input": [load_id, 0], "resize_type": "scale total pixels",
+                                   "resize_type.megapixels": 4, "scale_method": "area"}}
+        g["5"]["inputs"][f"images.image_{i + 1}"] = [resize_id, 0]
     return g
 
 
@@ -138,9 +141,15 @@ def preflight(items: list, project: Path) -> dict:
         w, h = it.get("width", DEFAULT_W), it.get("height", DEFAULT_H)
         if w % 32 or h % 32:
             blockers.append(f"{tag}：宽高须为 32 倍数（{w}×{h}）")
-        ref = it.get("ref")
-        if ref and not (project / ref).exists():
-            blockers.append(f"{tag}：参考图不存在 {ref}")
+        refs = it.get("refs")
+        if refs is None:
+            refs = [it.get("ref")] if it.get("ref") else []
+        if not isinstance(refs, list):
+            blockers.append(f"{tag}：refs 必须是数组")
+            refs = []
+        for ref in refs[:16]:
+            if ref and not (project / ref).exists():
+                blockers.append(f"{tag}：参考图不存在 {ref}")
     if not blockers:
         n = sum(1 for it in items if it.get("prompt"))
         warnings.append(f"共 {n} 项待出图，每项 {items[0].get('n', 4)} 张候选")

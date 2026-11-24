@@ -1696,23 +1696,37 @@ async function loadFirst(scene, force){
   return FF.data;
 }
 
-function ffPickRef(shot,file){
-  FF.pick[shot]=file||'';
+function ffPaintRefs(shot){
+  const arr=Array.isArray(FF.pick[shot])?FF.pick[shot]:[];
   const root=document.getElementById('ffrefpick-'+shot);
   if(root) root.querySelectorAll('[data-ref]').forEach(el=>{
-    const on=(el.getAttribute('data-ref')||'')===(file||'');
+    const f=el.getAttribute('data-ref')||'';
+    const on=f===''?arr.length===0:arr.includes(f);
     el.style.borderColor=on?'var(--acc)':'var(--line)';
     el.style.background=on?'rgba(90,160,255,.08)':'var(--panel)';
+    const chk=el.querySelector('.ffchk'); if(chk) chk.textContent=on?'✓':'';
   });
 }
+function ffPickRef(shot,file){
+  let arr=Array.isArray(FF.pick[shot])?FF.pick[shot].slice():[];
+  if(!file) arr=[];
+  else if(arr.includes(file)) arr=arr.filter(x=>x!==file);
+  else arr.push(file);
+  FF.pick[shot]=arr; ffPaintRefs(shot);
+}
+function ffAllRefs(shot){
+  const st=(FF.data&&FF.data.shots||[]).find(x=>x.id===shot)||{};
+  FF.pick[shot]=(st.refs||[]).map(r=>r.file); ffPaintRefs(shot);
+}
+function ffClearRefs(shot){ FF.pick[shot]=[]; ffPaintRefs(shot); }
 
 async function ffGenerate(shot){
   const scene=FF.scene||'N001';
   const prompt=(document.getElementById('ffp-'+shot)||{}).value||'';
   if(!prompt.trim()) return toast('提示词为空');
-  const ref=FF.pick[shot]||null;
+  const refs=Array.isArray(FF.pick[shot])?FF.pick[shot]:[];
   const r=await fetch('/api/firstframe/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({scene,shot,prompt,ref,n:1,width:1536,height:864,steps:6})});
+    body:JSON.stringify({scene,shot,prompt,refs,n:1,width:1536,height:864,steps:6})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
   toast('首帧已提交：'+(j.jobs||[]).join(', '));
   setTimeout(()=>loadFirst(scene,true).then(()=>render()), 5000);
@@ -1736,18 +1750,24 @@ function sFirst(){
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=(FF.data.shots||[]).map(sh=>{
     const refs=sh.refs||[];
-    const picked=FF.pick[sh.id]!==undefined ? FF.pick[sh.id] : ((refs[0]||{}).file||'');
+    let picked=FF.pick[sh.id];
+    if(!Array.isArray(picked)) picked=(refs||[]).map(r=>r.file);
     FF.pick[sh.id]=picked;
     const refCards=`<div id="ffrefpick-${sh.id}" style="display:flex;gap:6px;flex-wrap:wrap;align-items:stretch">
       <div data-ref="" onclick="ffPickRef('${sh.id}','')" title="不用参考图"
-        style="width:96px;height:62px;border:1px solid ${picked===''?'var(--acc)':'var(--line)'};border-radius:6px;
-        display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#7c8798;background:${picked===''?'rgba(90,160,255,.08)':'var(--panel)'}">不用参考图</div>
+        style="width:96px;height:62px;border:1px solid ${picked.length===0?'var(--acc)':'var(--line)'};border-radius:6px;position:relative;
+        display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#7c8798;background:${picked.length===0?'rgba(90,160,255,.08)':'var(--panel)'}">不用参考图
+        <span class="ffchk" style="position:absolute;top:2px;right:4px;color:var(--acc);font-size:12px">${picked.length===0?'✓':''}</span></div>
       ${refs.map(r=>`<div data-ref="${esc(r.file)}" onclick="ffPickRef('${sh.id}','${esc(r.file)}')" title="${esc(r.asset)} · ${esc(r.file)}"
-        style="width:96px;border:1px solid ${picked===r.file?'var(--acc)':'var(--line)'};border-radius:6px;overflow:hidden;cursor:pointer;background:var(--panel)">
+        style="width:96px;border:1px solid ${picked.includes(r.file)?'var(--acc)':'var(--line)'};border-radius:6px;overflow:hidden;cursor:pointer;background:var(--panel);position:relative">
         <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" style="width:100%;height:62px;object-fit:cover;display:block">
+        <span class="ffchk" style="position:absolute;top:2px;right:4px;width:16px;height:16px;border-radius:50%;background:rgba(6,8,11,.72);color:var(--acc);font-size:11px;display:flex;align-items:center;justify-content:center">${picked.includes(r.file)?'✓':''}</span>
         <div class="dim" style="font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.asset)}</div>
       </div>`).join("")}
-    </div>`;
+    </div>
+    <span class="dim" style="font-size:10px">默认勾选本镜绑定资产；可多选/取消</span>
+    <button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="ffAllRefs('${sh.id}')">全选</button>
+    <button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="ffClearRefs('${sh.id}')">清空</button>`;
     const cands=(sh.candidates||[]).slice(0,4).map(c=>`<div style="width:170px">
       <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
         style="width:100%;height:95px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">

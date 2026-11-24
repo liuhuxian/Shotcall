@@ -1964,11 +1964,16 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("scene/shot 非法")
                 if not prompt:
                     raise ValueError("缺首帧提示词")
-                ref = body.get("ref") or None
-                if ref:
+                refs = body.get("refs")
+                if refs is None:
+                    refs = [body.get("ref")] if body.get("ref") else []
+                if not isinstance(refs, list):
+                    raise ValueError("refs 必须是数组")
+                refs = [str(x) for x in refs if str(x).strip()][:16]
+                for ref in refs:
                     f = (PROJECT / ref).resolve()
                     if not _inside(PROJECT, f) or not f.is_file():
-                        raise ValueError("参考图不在项目内")
+                        raise ValueError(f"参考图不在项目内：{ref}")
                 plan = PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}/shot-plan-v001.md"
                 if not plan.exists():
                     plans = sorted((PROJECT / f"09-镜头与视频提示词/镜头规划/{scene}").glob("shot-plan-v*.md"))
@@ -1981,7 +1986,8 @@ class Handler(BaseHTTPRequestHandler):
                 height = int(body.get("height") or 864)
                 steps = int(body.get("steps") or 6)
                 n = max(1, min(2, int(body.get("n") or 1)))
-                it = {"id": shot, "name": shot, "prompt": prompt, "ref": ref, "n": n,
+                it = {"id": shot, "name": shot, "prompt": prompt, "refs": refs,
+                      "ref": (refs[0] if refs else None), "n": n,
                       "width": width, "height": height, "steps": steps,
                       "seed": body.get("seed") if str(body.get("seed") or "").strip().isdigit() else None}
                 pf = imagegen.preflight([it], PROJECT)

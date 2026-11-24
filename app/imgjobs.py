@@ -130,7 +130,9 @@ def submit_batch(project: Path, ep: str, items: list, out_root: str = None) -> d
                    "width": it.get("width") or imagegen.DEFAULT_W,
                    "height": it.get("height") or imagegen.DEFAULT_H,
                    "steps": int(it.get("steps") or imagegen.DEFAULT_STEPS),
-                   "prompt": it["prompt"], "ref": it.get("ref"),
+                   "prompt": it["prompt"],
+                   "ref": it.get("ref") or ((it.get("refs") or [None])[0]),
+                   "refs": list(it.get("refs") or ([] if not it.get("ref") else [it.get("ref")])),
                    "ep": ep, "outRoot": out_root}
             with _lock:
                 _jobs[jid] = job
@@ -157,11 +159,13 @@ def _make_runner(project: Path, ep: str, jid: str, out_root: str = None):
 
 def _execute(project: Path, ep: str, jid: str, job: dict, out_root: str = None):
     try:
-        ref = None
-        if job.get("ref") and (project / job["ref"]).exists():
-            ref = _stage_ref(job["port"], project / job["ref"])
+        ref_files = []
+        ref_paths = job.get("refs") or ([job["ref"]] if job.get("ref") else [])
+        for rp in ref_paths:
+            if rp and (project / rp).exists():
+                ref_files.append(_stage_ref(job["port"], project / rp))
         g = imagegen.build_graph(job["prompt"], job["width"], job["height"],
-                                 job["seed"], ref_image=ref,
+                                 job["seed"], ref_images=ref_files,
                                  steps=int(job.get("steps") or imagegen.DEFAULT_STEPS))
         pid = imagegen.submit(job["port"], g)
         with _lock:

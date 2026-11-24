@@ -27,6 +27,9 @@ def main():
     check("T2I 图节点", "MiniMaxH3ImageConditioning" in str(g) and "KSampler" in str(g))
     ge = imagegen.build_graph("edit", 1536, 864, 42, ref_image="ref.png", steps=6)
     check("改图接 image_1", ge["5"]["inputs"].get("images.image_1") == ["41", 0], ge["5"]["inputs"])
+    gm = imagegen.build_graph("edit", 1536, 864, 42, ref_images=["a.png", "b.png", "c.png"], steps=6)
+    check("多参考图接 image_1..3", all(gm["5"]["inputs"].get(f"images.image_{i}") for i in (1, 2, 3)),
+          gm["5"]["inputs"])
 
     check("出图工作流可选", len(imagegen.RECIPES) >= 4 and imagegen.current_recipe().get("label"),
           imagegen.RECIPES.keys())
