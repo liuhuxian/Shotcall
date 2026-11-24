@@ -548,6 +548,7 @@ function wfList(){
 
 /* ---------- 算力 ---------- */
 let BK = {data:null, xz:{}};   // xz: 二次确认缓存
+let EXEC = {videos:null, images:null, loaded:false};
 
 async function loadBackend(force){
   if(BK.data && !force) return BK.data;
@@ -690,6 +691,49 @@ function queueHtml(d){
       <tbody>${rows}</tbody></table></div></div>`;
 }
 
+async function loadExec(force){
+  if(EXEC.loaded && !force) return EXEC;
+  try{
+    const [v,i] = await Promise.all([
+      fetch('/api/gen/history').then(r=>r.json()).catch(()=>({items:[]})),
+      fetch('/api/img/history').then(r=>r.json()).catch(()=>({items:[]})),
+    ]);
+    EXEC.videos = v.items||[]; EXEC.images = i.items||[]; EXEC.loaded = true;
+  }catch(e){ EXEC.videos=[]; EXEC.images=[]; EXEC.loaded=true; }
+  return EXEC;
+}
+
+function playBackend(file){
+  const box=document.getElementById('backendPlayer');
+  if(!box) return;
+  box.innerHTML=`<div class="panel" style="margin-top:12px"><div class="ph"><span>${esc(file.split('/').pop())}</span>
+    <span class="dim">${esc(file)}</span></div><div class="pb"><video src="/api/proj/file?p=${encodeURIComponent(file)}"
+    controls autoplay style="width:100%;max-height:58vh;border-radius:8px;border:1px solid var(--line)"></video></div></div>`;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function execPanel(){
+  if(!EXEC.loaded){ loadExec().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin:10px 0">读取生成成果…</div>`; }
+  const vids=(EXEC.videos||[]).filter(x=>!x.deleted).slice(0,8);
+  const imgs=(EXEC.images||[]).slice(0,12);
+  const vRows=vids.map(x=>`<div onclick="playBackend('${esc(x.file)}')" style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #1b2028;cursor:pointer">
+    <span class="badge b-ok" style="font-size:9px">▶</span>
+    <span class="mono" style="font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.unit)} · ${esc(x.file.split('/').pop())}</span>
+    <span class="dim mono" style="font-size:10px;white-space:nowrap">${x.time?esc(x.time):''} ${x.sizeMB?x.sizeMB+'MB':''}</span>
+  </div>`).join("");
+  const imgsHtml=imgs.map(x=>`<div style="width:118px">
+    <img src="/api/proj/file?p=${encodeURIComponent(x.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(x.file)}')"
+      style="width:100%;height:74px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:zoom-in;display:block">
+    <div class="dim mono" style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.label)} · ${esc(x.name)}</div>
+  </div>`).join("");
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div class="panel"><div class="ph"><span>视频成果</span><span class="dim">最近 ${vids.length} / ${(EXEC.videos||[]).length} 条 · 点播放</span></div>
+      <div class="pb">${vRows||'<div class="dim" style="font-size:11.5px">还没有生成过的视频。</div>'}</div></div>
+    <div class="panel"><div class="ph"><span>图片成果</span><span class="dim">最近 ${imgs.length} / ${(EXEC.images||[]).length} 张 · 点图放大</span></div>
+      <div class="pb" style="display:flex;gap:7px;flex-wrap:wrap">${imgsHtml||'<div class="dim" style="font-size:11.5px">还没有生成过的图片。</div>'}</div></div>
+  </div><div id="backendPlayer"></div>`;
+}
+
 function sBackend(){
   const d = BK.data;
   if(!d){ loadBackend().then(()=>render()); return `<div class="dim">读取算力…</div>`; }
@@ -706,6 +750,7 @@ function sBackend(){
     <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
   ${recipePanel()}
+  ${execPanel()}
   ${cardsGrid(d)}
   ${queueHtml(d)}
   <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认 · 自动扩缩已关闭</div>`;

@@ -1619,6 +1619,40 @@ class Handler(BaseHTTPRequestHandler):
             allr = [{"name": k, **v} for k, v in imagegen.RECIPES.items()]
             self._send(200, json.dumps({"current": cur, "all": allr}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/img/history":
+            items, seen = [], set()
+            for j in imgjobs.list_jobs(project=PROJECT):
+                if j.get("status") == "done" and j.get("file"):
+                    f = str(j["file"])
+                    if f in seen:
+                        continue
+                    seen.add(f)
+                    items.append({"file": f, "name": f.split("/")[-1],
+                                  "label": j.get("asset") or j.get("dir") or "图片",
+                                  "at": j.get("startedAt") or j.get("queuedAt") or 0,
+                                  "seconds": j.get("seconds"), "source": "job",
+                                  "exists": (PROJECT / f).is_file()})
+            roots = [PROJECT / "07-图像资产/候选图片",
+                     store.state_dir(PROJECT) / "首帧候选"]
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                for f in root.rglob("*"):
+                    if not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                        continue
+                    try:
+                        rel = str(f.relative_to(PROJECT))
+                    except ValueError:
+                        rel = str(f)
+                    if rel in seen:
+                        continue
+                    seen.add(rel)
+                    items.append({"file": rel, "name": f.name, "label": f.parent.name,
+                                  "at": int(f.stat().st_mtime), "source": "candidate",
+                                  "exists": True})
+            items.sort(key=lambda x: x.get("at") or 0, reverse=True)
+            self._send(200, json.dumps({"items": items[:120]}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/refs":
             roots = [PROJECT / "07-图像资产", PROJECT / "制作运行/引用图",
                      store.state_dir(PROJECT) / "首帧候选",
