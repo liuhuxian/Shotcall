@@ -430,6 +430,7 @@ function sWorkflow(){
 /* ---------- 当前工作流（算力页） ---------- */
 let RCP = {data:null};
 let IRCP = {data:null};
+let IWF = {data:null};
 
 async function loadRecipe(force){
   if(RCP.data && !force) return RCP.data;
@@ -468,6 +469,20 @@ async function loadImageRecipe(force){
   try{ IRCP.data = await (await fetch('/api/img/recipe')).json(); }catch(e){ IRCP.data = null; }
   return IRCP.data;
 }
+async function loadImageWorkflows(force){
+  if(IWF.data && !force) return IWF.data;
+  try{ IWF.data = (await (await fetch('/api/img/workflows')).json()).items||[]; }catch(e){ IWF.data=[]; }
+  return IWF.data;
+}
+async function pickImageWorkflow(file,supported){
+  if(!supported) return toast('该工作流暂未映射到可执行图谱');
+  const r=await fetch('/api/img/recipe',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({file})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'切换失败');
+  toast('出图工作流已切换：'+file);
+  await loadImageRecipe(true); render();
+}
+
 async function pickImageRecipe(name){
   const r = await fetch('/api/img/recipe', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({name})});
@@ -527,6 +542,17 @@ function recipePanel(){
     <div class="pb" style="padding-top:4px">
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px">${irCards||'<div class="dim">读取出图工作流…</div>'}</div>
       <div class="dim" style="font-size:10.5px;margin-top:7px">资产详情出图时按此工作流的默认步数/尺寸；参考图仍由「引用当前 / 引用其他」选择。</div>
+      ${(()=>{ if(!IWF.data){ loadImageWorkflows().then(()=>render()); return ''; }
+        return `<div style="border-top:1px solid var(--line);margin-top:9px;padding-top:7px">
+          <div class="dim" style="font-size:10.5px;margin-bottom:5px">ComfyUI 已保存的出图工作流（${(IWF.data||[]).length}）· 点「选用」映射到可执行配方</div>
+          ${(IWF.data||[]).map(w=>`<div style="display:flex;gap:7px;align-items:center;font-size:10.5px;padding:2px 0">
+            <span class="badge ${w.supported?'b-ok':'b-mut'}" style="font-size:9px;flex:none">${w.supported?'可用':'未映射'}</span>
+            <span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${w.supported?'#c9d2e0':'#6b7686'}">${esc(w.file)}</span>
+            <span class="dim" style="flex:none">${esc(w.label||'')}</span>
+            ${w.supported?`<button class="btn ghost" style="font-size:9.5px;padding:1px 6px;flex:none" onclick="pickImageWorkflow('${esc(w.file)}',true)">选用</button>`:''}
+          </div>`).join('')}
+          ${irCur.sourceFile?`<div class="dim" style="font-size:10px;margin-top:4px">当前文件：${esc(irCur.sourceFile)}</div>`:''}
+        </div>`; })()}
     </div></details>`;
 }
 
@@ -740,6 +766,8 @@ function execPanel(){
 function sBackend(){
   const d = BK.data;
   if(!d){ loadBackend().then(()=>render()); return `<div class="dim">读取算力…</div>`; }
+  if(!IWF.data){ loadImageWorkflows().then(()=>render()); }
+  if(!IRCP.data){ loadImageRecipe().then(()=>render()); }
   const s = d.summary||{};
   const cards = d.cards||[];
   const free = cards.filter(c=>!c.hasInstance && c.state==='free').length;

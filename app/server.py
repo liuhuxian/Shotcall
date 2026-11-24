@@ -1632,6 +1632,17 @@ class Handler(BaseHTTPRequestHandler):
                                     "kb": max(1, f.stat().st_size // 1024)})
             body = json.dumps({"files": out}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/workflows":
+            items = []
+            if WF_DIR.is_dir():
+                for f in sorted(WF_DIR.glob("H3_Image*.json")):
+                    mapping = imagegen.recipe_for_file(f.name)
+                    items.append({"file": f.name, "recipe": mapping,
+                                  "supported": bool(mapping),
+                                  "label": imagegen.RECIPES.get(mapping, {}).get("label", "")})
+            self._send(200, json.dumps({"dir": str(WF_DIR), "items": items},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/recipe":
             cur = imagegen.current_recipe()
             allr = [{"name": k, **v} for k, v in imagegen.RECIPES.items()]
@@ -1875,7 +1886,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/img/recipe":
             try:
                 body = self._json_body()
-                cur = imagegen.set_recipe(str(body.get("name") or ""))
+                name = str(body.get("name") or "")
+                source_file = str(body.get("file") or "")
+                if source_file:
+                    name = imagegen.recipe_for_file(source_file)
+                    if not name:
+                        raise ValueError("该 ComfyUI 出图工作流暂未映射")
+                cur = imagegen.set_recipe(name, source_file or None)
                 self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:

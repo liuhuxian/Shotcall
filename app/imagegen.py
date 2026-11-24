@@ -36,23 +36,40 @@ RECIPE_FILE = Path(os.environ.get("SHOTCALL_IMG_RECIPE_FILE")
                    or (Path(__file__).parent / "run" / "image_recipe.json"))
 
 
+def recipe_for_file(filename: str) -> str:
+    n = (filename or "").lower()
+    if "二合一" in n:
+        return "auto"
+    if "edit" in n or "图生图" in n:
+        return "edit4mp"
+    if "t2i" in n or "文生图" in n:
+        return "t2i6"
+    return ""
+
+
 def current_recipe() -> dict:
     name = "auto"
+    source_file = ""
     try:
-        name = json.loads(RECIPE_FILE.read_text(encoding="utf-8")).get("name") or "auto"
+        saved = json.loads(RECIPE_FILE.read_text(encoding="utf-8"))
+        name = saved.get("name") or "auto"
+        source_file = saved.get("sourceFile") or ""
     except Exception:
         pass
     if name not in RECIPES:
         name = "auto"
-    return {"name": name, **RECIPES[name]}
+    return {"name": name, **RECIPES[name], "sourceFile": source_file}
 
 
-def set_recipe(name: str) -> dict:
+def set_recipe(name: str, source_file: str = None) -> dict:
     if name not in RECIPES:
         raise ValueError("未知出图工作流")
     RECIPE_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = RECIPE_FILE.with_name(RECIPE_FILE.name + ".tmp")
-    tmp.write_text(json.dumps({"name": name}, ensure_ascii=False), encoding="utf-8")
+    data = {"name": name}
+    if source_file:
+        data["sourceFile"] = str(source_file)
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(RECIPE_FILE)
     return current_recipe()
 
