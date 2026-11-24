@@ -218,6 +218,9 @@ function tryAssetGen(name){
 }
 
 function go(tab, opts){
+  if(tab !== state.tab && typeof VIEW !== "undefined" && VIEW && VIEW.inline){
+    VIEW = {path:null, inline:false};
+  }
   Object.assign(state, opts||{}, {tab});
   if(tab === 'gen'){
     GEN.loaded = false;                 // 每次进生成台都重新读单元与确认状态
@@ -4077,8 +4080,7 @@ function render(){
   } else {
     html = (map[state.tab] || sStages)();
   }
-  const inlineInWorkflow = state.tab === "stages";
-  document.getElementById("app").innerHTML = statusBar() + html + (inlineInWorkflow ? "" : inlineViewer());
+  document.getElementById("app").innerHTML = statusBar() + html;
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
   if(state.candModal) showDraftModal();
   else {
