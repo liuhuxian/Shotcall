@@ -1049,11 +1049,15 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                     if jid in _jobs:
                         if _jobs[jid].get("status") in ("cancelled", "interrupted", "deleted"):
                             return False
+                        now = time.time()
+                        started_exec = _jobs[jid].get("execStartedAt") or t0
                         _jobs[jid].update({"status": "done",
                                            "queueState": None, "error": None,
                                            "file": str(out.relative_to(project)),
-                                           "renderSec": round(time.time() - t0, 1),
-                                           "finishedAt": time.time()})
+                                           # 只计真正开渲到出片，不含排队
+                                           "renderSec": round(now - started_exec, 1),
+                                           "queueWaitSec": round(started_exec - t0, 1) if t0 else 0,
+                                           "finishedAt": now})
                 _save()
                 return True
             # 不在队列里也不在历史里：连续 10 分钟才认为真的丢了

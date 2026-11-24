@@ -219,6 +219,15 @@ def main():
     check("批次记录可 JSON 序列化（高度是整数）", ok and isinstance(rec["params"]["height"], int),
           type(rec["params"]["height"]).__name__)
 
+    print("\n= 耗时口径 =")
+    import time as _t
+    dispatch, exec_start, finish = 1000.0, 2800.0, 3830.0
+    render = round(finish - exec_start, 1)
+    wait = round(exec_start - dispatch, 1)
+    check("耗时只算开渲到出片", render == 1030.0, render)
+    check("排队单独记", wait == 1800.0, wait)
+    check("耗时不含排队", render < (finish - dispatch), (render, finish - dispatch))
+
     print("\n= 参考图接线 =")
     g = vjobs.build_graph("p", 1344, 768, 328, 7, 20, ref_images=["a.png", "b.png"])
     h3 = [v for v in g.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]
