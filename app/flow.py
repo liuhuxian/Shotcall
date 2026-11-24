@@ -153,14 +153,21 @@ def _new_file(project: Path, step, scene=None):
 
 
 def _new_files(project: Path, step, scene=None):
-    known = {a.get("path") for a in _all(project)}
+    rows_all = _all(project)
+    known = {a.get("path") for a in rows_all}
+    known_versions = []
+    for a in rows_all:
+        v = _match(step, a.get("path", ""), scene)
+        if v is not None:
+            known_versions.append(v)
+    top = max(known_versions, default=0)
     rows = []
     for p in project.glob("**/*"):
         if not p.is_file() or p.suffix != ".md":
             continue
         rel = str(p.relative_to(project))
         ver = _match(step, rel, scene)
-        if ver is None or rel in known:
+        if ver is None or rel in known or ver <= top:
             continue
         rows.append((ver, p.stat().st_mtime, rel))
     rows.sort(key=lambda x: (x[0], x[1]), reverse=True)
