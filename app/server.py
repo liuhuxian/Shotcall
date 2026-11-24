@@ -1553,6 +1553,27 @@ class Handler(BaseHTTPRequestHandler):
                                     "kb": max(1, f.stat().st_size // 1024)})
             body = json.dumps({"files": out}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/candidates":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            asset = q.get("asset", [""])[0]
+            root = PROJECT / "07-图像资产/候选图片"
+            items = []
+            if root.is_dir():
+                for f in root.rglob("*"):
+                    if not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                        continue
+                    if asset and asset not in f.parts:
+                        continue
+                    try:
+                        rel = str(f.relative_to(PROJECT))
+                    except ValueError:
+                        continue
+                    items.append({"file": rel, "name": f.name, "asset": f.parent.name,
+                                  "sizeKB": round(f.stat().st_size / 1024),
+                                  "mtime": int(f.stat().st_mtime)})
+            items.sort(key=lambda x: x["mtime"], reverse=True)
+            self._send(200, json.dumps({"items": items}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/adopted":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             ep = q.get("ep", [current_episode()])[0]
@@ -1711,6 +1732,44 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/img/generate":
+            try:
+                body = self._json_body()
+                asset_id = str(body.get("asset") or "")
+                assets = assetsdb.build(PROJECT).get("assets") or []
+                asset = next((a for a in assets if a.get("id") == asset_id), None)
+                if not asset:
+                    raise ValueError("未知资产")
+                mode = str(body.get("mode") or "t2i")
+                prompt = str(body.get("prompt") or asset.get("prompt") or "").strip()
+                if not prompt:
+                    raise ValueError("缺提示词")
+                ref = body.get("ref") or None
+                if mode == "edit":
+                    if not ref:
+                        raise ValueError("改图必须选择一张底图")
+                    f = (PROJECT / ref).resolve()
+                    if not _inside(PROJECT, f) or not f.is_file():
+                        raise ValueError("底图不在项目内或不存在")
+                width = int(body.get("width") or imagegen.DEFAULT_W)
+                height = int(body.get("height") or imagegen.DEFAULT_H)
+                steps = int(body.get("steps") or imagegen.DEFAULT_STEPS)
+                n = max(1, min(4, int(body.get("n") or 1)))
+                it = {"id": asset_id, "name": asset.get("name") or asset_id,
+                      "prompt": prompt, "ref": ref, "n": n,
+                      "width": width, "height": height, "steps": steps,
+                      "seed": body.get("seed") if str(body.get("seed") or "").strip().isdigit() else None}
+                pf = imagegen.preflight([it], PROJECT)
+                if pf.get("blockers"):
+                    raise ValueError("预检阻断：" + "；".join(pf["blockers"]))
+                out = imgjobs.submit_batch(PROJECT, current_episode(), [it],
+                                           out_root="07-图像资产/候选图片")
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/img/cancel":
@@ -2094,13 +2153,25 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body = self._json_body()
                 ep = body.get("ep") or current_episode()
-                rec = {"ep": ep, "asset": body["asset"], "file": body["file"],
+                asset_id = str(body.get("asset") or "")
+                rel = str(body.get("file") or "")
+                if not asset_id or not rel:
+                    raise ValueError("asset/file 必填")
+                f = (PROJECT / rel).resolve()
+                if not _inside(PROJECT, f) or not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                    raise ValueError("候选图不在项目内或格式不对")
+                assets = assetsdb.build(PROJECT).get("assets") or []
+                asset = next((a for a in assets if a.get("id") == asset_id), None)
+                if not asset:
+                    raise ValueError("未知资产")
+                binding = assetsdb.write_binding(PROJECT, asset, rel)
+                rec = {"ep": ep, "asset": asset_id, "file": rel,
+                       "binding": str(binding.relative_to(PROJECT)),
                        "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 f = store.state_dir(PROJECT) / "图片采用.jsonl"
                 with open(f, "a", encoding="utf-8") as out:
                     out.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
-                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                self._send(200, json.dumps({"ok": True, "record": rec, "bindingFile": rec["binding"]},
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -2304,6 +2375,12 @@ def start_background():
             print("[resume] 重新排队：", resumed, flush=True)
     except Exception as e:
         print("[resume] 出错：", e, flush=True)
+    try:
+        ri = imgjobs.resume(PROJECT)
+        if ri:
+            print("[resume] 图片重新排队：", ri, flush=True)
+    except Exception as e:
+        print("[resume] 图片出错：", e, flush=True)
     threading.Thread(target=_video_recovery_loop, daemon=True).start()
 
 

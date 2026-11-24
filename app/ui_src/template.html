@@ -275,14 +275,14 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","工作流"],["flow","流程"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["gen","生成台"],["backend","算力"],["pending","待确认"],["verify","校验"]];
+    ["gen","生成台"],["img","出图"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
   }).join("");
 }
 
-const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", flow:"流程", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
+const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", flow:"流程", img:"出图", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
   r2:"审核三 · 分镜", shot:"单镜详情", checks:"检查", pick:"审核四 · 挑片", batch:"视频生成",
   img:"出图 · 资产", img2:"出图 · 分镜", export:"修改单"};
 
@@ -1396,6 +1396,119 @@ function sAssetsPage(){
   </div>
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
   ${groups}`;
+}
+
+/* ---------- 出图 / 改图 · 本地 H3 Image ---------- */
+let IMG2 = {data:null, sel:null, mode:'t2i', ref:null, jobs:[], cands:[], loading:false};
+
+async function loadImg2(force){
+  if(IMG2.data && !force) return IMG2.data;
+  IMG2.loading = true;
+  try{ IMG2.data = await (await fetch('/api/assets')).json(); }
+  catch(e){ IMG2.data={assets:[],_err:String(e)}; }
+  const list=(IMG2.data.assets||[]).filter(a=>a.type!=='voice' && (a.prompt||'').trim());
+  if(!IMG2.sel || !list.some(a=>a.id===IMG2.sel)) IMG2.sel = list[0] ? list[0].id : null;
+  await loadImg2Side();
+  IMG2.loading = false;
+  return IMG2.data;
+}
+
+async function loadImg2Side(){
+  IMG2.jobs=[]; IMG2.cands=[];
+  try{ IMG2.jobs=(await (await fetch('/api/img/jobs')).json()).jobs||[]; }catch(e){}
+  if(IMG2.sel){
+    try{ IMG2.cands=(await (await fetch('/api/img/candidates?asset='+encodeURIComponent(IMG2.sel))).json()).items||[]; }catch(e){}
+  }
+}
+
+function imgAsset(){ return ((IMG2.data&&IMG2.data.assets)||[]).find(a=>a.id===IMG2.sel) || null; }
+
+function imgRefOptions(a){
+  const opts=[];
+  if(a && a.binding && a.binding.image) opts.push({v:a.binding.image,label:'当前绑定 '+a.binding.version});
+  (IMG2.cands||[]).forEach(c=>opts.push({v:c.file,label:'候选 '+c.name}));
+  return opts;
+}
+
+async function generateImg(){
+  const a=imgAsset(); if(!a) return toast('先选资产');
+  const prompt=(document.getElementById('imgPrompt')||{}).value||'';
+  if(!prompt.trim()) return toast('提示词为空');
+  const mode=IMG2.mode;
+  const refSel=document.getElementById('imgRef');
+  const ref=mode==='edit'?(refSel?refSel.value:null):null;
+  if(mode==='edit' && !ref) return toast('改图要先选底图');
+  const body={asset:a.id, mode, prompt:prompt.trim(), ref,
+              n:parseInt((document.getElementById('imgN')||{}).value||'1'),
+              size:(document.getElementById('imgSize')||{}).value||'2656x1504',
+              steps:parseInt((document.getElementById('imgSteps')||{}).value||'8'),
+              seed:(document.getElementById('imgSeed')||{}).value||null};
+  const size=body.size.split('x'); body.width=parseInt(size[0]); body.height=parseInt(size[1]);
+  const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
+  toast('已提交 '+(j.jobs||[]).length+' 张：'+j.batch);
+  await loadImg2Side(); render();
+}
+
+async function adoptImg(file){
+  const a=imgAsset(); if(!a) return;
+  const r=await fetch('/api/img/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({asset:a.id,file,ep:'EP002'})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'采用失败');
+  toast('已采用并写新绑定：'+(j.bindingFile||''));
+  IMG2.data=null; AST.data=null; await loadImg2(true); render();
+}
+
+function sImageGen(){
+  if(!IMG2.data){ loadImg2().then(()=>render()); return '<div class="dim">读取资产…</div>'; }
+  const list=(IMG2.data.assets||[]).filter(a=>a.type!=='voice' && (a.prompt||'').trim());
+  if(!list.length) return '<div class="panel"><div class="pb dim">没有可出图的资产提示词（需要 07 资产文档里的「完整中文生成提示词」）。</div></div>';
+  const a=imgAsset()||list[0];
+  const opts=list.map(x=>`<option value="${x.id}" ${x.id===a.id?'selected':''}>${esc(x.id)} · ${esc(x.name)}</option>`).join("");
+  const refs=imgRefOptions(a);
+  const refOpts=refs.map(x=>`<option value="${esc(x.v)}">${esc(x.label)}</option>`).join("");
+  const jobs=(IMG2.jobs||[]).filter(j=>j.asset===a.id).slice(-8).reverse();
+  const jobRows=jobs.map(j=>`<tr><td class="mono dim" style="font-size:10px">${esc(j.id.slice(-18))}</td>
+    <td><span class="badge ${j.status==='done'?'b-ok':j.status==='failed'?'b-bad':'b-warn'}" style="font-size:9.5px">${esc(j.status)}</span></td>
+    <td class="dim mono" style="font-size:10px">${j.card!=null?'卡'+j.card:'—'}</td>
+    <td class="dim mono" style="font-size:10px">${j.seconds?j.seconds+'s':'—'}</td>
+    <td class="mono dim" style="font-size:10px">${esc((j.error||'').slice(0,80))}</td></tr>`).join("");
+  const cards=(IMG2.cands||[]).map(c=>`<div style="width:190px">
+    <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
+      style="width:100%;height:115px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+    <div class="dim mono" style="font-size:9.5px;margin-top:3px">${esc(c.name)}</div>
+    <button class="btn ok" style="font-size:9.5px;padding:1px 7px;margin-top:3px" onclick="adoptImg('${esc(c.file)}')">采用</button>
+  </div>`).join("");
+  return `<div class="panel" style="margin-bottom:12px">
+    <div class="ph"><span>出图 / 改图 · 本地 H3 Image</span><span class="dim">${esc(IMG2.data.doc||'')} · 候选图落 07-图像资产/候选图片</span></div>
+    <div class="pb">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <select onchange="IMG2.sel=this.value;IMG2.mode='t2i';loadImg2Side().then(()=>render())"
+          style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:5px 7px;min-width:280px">${opts}</select>
+        <span class="dim">模式</span>
+        <button class="btn ${IMG2.mode==='t2i'?'acc':'ghost'}" style="font-size:11px;padding:3px 9px" onclick="IMG2.mode='t2i';render()">文生图</button>
+        <button class="btn ${IMG2.mode==='edit'?'acc':'ghost'}" style="font-size:11px;padding:3px 9px" onclick="IMG2.mode='edit';render()">改图</button>
+        <span class="dim">${a.bound?'已绑定 '+esc((a.binding||{}).version||''):'未绑定'}</span>
+      </div>
+      ${IMG2.mode==='edit'?`<div style="margin-bottom:8px"><span class="dim">底图</span>
+        <select id="imgRef" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:5px 7px;min-width:320px">
+          ${refOpts||'<option value="">没有底图，请先出图或绑定</option>'}</select>
+        <span class="dim" style="font-size:10.5px">保留脸/体态/光向；只改你写的部分；输出单帧</span></div>`:''}
+      <textarea id="imgPrompt" style="width:100%;min-height:120px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6">${esc(a.prompt||'')}</textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <span class="dim">候选数</span><input id="imgN" type="number" min="1" max="4" value="1" style="width:48px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+        <span class="dim">尺寸</span><select id="imgSize" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+          <option value="2656x1504">16:9 2656×1504</option><option value="2048x1152">16:9 2048×1152</option><option value="1536x864">16:9 1536×864</option></select>
+        <span class="dim">步数</span><select id="imgSteps" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8">8</option><option value="6">6</option></select>
+        <span class="dim">种子</span><input id="imgSeed" placeholder="随机" style="width:100px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+        <button class="btn acc" style="font-size:11px;padding:4px 14px" onclick="generateImg()">提交生成</button>
+        <button class="btn ghost" style="font-size:11px;padding:4px 10px" onclick="loadImg2(true).then(()=>render())">刷新</button>
+      </div>
+    </div></div>
+  <div class="panel" style="margin-bottom:12px"><div class="ph"><span>候选图 · ${esc(a.id)}</span><span class="dim">${(IMG2.cands||[]).length} 张 · 采用会新写绑定快照</span></div>
+    <div class="pb" style="display:flex;gap:10px;flex-wrap:wrap">${cards||'<div class="dim" style="font-size:12px">还没有候选图。</div>'}</div></div>
+  <div class="panel"><div class="ph"><span>本资产最近任务</span><span class="dim">出图走 sched/ComfyUI；重启后续跑 queued</span></div>
+    <div class="pb">${jobRows?`<table><thead><tr><th>任务</th><th>状态</th><th>卡</th><th>耗时</th><th>错误</th></tr></thead><tbody>${jobRows}</tbody></table>`:'<div class="dim" style="font-size:12px">还没有任务。</div>'}</div></div>`;
 }
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
@@ -3288,6 +3401,8 @@ function render(){
     html = sShots();
   } else if (state.tab === "gen") {
     html = sGen();
+  } else if (state.tab === "img") {
+    html = sImageGen();
   } else if (state.tab === "history") {
     html = sHistory();
   } else if (state.tab === "backend") {

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """图像资产索引：解析 07-图像资产/assets-*.md 的资产条目与最新绑定快照。"""
+import hashlib
 import json
 import re
+import time
 from pathlib import Path
 
 ASSET_DIR = "07-图像资产"
@@ -101,6 +103,93 @@ def parse_ignored(project: Path) -> dict:
     return out
 
 
+def parse_prompts(project: Path) -> dict:
+    """从最新 assets-v*.md 的「完整中文生成提示词」取每项提示词；回退 project.json slot。"""
+    out = {}
+    f = latest_asset_doc(project)
+    if f:
+        txt = f.read_text(encoding="utf-8")
+        heads = list(re.finditer(r"^### ([A-Z]\d{2}(?:[-／][A-Za-z]+)?)｜(.+)$", txt, re.M))
+        for i, m in enumerate(heads):
+            body = txt[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(txt)]
+            pm = re.search(r"\*\*完整中文生成提示词\*\*\s*\n+(.*?)(?=\n\*\*|\n### |\n## |\Z)", body, re.S)
+            if not pm:
+                pm = re.search(r"\*\*完整描述符\*\*\s*\n+(.*?)(?=\n\*\*|\n### |\n## |\Z)", body, re.S)
+            if pm:
+                out[m.group(1)] = pm.group(1).strip()
+    fp = project / WB_PROJECT
+    try:
+        d = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        d = {}
+    for slot in d.get("slots") or []:
+        sid = slot.get("stateId") or slot.get("id")
+        if sid and sid not in out:
+            p = slot.get("prompt") or ""
+            if p:
+                out[sid] = p
+    return out
+
+
+def write_binding(project: Path, asset: dict, image_rel: str, version: str = None) -> Path:
+    """新增一份绑定快照（合并旧快照，只覆盖本资产），不覆盖既有文件。"""
+    root = project / ASSET_DIR
+    bind_dir = root / "资产绑定"
+    bind_dir.mkdir(parents=True, exist_ok=True)
+    files = sorted(bind_dir.glob("asset-bindings-*.md"))
+    header = "# 洋子工作台资产绑定\n\n按导演台采用记录生成的新快照；旧快照保留。\n"
+    blocks = []
+    old_id = ""
+    if files:
+        txt = files[-1].read_text(encoding="utf-8")
+        parts = re.split(r"(?m)^## ", txt)
+        header = parts[0].rstrip() + "\n"
+        blocks = ["## " + x for x in parts[1:]]
+        rev = 1
+        mm = re.search(r"-r(\d+)", files[-1].name)
+        if mm:
+            rev = int(mm.group(1)) + 1
+        for b in blocks:
+            if re.search(r"资产 ID：.*" + re.escape(asset["id"]), b) or re.search(r"状态ID：" + re.escape(asset["id"]), b):
+                old_id = re.search(r"资产 ID：(.+)", b).group(1).strip() if re.search(r"资产 ID：(.+)", b) else asset["id"]
+                break
+    else:
+        rev = 1
+    aid = old_id or asset["id"]
+    typ = {"character": "character", "scene": "scene", "prop": "prop",
+           "extra": "extra", "voice": "voice"}.get(asset.get("type"), asset.get("type", ""))
+    ver = version or asset.get("binding", {}).get("version") or "v1"
+    m = re.match(r"v(\d+)", str(ver))
+    ver = "v" + str((int(m.group(1)) if m else 0) + 1)
+    scenes = (asset.get("binding") or {}).get("scenes") or ""
+    sha = hashlib.sha256((project / image_rel).read_bytes()).hexdigest()
+    block = f"""## {asset.get('name','')}
+
+- 资产 ID：{aid}
+- 类型与状态：{typ} / {asset['id']}
+- 已采用版本：{ver}
+- 场次：{scenes}
+- 图片：{image_rel}
+- SHA256：{sha}
+- 来源：workbench
+"""
+    rep = False
+    for i, b in enumerate(blocks):
+        if re.search(r"资产 ID：.*" + re.escape(asset["id"]), b) or re.search(r"状态ID：" + re.escape(asset["id"]), b):
+            blocks[i] = block
+            rep = True
+            break
+    if not rep:
+        blocks.append(block)
+    out = bind_dir / f"asset-bindings-r{rev:06d}-{sha[:12]}.md"
+    k = 2
+    while out.exists():
+        out = bind_dir / f"asset-bindings-r{rev:06d}-{sha[:12]}-{k}.md"
+        k += 1
+    out.write_text(header.rstrip() + "\n\n" + "\n".join(blocks).strip() + "\n", encoding="utf-8")
+    return out
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     try:
@@ -115,6 +204,7 @@ def build(project: Path) -> dict:
                            "bound": bool(it.get("bound"))})
     except Exception:
         pass
+    prompts = parse_prompts(project)
     binds = parse_bindings(project)
     # 绑定键可能带 C01--C01-A，统一按短 ID 对齐
     short = {}
@@ -135,6 +225,7 @@ def build(project: Path) -> dict:
              or short.get(base) or short.get(base + "-A"))
         a["binding"] = b
         a["bound"] = bool(b and b.get("exists"))
+        a["prompt"] = prompts.get(a["id"]) or ""
     img = [a for a in assets if a.get("type") != "voice"]   # 图像资产口径保持 36 项
     vos = [a for a in assets if a.get("type") == "voice"]
     bound = sum(1 for a in img if a["bound"])

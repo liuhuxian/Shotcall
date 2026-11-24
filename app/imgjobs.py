@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""出图任务：提交、轮询、落盘。内存态，重启后不保留未完成任务。"""
+"""出图任务：提交、轮询、落盘；M3 起 JSON 持久化 + queued 续跑。"""
+import fcntl
 import json
+import os
 import random
 import re
 import threading
 import time
 import traceback
+import uuid
 from pathlib import Path
 
 import imagegen
@@ -15,6 +18,33 @@ import store
 _lock = threading.Lock()
 _jobs = {}          # job_id -> dict
 _order = []
+JOBS_FILE = Path(os.environ.get("SHOTCALL_IMGJOBS_FILE")
+                 or (Path(__file__).parent / "run" / "imgjobs.json"))
+TERMINAL = ("done", "failed", "cancelled")
+
+
+def _save():
+    try:
+        with _lock:
+            text = json.dumps({"order": list(_order),
+                               "jobs": {k: dict(v) for k, v in _jobs.items()}},
+                              ensure_ascii=False)
+        JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = JOBS_FILE.with_name(f"{JOBS_FILE.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:6]}")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, JOBS_FILE)
+    except Exception:
+        pass
+
+
+def _load():
+    try:
+        data = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    with _lock:
+        _jobs.update({k: v for k, v in (data.get("jobs") or {}).items()})
+        _order.extend(x for x in (data.get("order") or []) if x in _jobs)
 
 
 def _safe_name(name: str) -> str:
@@ -24,10 +54,9 @@ def _safe_name(name: str) -> str:
     return s[:24] or "未命名"
 
 
-def _job_dir(project: Path, ep: str, asset_id: str) -> Path:
-    """候选图落在项目内：剧集/<集号>/制作成果/图片候选/<资产>/
-    写不进去时退回状态目录（项目目录只读的沙箱环境）。"""
-    rel = Path("剧集") / ep / "制作成果" / "图片候选" / asset_id
+def _job_dir(project: Path, ep: str, asset_id: str, out_root: str = None) -> Path:
+    """候选图：出图页走 07-图像资产/候选图片/<资产>；旧链路走 剧集/<集>/制作成果。"""
+    rel = (Path(out_root) / asset_id) if out_root else (Path("剧集") / ep / "制作成果" / "图片候选" / asset_id)
     for base in (project, store.state_dir(project), Path(__file__).parent / "run"):
         d = base / rel if base == project else base / "img" / ep / asset_id
         try:
@@ -43,8 +72,7 @@ def _job_dir(project: Path, ep: str, asset_id: str) -> Path:
 
 def list_jobs(batch: str = None) -> list:
     with _lock:
-        items = [_jobs[j] for j in _order if not batch or _jobs[j]["batch"] == batch]
-    return items
+        return [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
 
 
 def cancel(ids: list) -> dict:
@@ -56,6 +84,7 @@ def cancel(ids: list) -> dict:
             if j and j["status"] == "queued":
                 j["status"] = "cancelled"
                 done.append(jid)
+    _save()
     return {"cancelled": done, "count": len(done)}
 
 
@@ -71,11 +100,15 @@ def clear_finished() -> int:
         for j in kill:
             _jobs.pop(j, None)
         _order[:] = [j for j in _order if j in _jobs]
+    _save()
     return len(kill)
 
 
-def submit_batch(project: Path, ep: str, items: list) -> dict:
-    """items: [{id,name,prompt,ref,n,width,height}]；卡由调度后端决定。"""
+def submit_batch(project: Path, ep: str, items: list, out_root: str = None) -> dict:
+    """items: [{id,name,prompt,ref,n,width,height}]；卡由调度后端决定。
+
+    out_root: 例如 07-图像资产/候选图片；None 时走旧 剧集/<ep>/制作成果。
+    """
     batch = time.strftime("IMG-%Y%m%d-%H%M%S")
     tasks = []
     for it in items:
@@ -85,21 +118,25 @@ def submit_batch(project: Path, ep: str, items: list) -> dict:
             job = {"id": jid, "batch": batch, "asset": it["id"],
                    "dir": f"{it['id']}-{_safe_name(it.get('name',''))}",
                    "name": it.get("name", ""), "card": None, "port": None,
-                   "seed": random.randint(1, 2 ** 31 - 1),
+                   "seed": (int(it["seed"]) + k) if it.get("seed") is not None
+                           else random.randint(1, 2 ** 31 - 1),
                    "status": "queued", "file": None, "promptId": None, "error": None,
                    "queuedAt": time.time(), "startedAt": None,
                    "width": it.get("width") or imagegen.DEFAULT_W,
                    "height": it.get("height") or imagegen.DEFAULT_H,
-                   "prompt": it["prompt"], "ref": it.get("ref")}
+                   "steps": int(it.get("steps") or imagegen.DEFAULT_STEPS),
+                   "prompt": it["prompt"], "ref": it.get("ref"),
+                   "ep": ep, "outRoot": out_root}
             with _lock:
                 _jobs[jid] = job
                 _order.append(jid)
-            tasks.append({"id": jid, "run": _make_runner(project, ep, jid)})
+            tasks.append({"id": jid, "run": _make_runner(project, ep, jid, out_root)})
+    _save()
     sched.submit("image", tasks)
     return {"batch": batch, "jobs": [t["id"] for t in tasks]}
 
 
-def _make_runner(project: Path, ep: str, jid: str):
+def _make_runner(project: Path, ep: str, jid: str, out_root: str = None):
     def run(port: int):
         with _lock:
             job = dict(_jobs.get(jid) or {})
@@ -109,17 +146,18 @@ def _make_runner(project: Path, ep: str, jid: str):
             _jobs[jid]["startedAt"] = time.time()
             _jobs[jid]["port"] = port
             _jobs[jid]["card"] = port - 8188
-        _execute(project, ep, jid, dict(_jobs[jid]))
+        _execute(project, ep, jid, dict(_jobs[jid]), out_root)
     return run
 
 
-def _execute(project: Path, ep: str, jid: str, job: dict):
+def _execute(project: Path, ep: str, jid: str, job: dict, out_root: str = None):
     try:
         ref = None
         if job.get("ref") and (project / job["ref"]).exists():
             ref = _stage_ref(job["port"], project / job["ref"])
         g = imagegen.build_graph(job["prompt"], job["width"], job["height"],
-                                 job["seed"], ref_image=ref)
+                                 job["seed"], ref_image=ref,
+                                 steps=int(job.get("steps") or imagegen.DEFAULT_STEPS))
         pid = imagegen.submit(job["port"], g)
         with _lock:
             _jobs[jid]["promptId"] = pid
@@ -131,12 +169,14 @@ def _execute(project: Path, ep: str, jid: str, job: dict):
                 if not imgs:
                     raise RuntimeError("任务完成但没有图")
                 data = imagegen.download(job["port"], imgs[0])
-                out = _job_dir(project, ep, job["dir"]) / f"{job['seed']}.png"
+                out_asset = (job.get("asset") if (job.get("outRoot") or out_root) else job["dir"])
+                out = _job_dir(project, ep, out_asset, job.get("outRoot") or out_root) / f"{job['seed']}.png"
                 out.write_bytes(data)
                 with _lock:
                     _jobs[jid]["status"] = "done"
                     _jobs[jid]["file"] = _rel(project, out)
                     _jobs[jid]["seconds"] = round(time.time() - t0, 1)
+                _save()
                 return
             time.sleep(3)
         raise RuntimeError("轮询超时")
@@ -145,6 +185,7 @@ def _execute(project: Path, ep: str, jid: str, job: dict):
             if jid in _jobs:
                 _jobs[jid]["status"] = "failed"
                 _jobs[jid]["error"] = f"{e}"
+        _save()
 
 
 def _rel(project: Path, out: Path) -> str:
@@ -175,3 +216,27 @@ def _stage_ref(port: int, path: Path):
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read().decode())
     return d.get("name") or name
+
+
+def resume(project: Path) -> list:
+    """重启后把 queued 图片任务重新交给调度；running 不重提（避免重复扣卡）。"""
+    todo = []
+    with _lock:
+        for jid in _order:
+            j = _jobs.get(jid) or {}
+            if j.get("status") == "queued" and jid not in sched.pending_ids():
+                todo.append(dict(j))
+    if not todo:
+        return []
+    tasks = []
+    for j in todo:
+        with _lock:
+            _jobs[j["id"]].update({"status": "queued", "error": None})
+        tasks.append({"id": j["id"], "run": _make_runner(project, j.get("ep") or "EP002",
+                                                          j["id"], j.get("outRoot")),
+                      "on_cancel": lambda reason, ids=[j["id"]]: cancel(ids)})
+    sched.submit("image", tasks)
+    return [t["id"] for t in tasks]
+
+
+_load()
