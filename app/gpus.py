@@ -22,8 +22,13 @@ def _get(port: int, path: str, timeout: float = 1.2):
         return json.loads(r.read().decode())
 
 
-def probe() -> list:
-    """返回所有能连上的实例所对应的卡，按卡号排序。"""
+_PROBE_CACHE = {"at": 0.0, "data": None}
+
+
+def probe(ttl: float = 0.0) -> list:
+    """返回所有能连上的实例所对应的卡，按卡号排序。ttl>0 时复用缓存。"""
+    if ttl and _PROBE_CACHE["data"] is not None and time.time() - _PROBE_CACHE["at"] < ttl:
+        return _PROBE_CACHE["data"]
     found = {}
     for port in PORTS:
         try:
@@ -66,13 +71,15 @@ def probe() -> list:
             "name": "（无实例）", "vramTotalGB": 0, "vramFreeGB": 0,
             "usedPct": 0, "queue": 0,
         })
+    _PROBE_CACHE["data"] = out
+    _PROBE_CACHE["at"] = time.time()
     return out
 
 
 def queue_of(port: int) -> dict:
     """返回 {running: 数量, pending: 数量, promptId: 当前任务}"""
     try:
-        q = _get(port, "/queue", timeout=1.5)
+        q = _get(port, "/queue", timeout=0.8)
     except Exception:
         return {"running": 0, "pending": 0, "promptId": None}
     run = q.get("queue_running") or []

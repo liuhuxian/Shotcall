@@ -784,17 +784,26 @@ def gen_history(include_deleted: bool = False) -> dict:
             "measured": len(known)}
 
 
+_QCACHE = {}
+
+
 def backend_state(project=None) -> dict:
     """算力页：只列**已启动**的实例。"""
-    cards = gpus.probe()
+    _dbg = bool(os.environ.get("SHOTCALL_DEBUG_TIMING"))
+    _tm = [("start", time.time())]
+    def _mark(k):
+        if _dbg:
+            _tm.append((k, time.time()))
+    cards = gpus.probe(ttl=2.0); _mark("probe")
     live = [c for c in cards if c["state"] != "offline"]
-    img_jobs = imgjobs.list_jobs(project=project)
-    vid_jobs = vjobs.list_jobs(project=project)
+    img_jobs = imgjobs.list_jobs(project=project); _mark("img_jobs")
+    vid_jobs = vjobs.list_jobs(project=project); _mark("vid_jobs")
     inst = []
+    _pids_map = comfyctl.pids_by_port([c["port"] for c in live])
     for c in live:
         port = c["port"]
-        st = comfywatch.instance_state(port)
-        pids = comfyctl._pids_on(port)
+        st = comfywatch.instance_state_fast(port); _mark(f"inst_state:{c['index']}")
+        pids = _pids_map.get(port) or []
         pid = pids[0] if pids else None
         started = None
         if pid:
@@ -813,7 +822,9 @@ def backend_state(project=None) -> dict:
                        "elapsed": round(time.time() - (j.get("startedAt") or time.time())),
                        "promptId": j.get("promptId")}
                 break
+        _mark(f"  a_pre_vram:{c['index']}")
         vm = comfywatch.vram(c["index"]) or {}
+        _mark(f"  b_vram:{c['index']}")
         inst.append({
             "card": c["index"], "port": port, "pid": pid,
             "uptimeSec": round(started) if started else None,
@@ -851,16 +862,21 @@ def backend_state(project=None) -> dict:
                          "card": j.get("card"), "frames": None, "seconds": None,
                          "queuedAt": j.get("queuedAt"), "startedAt": j.get("startedAt"),
                          "batch": j.get("batch")})
-    # 状态：以 ComfyUI 实际队列为准
+    # 状态：并发查各卡队列（单卡慢不拖整页），结果缓存 2 秒
     run_ids, pend_ids, card_of = set(), set(), {}
-    for c in cards:
-        if c["state"] == "offline":
-            continue
-        q = gpus.queue_of(c["port"])
+    _now = time.time()
+    if _now - _QCACHE.get("at", 0) > 5.0:
+        from concurrent.futures import ThreadPoolExecutor
+        _online = [c for c in cards if c["state"] != "offline"]
+        with ThreadPoolExecutor(max_workers=max(1, len(_online))) as _ex:
+            _qs = list(_ex.map(lambda c: (c["index"], gpus.queue_of(c["port"])), _online))
+        _QCACHE.clear(); _QCACHE["at"] = _now
+        _QCACHE["map"] = {idx: q for idx, q in _qs}
+    for idx, q in (_QCACHE.get("map") or {}).items():
         run_ids |= set(q.get("runningIds") or [])
         pend_ids |= set(q.get("pendingIds") or [])
         for pid in (q.get("runningIds") or []) + (q.get("pendingIds") or []):
-            card_of[pid] = c["index"]
+            card_of[pid] = idx
     for j in JOBS:
         pid = j.get("promptId")
         if pid and pid in run_ids:
@@ -884,16 +900,16 @@ def backend_state(project=None) -> dict:
         return RATE_20 * ((steps or 20) / 20.0)
 
     import re as _r
-    def count_results(scene, unit):
-        root = PROJECT / vjobs.RESULT_DIR / (scene or "N001")
-        if not root.is_dir():
-            return 0
-        n = 0
-        for f in root.rglob("*.mp4"):
+    _counts = {}
+    _root = PROJECT / vjobs.RESULT_DIR
+    if _root.is_dir():
+        for f in _root.rglob("*.mp4"):
             m = _r.match(r"(U\d{3})", f.stem)
-            if (m.group(1) if m else f.parent.name) == unit:
-                n += 1
-        return n
+            key = (f.parent.parent.name, (m.group(1) if m else f.parent.name))
+            _counts[key] = _counts.get(key, 0) + 1
+
+    def count_results(scene, unit):
+        return _counts.get((scene or "N001", unit), 0)
     seen = {}
     JOBS.sort(key=lambda x: (x.get("queuedAt") or 0))
     for j in JOBS:
@@ -917,6 +933,7 @@ def backend_state(project=None) -> dict:
         j["etaSec"] = round(max(0, total - el)) if (total and el and j["status"] == "running") else None
         j["execStartedAt"] = j.get("execStartedAt")
         j["waitSec"] = round(time.time() - (j.get("queuedAt") or time.time())) if j["status"] in ("waiting", "queued") else None
+    _mark("jobs_build")
     JOBS.sort(key=lambda x: (x["status"] not in ("running",), x.get("queuedAt") or 0))
     # 8 张卡全景（用户手动管理算力时用）
     inst_by_card = {i["card"]: i for i in inst}
@@ -939,6 +956,12 @@ def backend_state(project=None) -> dict:
             "hasInstance": c["index"] in inst_by_card,
             "instance": inst_by_card.get(c["index"]),
         })
+    _mark("rate")
+    if _dbg:
+        prev = None
+        for k, v in _tm:
+            print(f"[timing-detail] {k:<16} {(v - (prev if prev else v)):.2f}s", flush=True)
+            prev = v
     return {"ratePerFrame": round(RATE_20, 2),
             "instances": inst, "cards": all_cards, "jobs": JOBS, "startable": startable,
             "summary": {"instances": len(inst),
@@ -1506,8 +1529,15 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         elif path == "/api/backend":
-            self._send(200, json.dumps(backend_state(PROJECT), ensure_ascii=False).encode("utf-8"),
-                       "application/json; charset=utf-8")
+            _t0 = time.time()
+            _st = backend_state(PROJECT)
+            _t1 = time.time()
+            _body = json.dumps(_st, ensure_ascii=False).encode("utf-8")
+            _t2 = time.time()
+            if os.environ.get("SHOTCALL_DEBUG_TIMING"):
+                print(f"[timing] backend_state={_t1-_t0:.2f}s dump={_t2-_t1:.2f}s",
+                      flush=True)
+            self._send(200, _body, "application/json; charset=utf-8")
         elif path == "/api/backend/log":
             q7 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             card = int(q7.get("card", ["0"])[0])

@@ -35,6 +35,25 @@ def _alive(port: int) -> bool:
         return False
 
 
+def pids_by_port(ports) -> dict:
+    """一次扫 /proc，返回 {port: [pid,...]}；避免每张卡各扫一遍。"""
+    want = {int(p): [] for p in ports}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            parts = [p for p in open(f"/proc/{pid}/cmdline", "rb")
+                     .read().decode("utf-8", "ignore").split("\x00") if p]
+        except Exception:
+            continue
+        if len(parts) > 1 and parts[0].endswith("python") and parts[1] == "main.py":
+            if "--port" in parts:
+                port = parts[parts.index("--port") + 1]
+                if port.isdigit() and int(port) in want:
+                    want[int(port)].append(int(pid))
+    return want
+
+
 def _pids_on(port: int) -> list:
     out = []
     for pid in os.listdir("/proc"):

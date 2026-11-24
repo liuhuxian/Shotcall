@@ -181,6 +181,14 @@ def _sample_vram():
         time.sleep(max(0.1, VRAM_INTERVAL - (time.time() - t0)))
 
 
+def instance_state_fast(port: int) -> dict:
+    """不抢锁的只读快照；watcher 正在写时也不会阻塞页面。"""
+    d = _state.get(port) or {}
+    return {"progress": d.get("progress"), "executing": d.get("executing"),
+            "queue": dict(d.get("queue") or {"run": 0, "pend": 0}),
+            "error": d.get("error"), "updated": d.get("updated")}
+
+
 def instance_state(port: int) -> dict:
     st = _s(port)
     return {"progress": st.get("progress"), "executing": st.get("executing"),
