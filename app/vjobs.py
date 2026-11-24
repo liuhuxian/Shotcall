@@ -229,7 +229,7 @@ def parse_units(project: Path, scene: str) -> list:
         return []
     txt = f.read_text(encoding="utf-8")
     out = []
-    for m in re.finditer(r"^### (U\d{3})｜(\d+)秒｜([^\n]+)\n(.*?)(?=^### |\Z)", txt, re.S | re.M):
+    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+)秒｜([^\n]+)\n(.*?)(?=^### |\Z)", txt, re.S | re.M):
         body = m.group(4)
         pm = re.search(r"```text\n(.*?)```", body, re.S)
         out.append({

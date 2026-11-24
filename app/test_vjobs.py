@@ -147,6 +147,17 @@ def main():
     check("无参考图时不接 LoadImage",
           not [v for v in g0.values() if v["class_type"] == "LoadImage"])
 
+    print("\n= 带后缀的单元编号 =")
+    d2 = tmp / vjobs.VP_DIR / "N002"
+    d2.mkdir(parents=True)
+    (d2 / "minimax-h3-ref2va-v009.md").write_text(
+        "# 测试\n\n### U001-A｜6秒｜SH001\n\n```text\nsubject_definitions: x\n```\n\n"
+        "### U001-B｜5秒｜SH002\n\n```text\nsubject_definitions: y\n```\n", encoding="utf-8")
+    us = vjobs.parse_units(tmp, "N002")
+    check("能解析 U001-A / U001-B", [u["id"] for u in us] == ["U001-A", "U001-B"],
+          [u["id"] for u in us])
+    check("时长正确", [u["seconds"] for u in us] == [6, 5], [u["seconds"] for u in us])
+
     print("\n= 提示词文件选择 =")
     d = tmp / "N001"
     d.mkdir()
