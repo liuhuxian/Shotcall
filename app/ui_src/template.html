@@ -2168,7 +2168,14 @@ async function saveAgentCfg(){
 async function loadFlow(scene, force){
   if(!force && FLOW.data && FLOW.scene===scene) return FLOW.data;
   FLOW.loading = true;
-  try{ FLOW.data = await (await fetch('/api/workflow/steps?scene='+encodeURIComponent(scene))).json(); FLOW.scene=scene; }
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 20000);
+    const r = await fetch('/api/workflow/steps?scene='+encodeURIComponent(scene), {signal: ctl.signal});
+    clearTimeout(timer);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    FLOW.data = await r.json(); FLOW.scene = scene;
+  }
   catch(e){ FLOW.data={steps:[],error:String(e)}; }
   FLOW.loading = false;
   return FLOW.data;
@@ -2259,13 +2266,15 @@ async function skipFlow(key){
 
 function pickFlow(key){ FLOW.sel=key; render(); }
 
-function sFlow(){
+function sFlow(onlyStage){
   const d=SCN.data;
+  if(onlyStage && (!FLOW.data || !SCN.data)) return '<div class="dim" style="font-size:12px">读取流程…</div>';
   if(!d){ loadScenes().then(()=>render()); return '<div class="dim">读取场次…</div>'; }
   const scene = state.scene && d.scenes.some(x=>x.id===state.scene) ? state.scene : 'N001';
   state.scene = scene;
   if(!FLOW.data || FLOW.scene!==scene){ loadFlow(scene).then(()=>render()); return '<div class="dim">读取流程…</div>'; }
-  const steps=FLOW.data.steps||[];
+  const steps=(FLOW.data.steps||[]).filter(s=>!onlyStage || String(s.key).slice(0,2)===onlyStage);
+  if(onlyStage && !steps.length) return '<div class="dim" style="font-size:12px;margin:10px 0">该阶段没有派发流程（只登记成果）。</div>';
   let sel = FLOW.sel && steps.some(x=>x.key===FLOW.sel) ? FLOW.sel : null;
   if(!sel){
     const auto=steps.find(x=>(x.newFiles||[]).length || (x.versions||[]).some(v=>v.statusText==='草稿待确认'));
@@ -2332,6 +2341,7 @@ function sFlow(){
         </details>
       </div></div>`;
   }).join("");
+  if(onlyStage) return cards;
   if(!AGCFG){ loadAgentConfig().then(()=>render()); }
   return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
     ${agentCtl()}
@@ -2352,16 +2362,15 @@ function sFlow(){
 
 /* ---------- 阶段看板 ---------- */
 function sStages(){
-  const wf = state.wf || 'flow';
-  const wfBar = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-    <button class="btn ${wf==='flow'?'acc':'ghost'}" style="font-size:11px;padding:3px 12px" onclick="go('stages',{wf:'flow'})">流程 · 提示词/登记</button>
-    <button class="btn ${wf==='stages'?'acc':'ghost'}" style="font-size:11px;padding:3px 12px" onclick="go('stages',{wf:'stages'})">阶段 · 成果登记</button>
-    <span class="dim" style="font-size:11px">同一个「工作流」入口；流程负责派发/登记，阶段负责看已登记成果</span>
-  </div>`;
-  if(wf === 'flow') return wfBar + sFlow();
+  const wf = state.wf;          // 兼容旧链接，忽略
+  if(!SCN.data){ loadScenes().then(()=>render()); }
+  const sceneNow = (state.scene && (SCN.data?.scenes||[]).some(x=>x.id===state.scene)) ? state.scene : 'N001';
+  state.scene = sceneNow;
+  if((!FLOW.data || FLOW.scene !== sceneNow) && !FLOW.loading){ loadFlow(sceneNow).then(()=>render()); }
+  if(!AGCFG){ loadAgentConfig().then(()=>render()); }
   const d = STG.data;
-  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return wfBar + `<div class="dim">读取成果登记…</div>`; }
-  if(!d.exists) return wfBar + `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取成果登记…</div>`; }
+  if(!d.exists) return `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
     <div><b>没有找到成果登记表</b><div class="dim" style="font-size:12px">${esc(d.registryPath||"00-项目管理/artifact-state.json")}</div></div></div>`;
   const stages = d.stages||[];
   const sel = state.stage && stages.some(s=>s.no===state.stage)
@@ -2371,7 +2380,7 @@ function sStages(){
     const color = STAGE_COLOR[st.state] || "var(--dim)";
     const on = st.no === sel;
     const last = i === stages.length-1;
-    return `<div onclick="go('stages',{wf:'stages',stage:'${st.no}'})"
+    return `<div onclick="go('stages',{stage:'${st.no}'})"
       style="display:flex;gap:10px;cursor:pointer;align-items:flex-start">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
         <div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -2387,13 +2396,29 @@ function sStages(){
     </div>`;
   }).join("");
 
+  const sceneTabs = ((SCN.data && SCN.data.scenes) || []).map(x=>
+    `<span onclick="go('stages',{scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
+      border:1px solid ${x.id===sceneNow?'var(--acc)':'var(--line)'};color:${x.id===sceneNow?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
+
+  const flowCards = FLOW.data ? sFlow(sel) : '<div class="dim" style="font-size:12px">读取流程…</div>';
   const detail = sStageBody(sel);
-  return wfBar + `<div style="display:flex;gap:16px;align-items:flex-start">
+  return `<div style="display:flex;gap:16px;align-items:flex-start">
     <div class="panel" style="width:260px;flex-shrink:0">
       <div class="ph"><span>工作流</span><span class="dim">00 → 09</span></div>
       <div class="pb" style="padding:14px 14px 0">${rail}</div>
     </div>
-    <div style="flex:1;min-width:0">${detail}${inlineViewer()}</div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        ${sceneTabs}
+        <span style="flex:1"></span>
+        <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
+        <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>
+      </div>
+      ${agentCtl()}
+      ${flowCards}
+      <div style="height:12px"></div>
+      ${detail}${inlineViewer()}
+    </div>
   </div>`;
 }
 
