@@ -1940,11 +1940,11 @@ class Handler(BaseHTTPRequestHandler):
                         fp = PROJECT / rp
                         sha = None
                         if fp.is_file():
-                            h = hashlib.sha256()
+                            hasher = hashlib.sha256()      # 勿用 h：h 已是画幅高度
                             with open(fp, "rb") as fh:
                                 for chunk in iter(lambda: fh.read(1 << 20), b""):
-                                    h.update(chunk)
-                            sha = h.hexdigest()
+                                    hasher.update(chunk)
+                            sha = hasher.hexdigest()
                         refs.append({"path": rp, "sha256": sha, "exists": fp.is_file()})
                 recipe = vjobs.current_recipe()
                 batch_rec = {
@@ -1995,6 +1995,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps(res, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
+                import traceback as _tb
+                _tb.print_exc()
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return

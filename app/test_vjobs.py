@@ -204,6 +204,21 @@ def main():
           and vjobs._jobs[b2]["afterIds"] == [j for j in r2["jobs"] if "U001-A" in j],
           (vjobs._jobs[b1]["afterIds"], vjobs._jobs[b2]["afterIds"]))
 
+    print("\n= 批次记录序列化 =")
+    import json as _json, hashlib as _hashlib
+    w, h = 1344, 768
+    hasher = _hashlib.sha256()
+    hasher.update(b"x")
+    rec = {"params": {"steps": 20, "width": w, "height": h, "seed": None},
+           "refs": [{"path": "a.png", "sha256": hasher.hexdigest(), "exists": True}]}
+    try:
+        _json.dumps(rec, ensure_ascii=False)
+        ok = True
+    except TypeError:
+        ok = False
+    check("批次记录可 JSON 序列化（高度是整数）", ok and isinstance(rec["params"]["height"], int),
+          type(rec["params"]["height"]).__name__)
+
     print("\n= 参考图接线 =")
     g = vjobs.build_graph("p", 1344, 768, 328, 7, 20, ref_images=["a.png", "b.png"])
     h3 = [v for v in g.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]
