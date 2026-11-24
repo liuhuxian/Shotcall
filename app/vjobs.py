@@ -54,6 +54,17 @@ RECIPES = {
     "base12":   {"label": "原模型 12 步（快测）",     "lora": None, "steps": 12},
     "turbo4":   {"label": "turbo_4step LoRA · 4 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 4},
     "turbo8":   {"label": "turbo_4step LoRA · 8 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 8},
+    "progressive": {
+        "label": "渐进采样 · er_sde · 15 段 sigma",
+        "lora": None, "steps": 15,
+        "sigmas": "1, 0.99, 0.975, 0.95, 0.915, 0.87, 0.81, 0.735, 0.645, 0.545, 0.435, 0.325, 0.22, 0.13, 0.055, 0",
+        "sampler": "er_sde",
+        "attention": {"backend": "pytorch attention", "selection": "sol-attn", "tau": 1.3,
+                      "start_percent": 0.2, "end_percent": 1.0, "dense_blocks": "",
+                      "min_tokens": 12288, "extra_tokens": 256,
+                      "sink_conditioning": "exact_kv_and_rows", "verbose": True},
+        "refSize": "max",
+    },
 }
 
 
@@ -69,6 +80,7 @@ def current_recipe() -> dict:
         return {"name": name, "label": saved.get("label") or name,
                 "lora": saved.get("lora"), "steps": saved["steps"],
                 "sigmas": saved.get("sigmas"), "sampler": saved.get("sampler"),
+                "attention": saved.get("attention"),
                 "res": saved.get("res"), "refSize": saved.get("refSize"),
                 "source": saved.get("source")}
     return {"name": "base20", **RECIPES["base20"]}
@@ -571,7 +583,8 @@ def list_jobs(batch: str = None) -> list:
 
 
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
-                ref_images: list = None, lora: str = None) -> dict:
+                ref_images: list = None, lora: str = None, sigmas: str = None,
+                sampler: str = None, attention: dict = None, ref_size: str = "match") -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
@@ -580,8 +593,8 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
         "5": {"class_type": "MiniMaxH3ReferenceToVideo", "inputs": {
             "clip": ["2", 0], "vae": ["3", 0], "audio_vae": ["4", 0],
             "prompt": prompt, "width": width, "height": height,
-            "length": frames, "ref_image_size": "match"}},
-        "6": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
+            "length": frames, "ref_image_size": ref_size}},
+        "6": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler or "res_multistep"}},
         "7": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple",
                                                          "steps": steps, "denoise": 1.0}},
         "8": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["5", 0]}},
@@ -595,12 +608,34 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
         "14": {"class_type": "SaveVideo", "inputs": {"video": ["13", 0], "filename_prefix": "gen/unit",
                                                      "format": "auto", "codec": "auto"}},
     }
+    model_src = ["1", 0]
     if lora:
         # 加速 LoRA：接在 UNET 之后，模型输入改指向 LoRA 输出
         g["20"] = {"class_type": "LoraLoaderModelOnly",
                    "inputs": {"model": ["1", 0], "lora_name": lora, "strength_model": 1.0}}
-        g["7"]["inputs"]["model"] = ["20", 0]
-        g["8"]["inputs"]["model"] = ["20", 0]
+        model_src = ["20", 0]
+    if attention:
+        g["21"] = {"class_type": "ModelAttentionBackend",
+                   "inputs": {"model": model_src, "attention": attention.get("backend", "pytorch attention")}}
+        g["22"] = {"class_type": "BlockSparseAttention", "inputs": {
+            "model": ["21", 0],
+            "selection": attention.get("selection", "sol-attn"),
+            "tau": attention.get("tau", 1.3),
+            "start_percent": attention.get("start_percent", 0.2),
+            "end_percent": attention.get("end_percent", 1.0),
+            "dense_blocks": attention.get("dense_blocks", ""),
+            "min_tokens": attention.get("min_tokens", 12288),
+            "extra_tokens": attention.get("extra_tokens", 256),
+            "sink_conditioning": attention.get("sink_conditioning", "exact_kv_and_rows"),
+            "verbose": attention.get("verbose", True)}}
+        model_src = ["22", 0]
+    if sigmas:                      # 手写 sigma 曲线：替换 BasicScheduler
+        g["23"] = {"class_type": "ManualSigmas", "inputs": {"sigmas": sigmas}}
+        g["10"]["inputs"]["sigmas"] = ["23", 0]
+        g.pop("7", None)
+    if "7" in g:
+        g["7"]["inputs"]["model"] = model_src
+    g["8"]["inputs"]["model"] = model_src
     for i, name in enumerate(ref_images or []):
         nid = str(40 + i)
         g[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
@@ -650,6 +685,10 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
                    "lora": current_recipe().get("lora"),
+                   "sigmas": current_recipe().get("sigmas"),
+                   "sampler": current_recipe().get("sampler"),
+                   "attention": current_recipe().get("attention"),
+                   "refSize": current_recipe().get("refSize"),
                    "recipe": current_recipe().get("name"),
                    "seed": (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1),
                    "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
@@ -691,7 +730,9 @@ def _execute(project: Path, jid: str, job: dict):
         _save()
         g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
                         job["seed"], job["steps"], ref_images=ref_names,
-                        lora=job.get("lora"))
+                        lora=job.get("lora"), sigmas=job.get("sigmas"),
+                        sampler=job.get("sampler"), attention=job.get("attention"),
+                        ref_size=job.get("refSize") or "match")
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:

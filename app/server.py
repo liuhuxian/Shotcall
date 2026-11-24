@@ -378,9 +378,6 @@ def _probe_video(f: Path) -> dict:
 
 WF_DIR = Path("/checkpoints/huxian/h3/ComfyUI/user/default/workflows")
 UNSUPPORTED = {
-    "ManualSigmas": "自定义 sigma 曲线（渐进采样）",
-    "BlockSparseAttention": "注意力后端节点",
-    "ModelAttentionBackend": "注意力后端节点",
     "SplitSigmas": "分段采样",
 }
 
@@ -417,6 +414,7 @@ def scan_workflows() -> list:
         if sched and len(sched.get("widgets_values") or []) >= 2:
             steps = sched["widgets_values"][1]
         blockers = [why for node, why in UNSUPPORTED.items() if node in types]
+        progressive = "ManualSigmas" in types and types.count("SamplerCustomAdvanced") == 1
         if types.count("SamplerCustomAdvanced") > 1:
             blockers.append("多段采样（%d 个采样器）" % types.count("SamplerCustomAdvanced"))
 
@@ -467,6 +465,9 @@ def scan_workflows() -> list:
             "mtime": int(f.stat().st_mtime),
             "nodes": len(nodes), "model": model, "steps": steps, "lora": lora,
             "variants": variants, "active": active,
+            "progressive": progressive,
+            "sigmas": (next(((n.get("widgets_values") or [None])[0] for n in nodes
+                             if n.get("type") == "ManualSigmas"), None) if progressive else None),
             "sampler": sampler, "width": width, "height": height, "refSize": ref_size,
             "ok": not blockers, "blockers": blockers,
         })
@@ -1590,11 +1591,18 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("找不到该工作流")
                     if not wf["ok"]:
                         raise ValueError("工作台无法复刻：" + "；".join(wf["blockers"]))
-                    cur = vjobs.save_recipe({"name": wf["file"].replace(".json", ""),
-                                             "label": wf["file"].replace(".json", ""),
-                                             "steps": wf["steps"], "lora": wf["lora"],
-                                             "res": [wf["width"], wf["height"]] if wf["width"] else None,
-                                             "refSize": wf["refSize"], "source": "comfyui"})
+                    spec = {"name": wf["file"].replace(".json", ""),
+                            "label": wf["file"].replace(".json", ""),
+                            "steps": wf["steps"] or 15, "lora": wf["lora"],
+                            "res": [wf["width"], wf["height"]] if wf["width"] else None,
+                            "refSize": wf["refSize"] or "match", "source": "comfyui"}
+                    if wf.get("progressive"):
+                        base = vjobs.RECIPES["progressive"]
+                        spec.update({"sigmas": wf.get("sigmas") or base["sigmas"],
+                                     "sampler": wf.get("sampler") or base["sampler"],
+                                     "attention": base["attention"]})
+                        spec["steps"] = max(1, len(str(spec["sigmas"]).split(",")) - 1)
+                    cur = vjobs.save_recipe(spec)
                     self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
                                "application/json; charset=utf-8")
                     return
