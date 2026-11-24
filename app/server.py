@@ -557,6 +557,27 @@ UNSUPPORTED = {
 }
 
 
+
+def _resolve_canvas(nodes: list):
+    """有 ResolutionSelector 时按它算画布（比例 + 百万像素 + 32 倍数）。"""
+    sel = next((n for n in nodes if n.get("type") == "ResolutionSelector"), None)
+    if not sel:
+        return None
+    w = sel.get("widgets_values") or []
+    if len(w) < 3:
+        return None
+    ar_raw, mp, mult = str(w[0]), float(w[1] or 0), int(w[2] or 32)
+    m = re.match(r"(\d+):(\d+)", ar_raw)
+    if not m or mp <= 0 or mult <= 0:
+        return None
+    aw, ah = int(m.group(1)), int(m.group(2))
+    total = mp * 1024 * 1024                      # 该节点以 1024×1024 为 1MP
+    h = (total / (aw / ah)) ** 0.5
+    width = round(h * aw / ah / mult) * mult
+    height = round(h / mult) * mult
+    return width, height
+
+
 def scan_workflows() -> list:
     """扫描 ComfyUI 已保存工作流，判断工作台能否复刻。"""
     out = []
@@ -580,10 +601,14 @@ def scan_workflows() -> list:
         h3 = next((n for n in nodes if n.get("type") == "MiniMaxH3ReferenceToVideo"), None)
         sched = next((n for n in nodes if n.get("type") == "BasicScheduler"), None)
         lora = first_widget("LoraLoaderModelOnly")
+        lora_strength = None
         sampler = first_widget("KSamplerSelect")
         hw = h3.get("widgets_values") if h3 else None
         width = hw[1] if hw and len(hw) > 3 else None
         height = hw[2] if hw and len(hw) > 3 else None
+        canvas = _resolve_canvas(nodes)
+        if canvas:
+            width, height = canvas          # 有分辨率选择器时以它为准
         ref_size = hw[4] if hw and len(hw) > 4 else None
         steps = None
         if sched and len(sched.get("widgets_values") or []) >= 2:
@@ -612,7 +637,9 @@ def scan_workflows() -> list:
             chosen = src_of(sw, "on_true" if flag else "on_false")
             chosen_type = (chosen or {}).get("type")
             if chosen_type == "LoraLoaderModelOnly":
-                lora = (chosen.get("widgets_values") or [None])[0]
+                lw = chosen.get("widgets_values") or [None]
+                lora = lw[0]
+                lora_strength = lw[1] if len(lw) > 1 else None
             elif chosen_type == "UNETLoader":
                 lora = None
             # 步数：找到 BasicScheduler 的 steps 输入来源
@@ -628,6 +655,23 @@ def scan_workflows() -> list:
                 steps = (variants or {}).get(want)
             variants = variants or {}
             variants["switchOn"] = flag
+        # 以 BasicScheduler 的实际模型链为准，取真正生效的 LoRA 与强度
+        if sched:
+            node, hops = src_of(sched, "model"), 0
+            while node is not None and hops < 8:
+                tname = node.get("type")
+                if tname == "LoraLoaderModelOnly":
+                    lw = node.get("widgets_values") or []
+                    lora = lw[0] if lw else lora
+                    lora_strength = lw[1] if len(lw) > 1 else lora_strength
+                    node = src_of(node, "model")
+                elif tname == "ComfySwitchNode":
+                    flag2 = bool((src_of(node, "switch") or {}).get("widgets_values", [False])[0])
+                    node = src_of(node, "on_true" if flag2 else "on_false")
+                else:
+                    break
+                hops += 1
+
         active = ("LoRA 支 · %d 步" % steps) if lora else ("裸模型支 · %d 步" % steps if steps else "—")
         if not (model and "ref2va" in str(model)):
             blockers.append("不是 Ref2VA 视频工作流")
@@ -639,6 +683,7 @@ def scan_workflows() -> list:
             "file": f.name, "sizeKB": round(f.stat().st_size / 1024),
             "mtime": int(f.stat().st_mtime),
             "nodes": len(nodes), "model": model, "steps": steps, "lora": lora,
+            "loraStrength": lora_strength,
             "variants": variants, "active": active,
             "progressive": progressive,
             "sigmas": (next(((n.get("widgets_values") or [None])[0] for n in nodes
@@ -2447,6 +2492,7 @@ class Handler(BaseHTTPRequestHandler):
                     spec = {"name": wf["file"].replace(".json", ""),
                             "label": wf["file"].replace(".json", ""),
                             "steps": wf["steps"] or 15, "lora": wf["lora"],
+                            "loraStrength": wf.get("loraStrength"),
                             "res": [wf["width"], wf["height"]] if wf["width"] else None,
                             "refSize": wf["refSize"] or "match", "source": "comfyui"}
                     if wf.get("progressive"):

@@ -121,7 +121,8 @@ def current_recipe() -> dict:
         return {"name": name, **RECIPES[name]}
     if saved.get("steps"):                       # 从 ComfyUI 工作流导入的自定义配方
         return {"name": name, "label": saved.get("label") or name,
-                "lora": saved.get("lora"), "steps": saved["steps"],
+                "lora": saved.get("lora"), "loraStrength": saved.get("loraStrength"),
+                "steps": saved["steps"],
                 "sigmas": saved.get("sigmas"), "sampler": saved.get("sampler"),
                 "attention": saved.get("attention"),
                 "res": saved.get("res"), "refSize": saved.get("refSize"),
@@ -724,7 +725,7 @@ def list_jobs(batch: str = None, project=None) -> list:
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
                 ref_images: list = None, lora: str = None, sigmas: str = None,
                 sampler: str = None, attention: dict = None, ref_size: str = "match",
-                ref_audios: list = None) -> dict:
+                ref_audios: list = None, lora_strength: float = None) -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
@@ -752,7 +753,8 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
     if lora:
         # 加速 LoRA：接在 UNET 之后，模型输入改指向 LoRA 输出
         g["20"] = {"class_type": "LoraLoaderModelOnly",
-                   "inputs": {"model": ["1", 0], "lora_name": lora, "strength_model": 1.0}}
+                   "inputs": {"model": ["1", 0], "lora_name": lora,
+                              "strength_model": 1.0 if lora_strength is None else float(lora_strength)}}
         model_src = ["20", 0]
     if attention:
         g["21"] = {"class_type": "ModelAttentionBackend",
@@ -818,7 +820,8 @@ def build_i2v_graph(prompt: str, width: int, height: int, frames: int, seed: int
     model_src = ["1", 0]
     if lora:
         g["20"] = {"class_type": "LoraLoaderModelOnly",
-                   "inputs": {"model": ["1", 0], "lora_name": lora, "strength_model": 1.0}}
+                   "inputs": {"model": ["1", 0], "lora_name": lora,
+                              "strength_model": 1.0 if lora_strength is None else float(lora_strength)}}
         model_src = ["20", 0]
     if attention:
         g["21"] = {"class_type": "ModelAttentionBackend",
@@ -895,7 +898,8 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "prevUnit": item.get("prevUnit"),
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
-                   "lora": recipe.get("lora"), "sigmas": recipe.get("sigmas"),
+                   "lora": recipe.get("lora"), "loraStrength": recipe.get("loraStrength"),
+                   "sigmas": recipe.get("sigmas"),
                    "sampler": recipe.get("sampler"), "attention": recipe.get("attention"),
                    "refSize": recipe.get("refSize"), "recipe": recipe.get("name"),
                    "seed": seed_i,
@@ -1010,7 +1014,7 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                             lora=job.get("lora"), sigmas=job.get("sigmas"),
                             sampler=job.get("sampler"), attention=job.get("attention"),
                             ref_size=job.get("refSize") or "match",
-                            ref_audios=audio_names)
+                            ref_audios=audio_names, lora_strength=job.get("loraStrength"))
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:
