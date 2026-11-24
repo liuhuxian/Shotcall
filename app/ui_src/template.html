@@ -1305,7 +1305,7 @@ function sScenes(){
       <td class="dim mono" style="text-align:center">${x.duration? x.duration+'s' : '—'}</td>
       <td style="text-align:center">${x.acting?'<span class="badge b-ok" style="font-size:10px">表演</span>':'<span class="dim">—</span>'}</td>
       <td style="text-align:center">${x.planned?'<span class="badge b-acc" style="font-size:10px">规划</span>':'<span class="dim">—</span>'}</td>
-      <td style="text-align:center">${x.videos?`<span class="badge b-ok" style="font-size:10px">${x.videos} 片</span>`:'<span class="dim">—</span>'}</td>
+      <td style="text-align:center">${x.videos?`<span class="badge b-ok" style="font-size:10px">有片 ${x.videos}</span>`:'<span class="dim">—</span>'}</td>
       <td style="width:110px"><div class="bar" style="margin:0"><i style="width:${pct}%;background:${color}"></i></div>
         <div class="dim" style="font-size:10px;margin-top:3px">${STAGE_STEPS[x.stage]||''}</div></td>
     </tr>`;
@@ -1314,7 +1314,7 @@ function sScenes(){
   <div class="grid4" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">场次</div><div class="kpi">${s.scenes||0}<small>场</small></div></div>
     <div class="card"><div class="muted" style="font-size:12px">已拆镜</div><div class="kpi">${s.planned||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">已出片</div><div class="kpi" style="color:var(--ok)">${s.withVideo||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">有片场次</div><div class="kpi" style="color:var(--ok)">${s.withVideo||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">已拆镜总时长</div><div class="kpi">${s.totalSeconds||0}<small>秒</small></div></div>
   </div>
   ${sceneReviewBar()}
@@ -1406,6 +1406,91 @@ function shotApprovalBar(scene){
   </div>`;
 }
 
+let PICK = {data:{}, sel:{}};
+async function loadPicks(scene, force){
+  if(PICK.data[scene] && !force) return PICK.data[scene];
+  try{ PICK.data[scene] = await (await fetch('/api/pick/candidates?scene='+encodeURIComponent(scene))).json(); }
+  catch(e){ PICK.data[scene] = {shots:[],error:String(e)}; }
+  return PICK.data[scene];
+}
+function pickSelect(shot,file){
+  PICK.sel[shot]=file;
+  const v=document.getElementById('pickmain-'+shot);
+  if(v) v.src='/api/proj/file?p='+encodeURIComponent(file);
+  const root=document.getElementById('pickcands-'+shot);
+  if(root) root.querySelectorAll('[data-pick]').forEach(el=>{
+    const on=el.getAttribute('data-pick')===file;
+    el.style.borderColor=on?'var(--acc)':'var(--line)';
+    el.style.background=on?'rgba(90,160,255,.08)':'var(--panel)';
+  });
+}
+async function pickAdopt(shot,action){
+  const scene=state.scene||'N001';
+  const file=PICK.sel[shot];
+  if(!file && action==='adopt') return toast('先选一条候选视频');
+  const reason=(document.getElementById('pickreason-'+shot)||{}).value||'';
+  if(action==='adopt' && !reason.trim()) return toast('采用前写一句结构化原因（为什么这条）');
+  const r=await fetch('/api/pick/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({scene,shot,file,action,reason})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'记录失败');
+  toast('已记录：'+shot+' '+action);
+  await loadPicks(scene,true); render();
+}
+function exportPicks(fmt){
+  const scene=state.scene||'N001';
+  window.location='/api/pick/export?scene='+encodeURIComponent(scene)+'&format='+fmt;
+}
+function candidateWall(scene){
+  const d=PICK.data[scene];
+  if(!d){ loadPicks(scene).then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin:8px 0">读取镜头候选…</div>`; }
+  const shots=d.shots||[];
+  const adopted=shots.filter(s=>s.adopted&&s.adopted.action==='adopt').length;
+  const held=shots.filter(s=>s.adopted&&s.adopted.action==='hold').length;
+  const cards=shots.map(s=>{
+    const cands=(s.candidates||[]);
+    const adoptedFile=(s.adopted&&s.adopted.file)||'';
+    const sel=PICK.sel[s.id]||adoptedFile||((cands[0]||{}).file||'');
+    PICK.sel[s.id]=sel;
+    const pick=(cands.find(c=>c.file===sel)||{});
+    const candCards=cands.slice(0,8).map(c=>`<div data-pick="${esc(c.file)}" onclick="pickSelect('${s.id}','${esc(c.file)}')"
+      style="width:180px;border:1px solid ${c.file===sel?'var(--acc)':'var(--line)'};border-radius:6px;overflow:hidden;cursor:pointer;background:${c.file===sel?'rgba(90,160,255,.08)':'var(--panel)'}">
+      <video src="/api/proj/file?p=${encodeURIComponent(c.file)}" muted preload="metadata"
+        style="width:100%;height:101px;object-fit:cover;display:block;background:#000"></video>
+      <div class="mono dim" style="font-size:9px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.unit)} · seed ${c.seed??'—'}</div>
+    </div>`).join("");
+    return `<div class="panel" style="margin-bottom:10px">
+      <div class="ph"><span><b class="mono">${s.id}</b> · ${s.duration||0}s</span>
+        <span style="display:flex;gap:8px;align-items:center">
+          ${s.adopted&&s.adopted.action==='adopt'?`<span class="badge b-ok" style="font-size:10px">已采用</span>`:
+            s.adopted?`<span class="badge b-warn" style="font-size:10px">${esc(s.adopted.action)}</span>`:
+            `<span class="badge b-mut" style="font-size:10px">未挑片</span>`}
+          <span class="dim" style="font-size:10px">${cands.length} 条候选</span></span></div>
+      <div class="pb">
+        ${cands.length?`<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <div style="width:360px;max-width:100%"><video id="pickmain-${s.id}" src="/api/proj/file?p=${encodeURIComponent(sel)}" controls preload="metadata"
+            style="width:100%;border-radius:7px;border:1px solid var(--line);background:#000"></video></div>
+          <div style="flex:1;min-width:260px">
+            <div class="dim mono" style="font-size:10px;line-height:1.7">单元 ${esc(pick.unit||'—')} · seed ${pick.seed??'—'} · batch ${esc(pick.batch||'—')}<br>
+              prompt ${esc(pick.prompt||'—')} · 参考图 ${pick.refs??0} 张 · ${esc(pick.time||'')}</div>
+            <input id="pickreason-${s.id}" placeholder="采用原因（结构化：表演/构图/接戏/声音）" value="${esc((s.adopted||{}).reason||'')}"
+              style="width:100%;margin-top:7px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 7px;font-size:11px">
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">
+              <button class="btn ok" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','adopt')">采用选中</button>
+              <button class="btn ghost" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','alternate')">备选</button>
+              <button class="btn ghost" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','hold')">hold</button>
+              <button class="btn warn" style="font-size:10.5px;padding:2px 9px" onclick="pickAdopt('${s.id}','redo')">重做</button>
+            </div></div></div>
+          <div id="pickcands-${s.id}" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${candCards}</div>`
+          :`<div class="dim" style="font-size:11.5px">该镜暂无生成结果；先在生成台出片。</div>`}
+      </div></div>`;
+  }).join("");
+  return `<div class="panel" style="margin-bottom:12px"><div class="ph"><span>镜头候选与采用</span>
+    <span class="dim" style="display:flex;gap:8px;align-items:center">${shots.length} 镜 · 已采用 ${adopted} · hold ${held}
+      <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="exportPicks('csv')">导出 CSV</button>
+      <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="exportPicks('edl')">导出 EDL</button></span></div>
+    <div class="pb">${cards||'<div class="dim">没有镜头数据</div>'}</div></div>`;
+}
+
 function sShots(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
@@ -1413,6 +1498,7 @@ function sShots(){
   state.scene = scene;
   const info = (d.scenes||[]).find(s=>s.id===scene) || {};
   if(!SHOTS[scene]){ loadShots(scene).then(()=>render()); }
+  if(!PICK.data[scene]){ loadPicks(scene).then(()=>render()); }
   const sh = (SHOTS[scene]||{}).shots || [];
   const tabs = (d.scenes||[]).map(s=>`<span onclick="go('shots',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
     border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
@@ -1435,6 +1521,7 @@ function sShots(){
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
   ${shotApprovalBar(scene)}
+  ${candidateWall(scene)}
   ${storyboardStrip(scene)}
   <div class="panel">
     <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
@@ -1651,7 +1738,7 @@ function assetDetailHtml(){
     <img src="/api/proj/file?p=${encodeURIComponent(h.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(h.file)}')"
       style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--ok);cursor:zoom-in;display:block">
     <div class="dim" style="font-size:9px;margin-top:3px">${esc(h.version||'')} · ${esc(String(h.at||'').slice(0,10))}</div>
-    <div class="badge b-ok" style="font-size:9px">已采用过</div>
+    <div class="badge b-ok" style="font-size:9px">历史采用 ${esc(h.version||'')}</div>
   </div>`).join("");
   const seenFiles=new Set(hist.map(h=>h.file));
   const cands=(AD.cands||[]).filter(c=>!seenFiles.has(c.file)).map(c=>`<div style="width:176px">
@@ -2315,7 +2402,7 @@ function sStageBody(no){
         :'<span class="badge b-bad" style="font-size:10px">缺失</span>'}</td>
       <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px" title="${esc(a.staleDeps.map(x=>x.path+'：'+x.reason).join('\n'))}">${stale} 处</span>`:'<span class="dim">—</span>'}</td>
       <td style="text-align:right">${a.status==='draft'
-        ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认选中</button>
+        ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${esc(a.version||'')} 为当前版</button>
            <button class="btn warn" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button>`
         : `<span class="dim" style="font-size:11px">${a.confirmedAt?esc(String(a.confirmedAt).slice(0,16)):''}</span>`}</td>
     </tr>`;
@@ -2360,17 +2447,17 @@ function sPending(){
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px">依赖 ${stale}</span>`:'<span class="dim">—</span>'}</td>
       <td style="text-align:right">
-        <button class="btn ok" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','pass')">确认选中</button>
+        <button class="btn ok" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${esc(a.version||'')} 为当前版</button>
         <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button></td>
     </tr>`;
   }).join("");
   const s = d.summary||{};
   const kpis = `<div class="grid4" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">成果总数</div><div class="kpi">${s.total||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">已确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div>
-      <div class="dim" style="font-size:10.5px;margin-top:3px">含本地确认 ${s.localConfirmed||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${drafts.length}</div>
-      <div class="dim" style="font-size:10.5px;margin-top:3px">登记草稿 ${s.draft||0} · 本地已确认 ${localDone.length}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">登记确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">仅本地确认 ${s.localConfirmed||0} · 下游不可用</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">待确认</div><div class="kpi" style="color:var(--warn)">${drafts.length}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">登记草稿 ${s.draft||0} · 仅本地 ${localDone.length}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">异常</div>
       <div class="kpi" style="color:${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)?'var(--bad)':'var(--dim)'}">${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)}</div>
       <div class="dim" style="font-size:11px;margin-top:3px">改动 ${s.modified||0} · 缺失 ${s.missing||0} · 失效依赖 ${s.staleDeps||0}</div></div>
@@ -2400,13 +2487,14 @@ function sPending(){
           <button class="btn warn" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','revise')">退回</button>
         </td></tr>`;}).join("")}</tbody></table></div></div>` : "";
   const localHtml = localDone.length ? `<div class="panel" style="margin-top:14px">
-    <div class="ph"><span>本地已确认（登记仍为草稿）</span><span class="dim">${localDone.length} 项 · 审批账本已有效，登记表未改</span></div>
-    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th><th style="width:150px">确认时间</th></tr></thead>
+    <div class="ph"><span>仅本地确认，未进登记</span><span class="dim">${localDone.length} 项 · 下游不可用；请确认选中版本登记入表</span></div>
+    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th><th style="width:150px">确认时间</th><th style="width:100px;text-align:right">操作</th></tr></thead>
       <tbody>${localDone.map(a=>`<tr><td class="mono dim">${a.stage}</td>
         <td class="mono" style="font-size:11px">${esc(a.path)}</td>
-        <td class="dim mono" style="font-size:11px">${esc((a.local&&a.local.at)||'—')}</td></tr>`).join("")}</tbody></table></div></div>` : "";
+        <td class="dim mono" style="font-size:11px">${esc((a.local&&a.local.at)||'—')}</td>
+        <td style="text-align:right"><button class="btn ok" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(a.path)}','pass')">登记入表</button></td></tr>`).join("")}</tbody></table></div></div>` : "";
   return kpis + `<div class="panel">
-    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入 approvals 审批账本（不改项目登记表）</span>
+    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后同步 artifact-state 登记表</span>
       <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>
     <div class="pb">${drafts.length?`<table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
       <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
@@ -4037,7 +4125,7 @@ function render(){
   document.getElementById("epsel").innerHTML = sEpSel();
   if(document.getElementById("projsel")) document.getElementById("projsel").innerHTML = sProjSel();
   document.getElementById("bannerStat").textContent =
-    `${S.scenes} 场 · ${S.shots} 镜 · ${(S.totalDur/60).toFixed(1)} 分 · 断链 ${S.brokenOcc} 处`;
+    `${S.scenes} 场 · ${S.shots} 镜 · ${fmt(S.totalDur)} · 断链 ${S.brokenOcc} 处`;
   const map={overview:sOverview,workflow:sWorkflow,dev:sDev,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
   const epScoped = ["r1","r2","shot","pick","batch","img","export","checks","workflow"];
   let html;

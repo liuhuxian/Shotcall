@@ -43,6 +43,7 @@ import sched
 import scenes
 import vjobs
 import planner
+import picks
 import preflight as pf
 import projects
 import runner
@@ -1227,11 +1228,13 @@ fetch('/api/data').then(r=>r.json()).then(({data,meta})=>{
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, code: int, body: bytes, ctype: str):
+    def _send(self, code: int, body: bytes, ctype: str, headers: dict = None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1517,6 +1520,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, json.dumps(firstframe.shots_payload(PROJECT, scene), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/pick/candidates":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            scene = q.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", scene):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps(picks.candidates(PROJECT, scene), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
+        elif path == "/api/pick/export":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            scene = q.get("scene", ["N001"])[0]
+            fmt = q.get("format", ["csv"])[0]
+            body, ctype, name = picks.export_text(PROJECT, scene, fmt)
+            self._send(200, body.encode("utf-8"), ctype,
+                       {"Content-Disposition": f'attachment; filename="{name}"'})
         elif path == "/api/scenes":
             d = scenes.build(PROJECT)
             for sc in d.get("scenes", []):
@@ -2144,6 +2162,18 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 out = flow.skip_step(PROJECT, str(body.get("step") or ""), str(body.get("note") or ""))
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/pick/adopt":
+            try:
+                body = self._json_body()
+                rec = picks.adopt(PROJECT, str(body.get("scene") or "N001"),
+                                  str(body.get("shot") or ""), str(body.get("file") or ""),
+                                  str(body.get("action") or "adopt"), str(body.get("reason") or ""))
+                self._send(200, json.dumps({"ok": True, "record": rec}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
