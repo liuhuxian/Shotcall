@@ -174,7 +174,7 @@ tr:hover td{background:#12161c}
   </div>
 </header>
 <nav id="nav"></nav>
-<main id="app"></main>
+<main id="app"><div id="statusbar"></div><div id="pageBody"></div></main>
 <div id="viewerhost"></div>
 <div id="toastHost"></div>
 
@@ -286,10 +286,10 @@ function nav(){
   const items=[
     ["stages","工作流"],["scenes","场次"],["assets","资产"],["shots","镜头"],
     ["gen","生成台"],["first","首帧"],["backend","算力"],["pending","待确认"],["verify","校验"]];
-  document.getElementById("nav").innerHTML = items.map(([k,label])=>{
+  paint("#nav", items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
-  }).join("");
+  }).join(""));
 }
 
 const TAB_LABEL = {history:"生成历史", backend:"算力", stages:"工作流", flow:"流程", img:"出图", first:"首帧", scenes:"场次", gen:"生成台", assets:"资产", shots:"镜头", stage:"阶段详情", pending:"待确认", arts:"成果清单", verify:"校验", legacy:"旧界面", overview:"总览", workflow:"工作流", dev:"开发", r1:"审核一 · 剧本", r1a:"审核二 · 资产",
@@ -3442,7 +3442,7 @@ function uiBusy(){
   const ae = document.activeElement;
   const app = document.getElementById('app');
   if(ae && app && app.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return true;
-  if(document.querySelector('#app details[open]')) return true;
+  // 展开的 details 不再阻止刷新：区域渲染会保留展开态
   if(typeof state !== 'undefined' && (state.candModal || state.batchModal || state.preflight)) return true;
   if(state.tab === 'shots') return true;
   if(state.tab === 'stages' && (state.wf || 'flow') === 'flow') return true;
@@ -4219,19 +4219,63 @@ function sEmptyEp(){
   </div>`;
 }
 
+/* ---------- 区域渲染：只替换真正变化的区域，并保住滚动/焦点/展开态 ---------- */
+const PAINT = {applied: 0, skipped: 0};
+
+function _uiSnapshot(host){
+  if(!host || !host.querySelectorAll) return null;
+  const active = document.activeElement;
+  const snap = {scrollTop: (document.scrollingElement||{}).scrollTop || 0,
+                focusId: null, selStart: null, selEnd: null, open: []};
+  try{
+    if(active && host.contains && host.contains(active)){
+      snap.focusId = active.id || null;
+      if(active.selectionStart != null){ snap.selStart = active.selectionStart; snap.selEnd = active.selectionEnd; }
+    }
+    snap.open = [...host.querySelectorAll("details")].map(d=>!!d.open);
+  }catch(e){}
+  return snap;
+}
+
+function _uiRestore(host, snap){
+  if(!snap || !host) return;
+  try{
+    const ds = [...host.querySelectorAll("details")];
+    ds.forEach((d,i)=>{ if(i < snap.open.length) d.open = snap.open[i]; });
+    if(snap.focusId){
+      const el = host.querySelector("#" + snap.focusId) || document.getElementById(snap.focusId);
+      if(el && el.focus){ el.focus({preventScroll:true});
+        if(snap.selStart != null && el.setSelectionRange) el.setSelectionRange(snap.selStart, snap.selEnd); }
+    }
+  }catch(e){}
+  const sc = document.scrollingElement || document.documentElement;
+  if(sc && snap.scrollTop){ sc.scrollTop = snap.scrollTop;
+    requestAnimationFrame(()=>{ if(sc.scrollTop !== snap.scrollTop) sc.scrollTop = snap.scrollTop; }); }
+}
+
+function paint(sel, html){
+  const host = document.querySelector ? document.querySelector(sel) : document.querySelector(sel);
+  if(!host) return false;
+  if(host.__html === html){ PAINT.skipped++; return false; }   // 内容没变：绝不触碰 DOM
+  const snap = _uiSnapshot(host);
+  host.__html = html;
+  host.innerHTML = html;
+  _uiRestore(host, snap);
+  PAINT.applied++;
+  return true;
+}
+
 function render(){
-  // 打开文件查看器/弹窗时，重建会把滚动位置清零、内容闪一下；此时只跳过重建
-  if(typeof VIEW !== 'undefined' && VIEW && VIEW.path && VIEW.inline && !RENDER_FORCE){
-    RENDER_SKIPPED++;
-    return;
-  }
+  // 查看器打开时不再整页跳过：paint() 只替换真正变化的区域，
+  // 内容不变就完全不碰 DOM；变化时也会还原滚动与展开态。
   const scroller = document.scrollingElement || document.documentElement;
   const keepY = scroller ? scroller.scrollTop : 0;
   nav();
-  document.getElementById("epsel").innerHTML = sEpSel();
-  if(document.getElementById("projsel")) document.getElementById("projsel").innerHTML = sProjSel();
-  document.getElementById("bannerStat").textContent =
-    `${S.scenes} 场 · ${S.shots} 镜 · ${fmt(S.totalDur)} · 断链 ${S.brokenOcc} 处`;
+  paint("#epsel", sEpSel());
+  if(document.getElementById("projsel")) paint("#projsel", sProjSel());
+  { const el = document.getElementById("bannerStat");
+    const txt = `${S.scenes} 场 · ${S.shots} 镜 · ${fmt(S.totalDur)} · 断链 ${S.brokenOcc} 处`;
+    if(el && el.textContent !== txt) el.textContent = txt; }
   const map={overview:sOverview,workflow:sWorkflow,dev:sDev,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
   const epScoped = ["r1","r2","shot","pick","batch","img","export","checks","workflow"];
   let html;
@@ -4274,13 +4318,16 @@ function render(){
   } else {
     html = (map[state.tab] || sStages)();
   }
-  document.getElementById("app").innerHTML = statusBar() + html;
-  if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
+  paint("#statusbar", statusBar());
+  paint("#pageBody", html);
+  { const mb=document.getElementById("batchModal"); if(mb) mb.remove();
+    if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml()); }
   if(state.candModal) showDraftModal();
   else {
     const m=document.querySelector(".modal"); if(m && !state.candModal) m.remove();
   }
-  { const host=document.getElementById("viewerhost"); if(host) host.innerHTML = viewerLayer(); }
+  { const host=document.getElementById("viewerhost");
+    if(host){ const vh = viewerLayer(); if(host.__html !== vh){ host.__html = vh; host.innerHTML = vh; } } }
   { const old=document.getElementById("assetDetail"); if(old) old.remove();
     if(AD) document.body.insertAdjacentHTML("beforeend", assetDetailHtml()); }
   if(keepY && scroller){
