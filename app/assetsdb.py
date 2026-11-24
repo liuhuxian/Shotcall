@@ -309,6 +309,33 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
             "version": ver, "sha256": sha}
 
 
+def slot_history(project: Path) -> dict:
+    """project.json 里各槽位的采用历史：candidateId -> 路径/版本/时间。"""
+    f = project / WB_PROJECT
+    if not f.exists():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    cmap = {c.get("id"): c for c in (d.get("candidates") or [])}
+    out = {}
+    for slot in d.get("slots") or []:
+        hist = []
+        for h in slot.get("history") or []:
+            c = cmap.get(h.get("candidateId")) or {}
+            file = c.get("path")
+            hist.append({"candidateId": h.get("candidateId"), "file": file,
+                         "version": "v" + str(h.get("version") or ""),
+                         "at": h.get("adoptedAt") or "",
+                         "exists": bool(file) and (project / file).is_file(),
+                         "sha256": c.get("sha256") or ""})
+        for key in {slot.get("stateId", ""), slot.get("id", "")}:
+            if key:
+                out[key] = hist
+    return out
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     try:
@@ -325,6 +352,7 @@ def build(project: Path) -> dict:
         pass
     prompts = parse_prompts(project)
     descriptors = parse_descriptors(project)
+    histories = slot_history(project)
     binds = parse_bindings(project)
     # 绑定键可能带 C01--C01-A，统一按短 ID 对齐
     short = {}
@@ -347,6 +375,7 @@ def build(project: Path) -> dict:
         a["bound"] = bool(b and b.get("exists"))
         a["prompt"] = prompts.get(a["id"]) or ""
         a["descriptor"] = descriptors.get(a["id"]) or a.get("descriptor") or ""
+        a["history"] = histories.get(a["id"]) or histories.get(a["id"].replace("-", "--")) or []
     img = [a for a in assets if a.get("type") != "voice"]   # 图像资产口径保持 36 项
     vos = [a for a in assets if a.get("type") == "voice"]
     bound = sum(1 for a in img if a["bound"])

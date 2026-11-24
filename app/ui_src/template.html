@@ -276,7 +276,7 @@ function reviewDot(tab){
 function nav(){
   const items=[
     ["stages","工作流"],["flow","流程"],["scenes","场次"],["assets","资产"],["shots","镜头"],
-    ["gen","生成台"],["img","出图"],["first","首帧"],["backend","算力"],["pending","待确认"],["verify","校验"]];
+    ["gen","生成台"],["first","首帧"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
     return `<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${label}${dot}</button>`;
@@ -1369,7 +1369,8 @@ function sAssetsPage(){
           :`<div style="height:110px;display:flex;align-items:center;justify-content:center" class="dim">未绑定</div>`}
         <div style="padding:7px 9px">
           <div class="mono dim" style="font-size:10px">${esc(a.id)}</div>
-          <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</div>
+          <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-decoration:underline dotted"
+            title="打开生成历史 / 出图 / 改图" onclick="openAsset('${esc(a.id)}')">${esc(a.name)}</div>
           <div style="margin-top:4px">${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
             :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
             :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}</div>
@@ -1402,6 +1403,130 @@ function sAssetsPage(){
   </div>
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
   ${groups}`;
+}
+
+/* ---------- 资产详情：生成历史 + 出图/改图 ---------- */
+let AD = null;
+
+async function openAsset(id){
+  if(!AST.data){ await loadAssets(); }
+  AD = {id, mode:'t2i', cands:[], jobs:[], loading:true};
+  render();
+  await loadAssetDetail();
+}
+function closeAsset(){ AD=null; render(); }
+function adAsset(){ return ((AST.data&&AST.data.assets)||[]).find(a=>a.id===AD.id) || null; }
+async function loadAssetDetail(){
+  if(!AD) return;
+  AD.cands=[]; AD.jobs=[];
+  try{ AD.cands=(await (await fetch('/api/img/candidates?asset='+encodeURIComponent(AD.id))).json()).items||[]; }catch(e){}
+  try{ const j=await (await fetch('/api/img/jobs')).json(); AD.jobs=(j.jobs||[]).filter(x=>x.asset===AD.id); }catch(e){}
+  AD.loading=false; render();
+}
+function adRefs(a){
+  const out=[];
+  if(a && a.binding && a.binding.image) out.push({v:a.binding.image,label:'当前绑定 '+a.binding.version});
+  (AD.cands||[]).forEach(c=>out.push({v:c.file,label:'候选 '+c.name}));
+  return out;
+}
+async function adGenerate(){
+  const a=adAsset(); if(!a) return;
+  const prompt=(document.getElementById('adPrompt')||{}).value||'';
+  if(!prompt.trim()) return toast('提示词为空');
+  const mode=AD.mode;
+  const ref=mode==='edit'?((document.getElementById('adRef')||{}).value||null):null;
+  if(mode==='edit' && !ref) return toast('改图要先选底图');
+  const body={asset:a.id, mode, prompt:prompt.trim(), ref,
+    n:parseInt((document.getElementById('adN')||{}).value||'1'),
+    size:(document.getElementById('adSize')||{}).value||'2656x1504',
+    steps:parseInt((document.getElementById('adSteps')||{}).value||'8')};
+  const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
+  const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
+  toast('已提交 '+(j.jobs||[]).length+' 张：'+j.batch);
+  setTimeout(()=>loadAssetDetail(), 5000);
+}
+async function adAdopt(file){
+  const a=adAsset(); if(!a) return;
+  const r=await fetch('/api/img/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({asset:a.id,file,ep:'EP002'})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'采用失败');
+  toast('已采用并写新绑定：'+(j.bindingFile||''));
+  AST.data=null; await loadAssets(); await loadAssetDetail();
+}
+function assetDetailHtml(){
+  if(!AD) return '';
+  const a=adAsset();
+  if(!a) return '';
+  const img=(a.binding&&a.binding.image)||null;
+  const isVoice=a.type==='voice';
+  const refs=adRefs(a);
+  const refOpts=refs.map(r=>`<option value="${esc(r.v)}">${esc(r.label)}</option>`).join("");
+  const hist=(a.history||[]).filter(h=>h.exists).map(h=>({...h,name:(h.file||'').split('/').pop()}));
+  const histCards=hist.slice().reverse().map(h=>`<div style="width:176px">
+    <img src="/api/proj/file?p=${encodeURIComponent(h.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(h.file)}')"
+      style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--ok);cursor:zoom-in;display:block">
+    <div class="dim" style="font-size:9px;margin-top:3px">${esc(h.version||'')} · ${esc(String(h.at||'').slice(0,10))}</div>
+    <div class="badge b-ok" style="font-size:9px">已采用过</div>
+  </div>`).join("");
+  const seenFiles=new Set(hist.map(h=>h.file));
+  const cands=(AD.cands||[]).filter(c=>!seenFiles.has(c.file)).map(c=>`<div style="width:176px">
+    <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
+      style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+    <div class="mono dim" style="font-size:9px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
+    <button class="btn ok" style="font-size:9.5px;padding:1px 7px;margin-top:3px" onclick="adAdopt('${esc(c.file)}')">采用</button>
+  </div>`).join("");
+  const jobs=(AD.jobs||[]).slice(-12).reverse().map(j=>`<tr>
+    <td class="mono dim" style="font-size:9.5px">${esc(j.id.slice(-20))}</td>
+    <td><span class="badge ${j.status==='done'?'b-ok':j.status==='failed'?'b-bad':'b-warn'}" style="font-size:9px">${esc(j.status)}</span></td>
+    <td class="dim mono" style="font-size:9.5px">${j.card!=null?'卡'+j.card:'—'}</td>
+    <td class="dim mono" style="font-size:9.5px">${j.seconds?j.seconds+'s':'—'}</td>
+    <td class="dim mono" style="font-size:9px">${esc((j.error||'').slice(0,70))}</td></tr>`).join("");
+  const history=`<div class="panel" style="margin-top:12px"><div class="ph"><span>生成历史</span>
+    <span class="dim">${hist.length} 条采用历史 · ${(AD.cands||[]).length} 张候选 · ${(AD.jobs||[]).length} 个任务</span></div>
+    <div class="pb">
+      ${histCards?`<div class="dim" style="font-size:11px;margin-bottom:5px">历史采用（按时间倒序）</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${histCards}</div>`:''}
+      <div class="dim" style="font-size:11px;margin:9px 0 5px">生成候选</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${cands||'<div class="dim" style="font-size:11.5px">还没有候选图。</div>'}</div>
+      ${jobs?`<div style="margin-top:10px"><div class="dim" style="font-size:11px;margin-bottom:4px">任务记录</div>
+        <table><thead><tr><th>任务</th><th>状态</th><th>卡</th><th>耗时</th><th>错误</th></tr></thead><tbody>${jobs}</tbody></table></div>`:''}
+    </div></div>`;
+  const form=isVoice?`<div class="dim" style="font-size:11.5px">音色资产不走出图；历史音色在绑定里。</div>`:`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
+      <span class="dim" style="font-size:11px">模式</span>
+      <button class="btn ${AD.mode==='t2i'?'acc':'ghost'}" style="font-size:10.5px;padding:2px 8px" onclick="AD.mode='t2i';render()">文生图</button>
+      <button class="btn ${AD.mode==='edit'?'acc':'ghost'}" style="font-size:10.5px;padding:2px 8px" onclick="AD.mode='edit';render()">改图</button>
+      ${AD.mode==='edit'?`<span class="dim" style="font-size:11px">底图</span>
+        <select id="adRef" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px;max-width:310px">${refOpts||'<option value="">没有底图</option>'}</select>`:''}
+    </div>
+    <textarea id="adPrompt" style="width:100%;min-height:110px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(a.prompt||a.descriptor||'')}</textarea>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px">
+      <span class="dim" style="font-size:11px">候选</span><input id="adN" type="number" min="1" max="4" value="1" style="width:45px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+      <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+        <option value="2656x1504">16:9 2656×1504</option><option value="2048x1152">16:9 2048×1152</option><option value="1536x864">16:9 1536×864</option></select>
+      <span class="dim" style="font-size:11px">步数</span><select id="adSteps" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8">8</option><option value="6">6</option></select>
+      <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="adGenerate()">提交生成</button>
+      <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadAssetDetail()">刷新</button>
+    </div>`;
+  return `<div id="assetDetail" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;overflow:auto;padding:30px 18px"
+    onclick="if(event.target===this)closeAsset()">
+    <div style="max-width:1120px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
+        <div><div class="mono dim" style="font-size:10.5px">${esc(a.id)} · ${esc(a.type)}</div>
+          <div style="font-size:19px;font-weight:700">${esc(a.name)}</div>
+          <div class="dim" style="font-size:11.5px">${esc(a.section||'')} · ${a.bound?'已绑定 '+(a.binding.version||''):'未绑定'} · ${esc(a.ignored?'已忽略':'')}</div></div>
+        <button class="btn ghost" style="font-size:12px" onclick="closeAsset()">关闭</button>
+      </div>
+      <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start">
+        <div>${img?`<img src="/api/proj/file?p=${encodeURIComponent(img)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(img)}')"
+          style="width:100%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">`:
+          `<div style="height:180px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center" class="dim">没有绑定图</div>`}
+          <div class="dim" style="font-size:10.5px;margin-top:5px">当前绑定：${esc((a.binding||{}).version||'—')}</div></div>
+        <div>${form}</div>
+      </div>
+      ${history}
+    </div></div>`;
 }
 
 /* ---------- 分镜首帧 ---------- */
@@ -3658,6 +3783,8 @@ function render(){
     const m=document.querySelector(".modal"); if(m && !state.candModal) m.remove();
   }
   { const host=document.getElementById("viewerhost"); if(host) host.innerHTML = viewerLayer(); }
+  { const old=document.getElementById("assetDetail"); if(old) old.remove();
+    if(AD) document.body.insertAdjacentHTML("beforeend", assetDetailHtml()); }
 }
 function showDraftModal(){
   const m=document.createElement("div");
