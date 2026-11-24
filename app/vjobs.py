@@ -732,7 +732,7 @@ def _api(port, path, payload=None, timeout=120):
 
 
 def submit(project: Path, scene: str, units: list, seed: int = None,
-           width=768, height=1024, steps=20) -> dict:
+           width=1344, height=768, steps=20) -> dict:
     """units: [{"unit": {...}, "count": n}]；seed 给了就按 seed, seed+1, ... 递增。"""
     batch = time.strftime("VID-%Y%m%d-%H%M%S")
     tasks = []

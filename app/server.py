@@ -1693,11 +1693,11 @@ class Handler(BaseHTTPRequestHandler):
                 seed = int(seed) if str(seed).strip().isdigit() else None
                 steps = body.get("steps")
                 steps = int(steps) if str(steps).isdigit() else vjobs.current_recipe()["steps"]
-                size = str(body.get("size") or "768x1024")
+                size = str(body.get("size") or "1344x768")
                 try:
                     w, h = [int(x) for x in size.lower().split("x")]
                 except Exception:
-                    w, h = 768, 1024
+                    w, h = 1344, 768
                 res = vjobs.submit(PROJECT, scene, units, seed=seed, steps=steps, width=w, height=h)
                 store.append(PROJECT, 3, {"type": "batch", "id": res["batch"]}, "pass",
                              notes=[{"text": f"{scene} 视频批次：{len(units)} 个单元 · {steps} 步 · {w}x{h}" +
