@@ -125,6 +125,7 @@ def current_recipe() -> dict:
                 "steps": saved["steps"],
                 "sigmas": saved.get("sigmas"), "sampler": saved.get("sampler"),
                 "attention": saved.get("attention"),
+                "sigmaShift": saved.get("sigmaShift"),
                 "res": saved.get("res"), "refSize": saved.get("refSize"),
                 "source": saved.get("source")}
     return {"name": "base20", **RECIPES["base20"]}
@@ -725,7 +726,8 @@ def list_jobs(batch: str = None, project=None) -> list:
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
                 ref_images: list = None, lora: str = None, sigmas: str = None,
                 sampler: str = None, attention: dict = None, ref_size: str = "match",
-                ref_audios: list = None, lora_strength: float = None) -> dict:
+                ref_audios: list = None, lora_strength: float = None,
+                sigma_shift: dict = None) -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
@@ -756,6 +758,12 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
                    "inputs": {"model": ["1", 0], "lora_name": lora,
                               "strength_model": 1.0 if lora_strength is None else float(lora_strength)}}
         model_src = ["20", 0]
+    if sigma_shift:
+        g["24"] = {"class_type": "MiniMaxH3SigmaShift",
+                   "inputs": {"model": model_src,
+                              "shift_video": float(sigma_shift.get("video", 6)),
+                              "shift_audio": float(sigma_shift.get("audio", 3))}}
+        model_src = ["24", 0]
     if attention:
         g["21"] = {"class_type": "ModelAttentionBackend",
                    "inputs": {"model": model_src, "attention": attention.get("backend", "pytorch attention")}}
@@ -792,7 +800,7 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
 def build_i2v_graph(prompt: str, width: int, height: int, frames: int, seed: int,
                     first_frame: str, steps: int = 20, lora: str = None,
                     sigmas: str = None, sampler: str = None, attention: dict = None,
-                    lora_strength: float = None) -> dict:
+                    lora_strength: float = None, sigma_shift: dict = None) -> dict:
     """首帧驱动（fl2va）：用上一镜的最后一帧作为本镜第一帧，接续最稳。"""
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS_FL2V, "weight_dtype": "default"}},
@@ -824,6 +832,12 @@ def build_i2v_graph(prompt: str, width: int, height: int, frames: int, seed: int
                    "inputs": {"model": ["1", 0], "lora_name": lora,
                               "strength_model": 1.0 if lora_strength is None else float(lora_strength)}}
         model_src = ["20", 0]
+    if sigma_shift:
+        g["24"] = {"class_type": "MiniMaxH3SigmaShift",
+                   "inputs": {"model": model_src,
+                              "shift_video": float(sigma_shift.get("video", 6)),
+                              "shift_audio": float(sigma_shift.get("audio", 3))}}
+        model_src = ["24", 0]
     if attention:
         g["21"] = {"class_type": "ModelAttentionBackend",
                    "inputs": {"model": model_src, "attention": attention.get("backend", "pytorch attention")}}
@@ -902,6 +916,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "lora": recipe.get("lora"), "loraStrength": recipe.get("loraStrength"),
                    "sigmas": recipe.get("sigmas"),
                    "sampler": recipe.get("sampler"), "attention": recipe.get("attention"),
+                   "sigmaShift": recipe.get("sigmaShift"),
                    "refSize": recipe.get("refSize"), "recipe": recipe.get("name"),
                    "seed": seed_i,
                    "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
@@ -987,7 +1002,8 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                                 job["seed"], first_name, steps=job["steps"],
                                 lora=job.get("lora"), sigmas=job.get("sigmas"),
                                 sampler=job.get("sampler"), attention=job.get("attention"),
-                                lora_strength=job.get("loraStrength"))
+                                lora_strength=job.get("loraStrength"),
+                                sigma_shift=job.get("sigmaShift"))
         elif job.get("chain") and job.get("prevUnit"):
             prev = None
             with _lock:
@@ -1010,14 +1026,16 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                                 job["seed"], first_name, steps=job["steps"],
                                 lora=job.get("lora"), sigmas=job.get("sigmas"),
                                 sampler=job.get("sampler"), attention=job.get("attention"),
-                                lora_strength=job.get("loraStrength"))
+                                lora_strength=job.get("loraStrength"),
+                                sigma_shift=job.get("sigmaShift"))
         else:
             g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
                             job["seed"], job["steps"], ref_images=ref_names,
                             lora=job.get("lora"), sigmas=job.get("sigmas"),
                             sampler=job.get("sampler"), attention=job.get("attention"),
                             ref_size=job.get("refSize") or "match",
-                            ref_audios=audio_names, lora_strength=job.get("loraStrength"))
+                            ref_audios=audio_names, lora_strength=job.get("loraStrength"),
+                            sigma_shift=job.get("sigmaShift"))
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:

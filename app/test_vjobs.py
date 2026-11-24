@@ -279,6 +279,17 @@ def main():
     check("接图路径带强度", g4["20"]["inputs"]["strength_model"] == 0.7, g4["20"]["inputs"])
     check("首帧路径带强度", g5["20"]["inputs"]["strength_model"] == 0.7, g5["20"]["inputs"])
 
+    print("\n= SigmaShift 接线 =")
+    g6 = vjobs.build_graph("p", 1344, 768, 124, 7, 8, ref_images=["a.png"],
+                           lora="x.safetensors", lora_strength=1.0,
+                           sampler="euler", sigma_shift={"video": 6, "audio": 3})
+    shift = [v for v in g6.values() if v["class_type"] == "MiniMaxH3SigmaShift"]
+    check("有 SigmaShift 节点", len(shift) == 1, len(shift))
+    check("shift 参数正确",
+          shift and shift[0]["inputs"]["shift_video"] == 6.0 and shift[0]["inputs"]["shift_audio"] == 3.0,
+          shift[0]["inputs"] if shift else None)
+    check("采样器为 euler", g6["6"]["inputs"]["sampler_name"] == "euler", g6["6"]["inputs"])
+
     print("\n= 参考音频接线 =")
     g2 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"], ref_audios=["v.wav"])
     loads_a = [v for v in g2.values() if v["class_type"] == "LoadAudio"]

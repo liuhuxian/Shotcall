@@ -444,7 +444,12 @@ async function pickRecipe(name){
     body: JSON.stringify({name})});
   const j = await r.json();
   if(!r.ok) return toast(j.error||"切换失败");
-  toast("工作流已切换：" + j.current.label);
+  const c1 = j.current || {};
+  if(c1.res && c1.res[0] && c1.res[1]){
+    GEN.size = `${c1.res[0]}x${c1.res[1]}`;        // 画布跟着工作流走（realism → 1280×736）
+  }
+  toast("工作流已切换：" + (c1.label || c1.name) +
+        (c1.res ? ` · 画布 ${c1.res[0]}×${c1.res[1]}` : ""));
   state.workflowOpen = state.workflowOpen || {}; state.workflowOpen.video = true;
   await loadRecipe(true); render();
 }
@@ -1162,6 +1167,7 @@ function sGen(){
           style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 6px;font-size:12px">
           <option value="1344x768" ${(GEN.size||'1344x768')==='1344x768'?'selected':''}>1344×768（16:9 · 0.98）</option>
           <option value="1280x736" ${GEN.size==='1280x736'?'selected':''}>1280×736（realism 画布）</option>
+          <option value="800x1056" ${GEN.size==='800x1056'?'selected':''}>800×1056（realism 竖版）</option>
           <option value="1216x672" ${GEN.size==='1216x672'?'selected':''}>1216×672（16:9 · 0.79）</option>
           <option value="768x1024" ${GEN.size==='768x1024'?'selected':''}>768×1024（3:4 · 竖屏）</option>
         </select>

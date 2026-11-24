@@ -578,6 +578,83 @@ def _resolve_canvas(nodes: list):
     return width, height
 
 
+
+def _scan_api_graph(d: dict) -> dict | None:
+    """识别 API 格式工作流（顶层是 {id: {class_type, inputs}}）。"""
+    if not d or not all(isinstance(v, dict) and "class_type" in v for v in d.values()):
+        return None
+    nodes = [{"id": k, **v} for k, v in d.items()]
+    by_id = {n["id"]: n for n in nodes}
+    def src(node, name):
+        v = (node.get("inputs") or {}).get(name)
+        return by_id.get(v[0]) if isinstance(v, list) and v and v[0] in by_id else None
+    def first(tp):
+        return next((n for n in nodes if n.get("class_type") == tp), None)
+
+    h3 = first("MiniMaxH3ReferenceToVideo")
+    sched = first("BasicScheduler")
+    unet = first("UNETLoader")
+    steps = (sched or {}).get("inputs", {}).get("steps")
+    width = (h3 or {}).get("inputs", {}).get("width")
+    height = (h3 or {}).get("inputs", {}).get("height")
+    ref_size = (h3 or {}).get("inputs", {}).get("ref_image_size")
+
+    # 沿调度器的 model 链回追，取实际生效的 LoRA 与 SigmaShift
+    lora = lora_strength = None
+    sigma = None
+    node, hops = (src(sched, "model") if sched else None), 0
+    while node is not None and hops < 8:
+        tp = node.get("class_type")
+        ins = node.get("inputs") or {}
+        if tp == "LoraLoaderModelOnly":
+            lora = ins.get("lora_name")
+            lora_strength = ins.get("strength_model")
+            node = src(node, "model")
+        elif tp == "MiniMaxH3SigmaShift":
+            sigma = {"video": ins.get("shift_video"), "audio": ins.get("shift_audio")}
+            node = src(node, "model")
+        else:
+            break
+        hops += 1
+    model = (unet or {}).get("inputs", {}).get("unet_name")
+    sampler = (first("KSamplerSelect") or {}).get("inputs", {}).get("sampler_name")
+    blockers = []
+    if not (model and "ref2va" in str(model)):
+        blockers.append("不是 Ref2VA 视频工作流")
+    if not h3:
+        blockers.append("没有 H3 参考视频节点")
+    if steps is None:
+        blockers.append("没有可识别的步数调度")
+    return {
+        "nodes": len(nodes), "model": model, "steps": steps, "lora": lora,
+        "loraStrength": lora_strength, "sigmaShift": sigma,
+        "sampler": sampler, "width": width, "height": height, "refSize": ref_size,
+        "blockers": blockers,
+    }
+
+
+
+def _import_workflow(wf: dict) -> dict:
+    """把扫描到的工作流转成配方并保存为当前工作流。"""
+    if not wf["ok"]:
+        raise ValueError("工作台无法复刻：" + "；".join(wf["blockers"]))
+    spec = {"name": wf["file"].replace(".json", ""),
+            "label": wf["file"].replace(".json", ""),
+            "steps": wf["steps"] or 15, "lora": wf["lora"],
+            "loraStrength": wf.get("loraStrength"),
+            "sampler": wf.get("sampler"),
+            "sigmaShift": wf.get("sigmaShift"),
+            "res": [wf["width"], wf["height"]] if wf["width"] else None,
+            "refSize": wf["refSize"] or "match", "source": "comfyui"}
+    if wf.get("progressive"):
+        base = vjobs.RECIPES["progressive"]
+        spec.update({"sigmas": wf.get("sigmas") or base["sigmas"],
+                     "sampler": wf.get("sampler") or base["sampler"],
+                     "attention": base["attention"]})
+        spec["steps"] = max(1, len(str(spec["sigmas"]).split(",")) - 1)
+    return vjobs.save_recipe(spec)
+
+
 def scan_workflows() -> list:
     """扫描 ComfyUI 已保存工作流，判断工作台能否复刻。"""
     out = []
@@ -587,6 +664,21 @@ def scan_workflows() -> list:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
+            continue
+        api = _scan_api_graph(d)
+        if api is not None:
+            out.append({
+                "file": f.name, "sizeKB": round(f.stat().st_size / 1024),
+                "mtime": int(f.stat().st_mtime), "nodes": api["nodes"],
+                "model": api["model"], "steps": api["steps"], "lora": api["lora"],
+                "loraStrength": api.get("loraStrength"),
+                "sigmaShift": api.get("sigmaShift"),
+                "variants": None, "active": "API 图", "progressive": False,
+                "sigmas": None, "sampler": api.get("sampler"),
+                "width": api["width"], "height": api["height"],
+                "refSize": api.get("refSize"),
+                "ok": not api["blockers"], "blockers": api["blockers"],
+            })
             continue
         nodes = d.get("nodes") or []
         types = [n.get("type") for n in nodes]
@@ -2523,6 +2615,8 @@ class Handler(BaseHTTPRequestHandler):
                             "label": wf["file"].replace(".json", ""),
                             "steps": wf["steps"] or 15, "lora": wf["lora"],
                             "loraStrength": wf.get("loraStrength"),
+                            "sampler": wf.get("sampler"),
+                            "sigmaShift": wf.get("sigmaShift"),
                             "res": [wf["width"], wf["height"]] if wf["width"] else None,
                             "refSize": wf["refSize"] or "match", "source": "comfyui"}
                     if wf.get("progressive"):
@@ -2535,7 +2629,15 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
                                "application/json; charset=utf-8")
                     return
-                cur = vjobs.set_recipe(body.get("name") or "")
+                want = body.get("name") or ""
+                try:
+                    cur = vjobs.set_recipe(want)
+                except ValueError:
+                    wf2 = next((w for w in scan_workflows()
+                                if w["file"] == want or w["file"] == want + ".json"), None)
+                    if not wf2:
+                        raise ValueError("未知工作流")
+                    cur = _import_workflow(wf2)
                 self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
