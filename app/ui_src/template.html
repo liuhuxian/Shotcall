@@ -753,9 +753,9 @@ function sBackend(){
     <div class="card"><div class="muted" style="font-size:12px">空闲可开卡</div><div class="kpi" style="color:var(--ok)">${free}</div></div>
   </div>
   ${recipePanel()}
-  ${execPanel()}
-  ${cardsGrid(d)}
   ${queueHtml(d)}
+  ${cardsGrid(d)}
+  ${execPanel()}
   <div class="dim" style="font-size:11px;margin-top:10px">数据每 3 秒刷新 · 中断/停止/重启需点两次确认 · 自动扩缩已关闭</div>`;
 }
 
