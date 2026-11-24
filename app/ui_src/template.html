@@ -1770,7 +1770,7 @@ function sImageGen(){
 }
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
-let FLOW = {data:null, scene:null, loading:false};
+let FLOW = {data:null, scene:null, sel:null, loading:false};
 let AGCFG = null;
 let ART_PICK = {};      // 成果家族 -> 选中的版本路径（同族只显示一条，先选后确认）
 const FLOW_STATUS = {confirmed:['b-ok','已确认'], draft:['b-warn','草稿待确认'],
@@ -1912,6 +1912,8 @@ async function skipFlow(key){
   FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
 }
 
+function pickFlow(key){ FLOW.sel=key; render(); }
+
 function sFlow(){
   const d=SCN.data;
   if(!d){ loadScenes().then(()=>render()); return '<div class="dim">读取场次…</div>'; }
@@ -1919,11 +1921,31 @@ function sFlow(){
   state.scene = scene;
   if(!FLOW.data || FLOW.scene!==scene){ loadFlow(scene).then(()=>render()); return '<div class="dim">读取流程…</div>'; }
   const steps=FLOW.data.steps||[];
+  let sel = FLOW.sel && steps.some(x=>x.key===FLOW.sel) ? FLOW.sel : null;
+  if(!sel){
+    const auto=steps.find(x=>(x.newFiles||[]).length || (x.versions||[]).some(v=>v.statusText==='草稿待确认'));
+    sel=(auto||steps[0]||{}).key;
+  }
+  FLOW.sel=sel;
+  const nav=steps.map(st=>{
+    const active=st.key===sel;
+    const drafts=(st.versions||[]).filter(v=>v.statusText==='草稿待确认').length;
+    const news=(st.newFiles||[]).length;
+    return `<div onclick="pickFlow('${st.key}')" style="padding:7px 9px;border-radius:7px;cursor:pointer;margin-bottom:4px;
+      background:${active?'#161d27':'transparent'};border-left:2px solid ${active?'var(--acc)':'transparent'}">
+      <div style="display:flex;justify-content:space-between;gap:6px;align-items:center">
+        <span style="font-size:12px;color:${active?'#e6ebf3':'#9aa5b4'}"><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
+        ${flowStatus(st)}
+      </div>
+      <div class="dim" style="font-size:10px;margin-top:2px">${st.version?esc(st.version+' → '+st.nextVersion):'未登记 → '+esc(st.nextVersion)}
+        ${news?` · <span style="color:var(--acc)">${news} 新文件</span>`:''}${drafts?` · <span style="color:var(--warn)">${drafts} 草稿</span>`:''}</div>
+    </div>`;
+  }).join("");
   const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=steps.map(st=>{
     const is06=st.key==='06';
-    return `<div class="panel" style="margin-bottom:12px">
+    return `<div class="panel" id="flowcard-${st.key}" style="margin-bottom:0;display:${st.key===sel?'block':'none'}">
       <div class="ph"><span><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
         <span style="display:flex;gap:8px;align-items:center">${flowStatus(st)}
           <span class="dim mono" style="font-size:10.5px">${esc(st.skill)}</span></span></div>
@@ -1957,8 +1979,9 @@ function sFlow(){
         <details style="margin-top:8px"><summary class="dim" style="font-size:11.5px;cursor:pointer">查看/复制完整提示词</summary>
           <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:6px 0 0;color:#c9d2e0;max-height:340px;overflow:auto">${esc(st.prompt)}</pre>
         </details>
-        <details style="margin-top:6px"><summary class="dim" style="font-size:11.5px;cursor:pointer">版本与依赖（${(st.versions||[]).length}）</summary>
-          <div style="margin-top:5px">${(st.versions||[]).map(v=>`<div class="dim mono" style="font-size:10.5px;line-height:1.8">
+        <details open style="margin-top:6px"><summary class="dim" style="font-size:11.5px;cursor:pointer">版本与依赖（${(st.versions||[]).length}）· 点路径查看</summary>
+          <div style="margin-top:5px">${(st.versions||[]).map(v=>`<div class="dim mono" style="font-size:10.5px;line-height:1.8;cursor:pointer;text-decoration:underline dotted"
+            onclick="viewFile('${esc(v.path)}')">
             ${esc(v.version)} · ${esc(v.statusText||'')} · ${esc(v.path)} · sha ${esc((v.sha256||'').slice(0,10))}
             ${(v.dependsOn||[]).length?'· 依赖：'+v.dependsOn.map(esc).join('、'):''}</div>`).join('')||'<span class="dim" style="font-size:11px">还没有版本</span>'}</div>
         </details>
@@ -1973,7 +1996,13 @@ function sFlow(){
       <span class="dim" style="font-size:11px">批量只处理当前场次；失败项逐条显示</span>
     </div>
     <div class="dim" style="font-size:11.5px;margin-bottom:10px">流程只做提示词与登记/确认；Agent 写盘后点「登记成果」，确认后下游才可用。生成走「生成台」。</div>
-    ${cards}`;
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div class="panel" style="width:255px;flex-shrink:0">
+        <div class="ph"><span>阶段</span><span class="dim">01 → 09b</span></div>
+        <div class="pb" style="padding:8px">${nav}</div>
+      </div>
+      <div style="flex:1;min-width:0">${cards}</div>
+    </div>`;
 }
 
 /* ---------- 阶段看板 ---------- */
