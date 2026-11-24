@@ -1888,6 +1888,66 @@ class Handler(BaseHTTPRequestHandler):
                            json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/workflow/batch":
+            try:
+                body = self._json_body()
+                action = str(body.get("action") or "")
+                scene = str(body.get("scene") or "N001")
+                if action not in ("register", "confirm"):
+                    raise ValueError("action 必须是 register/confirm")
+                data = flow.steps_payload(PROJECT, scene)
+                results = []
+                for st in data.get("steps") or []:
+                    if st.get("skipped"):
+                        continue
+                    if action == "register":
+                        files = st.get("newFiles") or []
+                        if not files:
+                            continue
+                        try:
+                            r = flow.register(PROJECT, st["key"], scene, path=files[0],
+                                              outcome="passed")
+                            results.append({"step": st["key"], "ok": True, "path": r.get("path")})
+                        except Exception as e:
+                            results.append({"step": st["key"], "ok": False, "error": str(e)})
+                    else:
+                        drafts = [v for v in (st.get("versions") or [])
+                                  if v.get("statusText") == "草稿待确认"]
+                        if not drafts:
+                            continue
+                        try:
+                            r = flow.confirm(PROJECT, st["key"], scene, path=drafts[0]["path"])
+                            results.append({"step": st["key"], "ok": True, "path": r.get("path")})
+                        except Exception as e:
+                            results.append({"step": st["key"], "ok": False, "error": str(e)})
+                self._send(200, json.dumps({"ok": True, "action": action, "results": results},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/workflow/return":
+            try:
+                body = self._json_body()
+                out = flow.return_step(PROJECT, str(body.get("step") or ""),
+                                       str(body.get("note") or ""), str(body.get("scene") or "N001"))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/workflow/skip":
+            try:
+                body = self._json_body()
+                out = flow.skip_step(PROJECT, str(body.get("step") or ""), str(body.get("note") or ""))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/workflow/register":
             try:
                 body = self._json_body()

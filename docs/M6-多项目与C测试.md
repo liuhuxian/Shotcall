@@ -53,6 +53,11 @@
 5. 09b 依赖校验正则只认 `minimax-h3-vNNN.md`，不认 `minimax-h3-ref2va-vNNN.md`；目前靠 flow 传 depends_on 兜底。
 6. 多项目选择器只显示“空/有登记”，没有健康度（.agents、输入、集数、最后修改）；不能手工添加路径。
 
+## 3.1 追加的退回/修订实测
+
+- `_2` 沙箱追加：01 退回 → 01 v002 确认 → 下游 10 项自动过期 → 02 v002 确认；artifact-state 13 条。
+- 完整说明见 [M7 流程交互与修订](M7-流程交互与修订.md)；自动化 `test_revision.py` 11/0。
+
 ## 4 测试
 
-- `test_all` **45 通过 / 0 失败 / 2 跳过**；`test_projects` 7/0；`test_flow` 10/0（11 卡）；`test_m1_acceptance` 80/0/2。
+- `test_all` **46 通过 / 0 失败 / 2 跳过**；`test_projects` 7/0；`test_revision` 11/0；`test_flow` 10/0（11 卡）；`test_m1_acceptance` 80/0/2。

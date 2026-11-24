@@ -1616,7 +1616,10 @@ function copyFlow(key, btn){
 
 async function registerFlow(key){
   const st=(FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key) || {};
+  if(!(st.newFiles||[]).length) return toast('没有未登记的新文件：先让 Agent 写下一版');
   const body={step:key, scene:FLOW.scene||'N001'};
+  const fs=document.getElementById('flow-file-'+key);
+  if(fs && fs.value) body.path=fs.value;
   const sel=document.getElementById('flow-outcome-'+key);
   if(sel) body.outcome=sel.value;
   const r=await fetch('/api/workflow/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1629,13 +1632,46 @@ async function registerFlow(key){
 
 async function confirmFlow(key){
   const st=(FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key) || {};
+  const drafts=(st.versions||[]).filter(v=>v.statusText==='草稿待确认');
+  if(!drafts.length) return toast('没有待确认草稿');
+  const sel=document.getElementById('flow-conf-'+key);
+  const path=sel?sel.value:drafts[0].path;
+  if(!window.confirm('确认 '+(st.name||key)+' 的 '+path+'？\n确认后它会成为当前版本，旧版保留，下游可能被标记待复核。')) return;
   const r=await fetch('/api/workflow/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path:st.path})});
+    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path})});
   const j=await r.json();
   if(!r.ok) return toast(j.error||'确认失败');
   toast('已确认：'+(j.path||key));
   FLOW.data=null; STG.data=null;
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
+}
+
+async function returnFlow(key){
+  const note=prompt('退回修改的原因（会写进流程记录）：');
+  if(note===null) return;
+  const r=await fetch('/api/workflow/return',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',note})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'退回失败');
+  toast('已记录退回：'+(j.record?.note||''));
+  FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
+}
+async function batchFlow(action){
+  if(!window.confirm((action==='register'?'登记所有阶段的新文件':'确认所有待确认草稿')+'？\n会逐个调用登记/确认，失败项会保留。')) return;
+  const r=await fetch('/api/workflow/batch',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action,scene:FLOW.scene||'N001'})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'批量操作失败');
+  const ok=(j.results||[]).filter(x=>x.ok).length, bad=(j.results||[]).filter(x=>!x.ok).length;
+  toast(`批量${action==='register'?'登记':'确认'}：成功 ${ok}，失败 ${bad}`);
+  FLOW.data=null; STG.data=null; await loadFlow(FLOW.scene||'N001',true); await loadStages(true); render();
+}
+
+async function skipFlow(key){
+  const note=prompt('跳过该可选阶段的原因：') || '可选阶段跳过';
+  const r=await fetch('/api/workflow/skip',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:key,note})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'跳过失败');
+  toast('已跳过：'+key);
+  FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
 }
 
 function sFlow(){
@@ -1659,21 +1695,42 @@ function sFlow(){
           · 下一版：<span class="mono">${esc(st.nextPath)}</span><br>
           输入：${(st.inputs||[]).map(x=>`<span class="mono">${esc(x)}</span>`).join('、')||'—'}
         </div>
+        ${(st.returned||st.skipped)?`<div class="dim" style="font-size:11px;margin-top:4px;color:var(--warn)">
+          ${st.returned?'上次退回：'+esc(st.returned.note||'（无说明）')+' · '+esc(st.returned.at):''}
+          ${st.skipped?'已跳过：'+esc(st.skipped.note||'')+' · '+esc(st.skipped.at):''}</div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="copyFlow('${st.key}',this)">复制提示词</button>
           ${is06?`<select id="flow-outcome-06" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:11px">
             <option value="passed">结论：通过</option><option value="revision-required">结论：需修订</option><option value="uncertain">结论：不确定</option>
           </select>`:''}
-          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="registerFlow('${st.key}')">登记成果</button>
-          ${is06?'':`<button class="btn ok" style="font-size:11px;padding:3px 10px" ${st.canConfirm?'':'disabled'} onclick="confirmFlow('${st.key}')">确认</button>`}
-          <span class="dim" style="font-size:10.5px">${st.canConfirm?'确认后才进入下游':'下游只认已确认版'}</span>
+          ${(st.newFiles||[]).length?`<select id="flow-file-${st.key}" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:10.5px;max-width:260px">
+            ${st.newFiles.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}
+          </select>`:''}
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" ${(st.newFiles||[]).length?'':'disabled'} onclick="registerFlow('${st.key}')">登记成果</button>
+          ${(st.versions||[]).some(v=>v.statusText==='草稿待确认')?`<select id="flow-conf-${st.key}" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:10.5px;max-width:260px">
+            ${(st.versions||[]).filter(v=>v.statusText==='草稿待确认').map(v=>`<option value="${esc(v.path)}">${esc(v.path)}</option>`).join('')}
+          </select>`:''}
+          ${is06?'':`<button class="btn ok" style="font-size:11px;padding:3px 10px" ${(st.versions||[]).some(v=>v.statusText==='草稿待确认')?'':'disabled'} onclick="confirmFlow('${st.key}')">确认</button>`}
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="returnFlow('${st.key}')">退回修改</button>
+          ${(st.key==='03'||st.key==='06') && !st.path ? `<button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="skipFlow('${st.key}')">跳过</button>`:''}
+          <span class="dim" style="font-size:10.5px">${(st.versions||[]).some(v=>v.statusText==='草稿待确认')?'确认后才进入下游':'下游只认已确认版'}</span>
         </div>
         <details style="margin-top:8px"><summary class="dim" style="font-size:11.5px;cursor:pointer">查看/复制完整提示词</summary>
           <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:6px 0 0;color:#c9d2e0;max-height:340px;overflow:auto">${esc(st.prompt)}</pre>
         </details>
+        <details style="margin-top:6px"><summary class="dim" style="font-size:11.5px;cursor:pointer">版本与依赖（${(st.versions||[]).length}）</summary>
+          <div style="margin-top:5px">${(st.versions||[]).map(v=>`<div class="dim mono" style="font-size:10.5px;line-height:1.8">
+            ${esc(v.version)} · ${esc(v.statusText||'')} · ${esc(v.path)} · sha ${esc((v.sha256||'').slice(0,10))}
+            ${(v.dependsOn||[]).length?'· 依赖：'+v.dependsOn.map(esc).join('、'):''}</div>`).join('')||'<span class="dim" style="font-size:11px">还没有版本</span>'}</div>
+        </details>
       </div></div>`;
   }).join("");
   return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
+      <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>
+      <span class="dim" style="font-size:11px">批量只处理当前场次；失败项逐条显示</span>
+    </div>
     <div class="dim" style="font-size:11.5px;margin-bottom:10px">流程只做提示词与登记/确认；Agent 写盘后点「登记成果」，确认后下游才可用。生成走「生成台」。</div>
     ${cards}`;
 }

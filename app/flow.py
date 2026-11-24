@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import artifacts
+import store
 
 VER = re.compile(r"-v(\d{3})(?:-\d+)?\.md$")
 
@@ -151,6 +152,52 @@ def _new_file(project: Path, step, scene=None):
     return best[1] if best else None
 
 
+def _new_files(project: Path, step, scene=None):
+    known = {a.get("path") for a in _all(project)}
+    rows = []
+    for p in project.glob("**/*"):
+        if not p.is_file() or p.suffix != ".md":
+            continue
+        rel = str(p.relative_to(project))
+        ver = _match(step, rel, scene)
+        if ver is None or rel in known:
+            continue
+        rows.append((ver, p.stat().st_mtime, rel))
+    rows.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [r[2] for r in rows]
+
+
+def _versions(project: Path, step, scene=None):
+    rows = []
+    for a in _all(project):
+        ver = _match(step, a.get("path", ""), scene)
+        if ver is None:
+            continue
+        rows.append({"path": a["path"], "version": f"v{ver:03d}", "statusText": a.get("statusText"),
+                     "sha256": a.get("sha256"), "dependsOn": a.get("dependsOn") or [],
+                     "confirmedAt": a.get("confirmedAt") or a.get("createdAt")})
+    rows.sort(key=lambda x: x["version"], reverse=True)
+    return rows
+
+
+def _ledger_rows(project: Path, name: str):
+    f = store.state_dir(project) / name
+    if not f.exists():
+        return []
+    out = []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            pass
+    return out
+
+
+def _last_for(project: Path, name: str, key: str):
+    rows = [r for r in _ledger_rows(project, name) if r.get("step") == key]
+    return rows[-1] if rows else None
+
+
 def _next_ver(project: Path, step, scene=None):
     a = _latest(project, step, scene)
     return (_ver(a["path"]) + 1) if a else 1
@@ -196,6 +243,10 @@ def steps_payload(project: Path, scene: str = "N001"):
             "version": (f"v{_ver(a['path']):03d}" if a else None),
             "nextVersion": r["nextVersion"], "nextPath": r["nextPath"],
             "inputs": r["inputs"], "prompt": r["prompt"],
+            "newFiles": _new_files(project, s, scene if s["scope"] == "{scene}" else None),
+            "versions": _versions(project, s, scene if s["scope"] == "{scene}" else None),
+            "returned": _last_for(project, "flow-returns.jsonl", s["key"]),
+            "skipped": _last_for(project, "flow-skips.jsonl", s["key"]),
             "canConfirm": bool(a and STATUS.get(a.get("statusText")) == "draft"),
             "canRegister": True,
         })
@@ -264,3 +315,32 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
     out = _run_guard(project, ["confirm", "--project", str(project), "--kind", step["kind"],
                                "--scope", scope, "--path", rel])
     return {"ok": True, "path": rel, "output": out}
+
+
+def return_step(project: Path, step_key: str, note: str = "", scene: str = "N001"):
+    step = BY_KEY.get(step_key)
+    if not step:
+        raise ValueError("未知流程")
+    f = store.state_dir(project) / "flow-returns.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"step": step_key, "scene": scene, "note": (note or "").strip(),
+           "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    with open(f, "a", encoding="utf-8") as out:
+        out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return {"ok": True, "record": rec}
+
+
+def skip_step(project: Path, step_key: str, note: str = ""):
+    step = BY_KEY.get(step_key)
+    if not step:
+        raise ValueError("未知流程")
+    a = _latest(project, step, None)
+    if a:
+        raise ValueError("该阶段已有成果，不能跳过")
+    f = store.state_dir(project) / "flow-skips.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"step": step_key, "note": (note or "可选阶段跳过").strip(),
+           "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    with open(f, "a", encoding="utf-8") as out:
+        out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return {"ok": True, "record": rec}
