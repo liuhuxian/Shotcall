@@ -318,6 +318,28 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     return {"ok": True, "path": rel, "output": out}
 
 
+def confirm_path(project: Path, path: str):
+    """确认任意已登记且 current.draft 指向它的成果；不要求它属于 01–09b 卡。"""
+    rel = str(path)
+    reg = artifacts.load_registry(project)
+    rec = next((a for a in (reg.get("artifacts") or []) if a.get("path") == rel), None)
+    if not rec:
+        raise ValueError("成果未登记，不能确认")
+    key = "::".join([rec.get("kind", ""), rec.get("scope", ""), rec.get("model", "")])
+    cur = (reg.get("current") or {}).get(key) or {}
+    if cur.get("draft") != rel:
+        if cur.get("confirmed") == rel:
+            return {"ok": True, "path": rel, "already": True}
+        raise ValueError("登记表没有对应待确认草稿")
+    args = ["confirm", "--project", str(project), "--kind", rec.get("kind", ""),
+            "--scope", rec.get("scope", ""), "--path", rel]
+    if rec.get("model"):
+        args += ["--model", rec["model"]]
+    out = _run_guard(project, args)
+    return {"ok": True, "path": rel, "output": out,
+            "kind": rec.get("kind"), "scope": rec.get("scope")}
+
+
 def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None):
     step = BY_KEY.get(step_key)
     if not step:
@@ -328,23 +350,13 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
         if not a:
             raise ValueError("没有可确认的成果")
         rel = a["path"]
-    # 以登记记录自己的 kind/scope/model 为准；阶段默认 scope 可能与历史记录不同
     rec = next((a for a in _all(project) if a.get("path") == rel), None)
     if rec:
-        kind = rec.get("kind") or step["kind"]
-        scope = rec.get("scope") or (scene if step["scope"] == "{scene}" else step["scope"])
-        model = rec.get("model") or ""
-    else:
-        kind = step["kind"]
-        scope = scene if step["scope"] == "{scene}" else step["scope"]
-        model = ""
-    args = ["confirm", "--project", str(project), "--kind", kind,
-            "--scope", scope, "--path", rel]
-    if model:
-        args += ["--model", model]
-    out = _run_guard(project, args)
-    return {"ok": True, "path": rel, "output": out, "kind": kind, "scope": scope}
-
+        return confirm_path(project, rel)
+    scope = scene if step["scope"] == "{scene}" else step["scope"]
+    out = _run_guard(project, ["confirm", "--project", str(project), "--kind", step["kind"],
+                               "--scope", scope, "--path", rel])
+    return {"ok": True, "path": rel, "output": out}
 
 def return_step(project: Path, step_key: str, note: str = "", scene: str = "N001"):
     step = BY_KEY.get(step_key)

@@ -23,8 +23,10 @@
   - pass 且登记表有对应草稿 → 调 `artifact_guard confirm`，更新 registry；
   - revise → 写 `flow-returns.jsonl` 退回记录；
   - 非阶段文件或旧 mock 数据没有 current 草稿时，只记本地审批并返回 warning，不误 500。
-- 已用真实 05b 验证：点确认后 `05-正式剧本/screenplay-timing-audit-v001.md` 从 `草稿待确认` → `已确认-当前`。
-- 回归：`test_artifact_confirm.py` 2/0；`test_m2_reviews.py` 8/0。
+- 非 01–09b 卡成果（如 `07-图像资产/音色参考-v001.md`）也走通用 `flow.confirm_path`，不再要求必须映射到流程卡。
+- 已用真实 05b 验证：`05-正式剧本/screenplay-timing-audit-v001.md` 从 `草稿待确认` → `已确认-当前`。
+- 已用真实 07 音色验证：`07-图像资产/音色参考-v001.md` 从 `草稿待确认` → `已确认-当前`。
+- 回归：`test_artifact_confirm.py` 3/0；`test_m2_reviews.py` 8/0。
 
 ## 2 Agent 派发（第一版）
 
