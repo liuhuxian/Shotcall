@@ -1670,11 +1670,16 @@ class Handler(BaseHTTPRequestHandler):
                 ops = vjobs.parse_units(PROJECT, scene)
                 by = {u["id"]: u for u in ops}
                 units = []
+                order = [u["id"] for u in ops]
                 for x in want:
                     if isinstance(x, dict):
                         u = by.get(x.get("id"))
                         if u:
-                            units.append({"unit": u, "count": int(x.get("count") or 1)})
+                            idx = order.index(u["id"])
+                            prev = order[idx - 1] if idx > 0 else None
+                            units.append({"unit": u, "count": int(x.get("count") or 1),
+                                          "chain": bool(x.get("chain")) and bool(prev),
+                                          "prevUnit": prev})
                     elif x in by:
                         units.append({"unit": by[x], "count": 1})
                 if not units:

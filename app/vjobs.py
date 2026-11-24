@@ -5,6 +5,7 @@
 """
 import json
 import random
+import subprocess
 import re
 import time
 import urllib.parse
@@ -99,6 +100,8 @@ def set_recipe(name: str) -> dict:
     RECIPE_FILE.write_text(json.dumps({"name": name}, ensure_ascii=False), encoding="utf-8")
     return current_recipe()
 
+
+MODELS_FL2V = "minimax_h3_fl2va_pruned_bf16.safetensors"
 
 MODELS = dict(
     unet="minimax_h3_ref2va_pruned_bf16.safetensors",
@@ -643,6 +646,63 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
     return g
 
 
+def build_i2v_graph(prompt: str, width: int, height: int, frames: int, seed: int,
+                    first_frame: str, steps: int = 20, lora: str = None,
+                    sigmas: str = None, sampler: str = None, attention: dict = None) -> dict:
+    """首帧驱动（fl2va）：用上一镜的最后一帧作为本镜第一帧，接续最稳。"""
+    g = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS_FL2V, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": MODELS["vae"]}},
+        "4": {"class_type": "VAELoader", "inputs": {"vae_name": MODELS["audio_vae"]}},
+        "5": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {
+            "clip": ["2", 0], "vae": ["3", 0],
+            "prompt": prompt, "width": width, "height": height, "length": frames}},
+        "6": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler or "res_multistep"}},
+        "7": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple",
+                                                         "steps": steps, "denoise": 1.0}},
+        "8": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["5", 0]}},
+        "9": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "10": {"class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["9", 0], "guider": ["8", 0], "sampler": ["6", 0],
+            "sigmas": ["7", 0], "latent_image": ["5", 1]}},
+        "11": {"class_type": "VAEDecode", "inputs": {"samples": ["10", 0], "vae": ["3", 0]}},
+        "12": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["10", 0], "vae": ["4", 0]}},
+        "13": {"class_type": "CreateVideo", "inputs": {"images": ["11", 0], "audio": ["12", 0], "fps": 24}},
+        "14": {"class_type": "SaveVideo", "inputs": {"video": ["13", 0], "filename_prefix": "gen/unit",
+                                                     "format": "auto", "codec": "auto"}},
+        "40": {"class_type": "LoadImage", "inputs": {"image": first_frame}},
+    }
+    g["5"]["inputs"]["first_frame"] = ["40", 0]
+    model_src = ["1", 0]
+    if lora:
+        g["20"] = {"class_type": "LoraLoaderModelOnly",
+                   "inputs": {"model": ["1", 0], "lora_name": lora, "strength_model": 1.0}}
+        model_src = ["20", 0]
+    if attention:
+        g["21"] = {"class_type": "ModelAttentionBackend",
+                   "inputs": {"model": model_src, "attention": attention.get("backend", "pytorch attention")}}
+        g["22"] = {"class_type": "BlockSparseAttention", "inputs": {
+            "model": ["21", 0], "selection": attention.get("selection", "sol-attn"),
+            "tau": attention.get("tau", 1.3),
+            "start_percent": attention.get("start_percent", 0.2),
+            "end_percent": attention.get("end_percent", 1.0),
+            "dense_blocks": attention.get("dense_blocks", ""),
+            "min_tokens": attention.get("min_tokens", 12288),
+            "extra_tokens": attention.get("extra_tokens", 256),
+            "sink_conditioning": attention.get("sink_conditioning", "exact_kv_and_rows"),
+            "verbose": attention.get("verbose", True)}}
+        model_src = ["22", 0]
+    if sigmas:
+        g["23"] = {"class_type": "ManualSigmas", "inputs": {"sigmas": sigmas}}
+        g["10"]["inputs"]["sigmas"] = ["23", 0]
+        g.pop("7", None)
+    if "7" in g:
+        g["7"]["inputs"]["model"] = model_src
+    g["8"]["inputs"]["model"] = model_src
+    return g
+
+
 def _stage_ref(port: int, path: Path, as_name: str = None) -> str:
     name = as_name or path.name
     boundary = "----vjob" + str(int(time.time() * 1000))
@@ -682,6 +742,8 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
         for k in range(count):
             jid = f"{batch}-{u['id']}-{k+1}" if count > 1 else f"{batch}-{u['id']}"
             job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
+                   "chain": bool(item.get("chain")),
+                   "prevUnit": item.get("prevUnit"),
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),
                    "width": width, "height": height, "steps": steps,
                    "lora": current_recipe().get("lora"),
@@ -728,11 +790,29 @@ def _execute(project: Path, jid: str, job: dict):
             if jid in _jobs:
                 _jobs[jid]["usedRefs"] = ref_names
         _save()
-        g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
-                        job["seed"], job["steps"], ref_images=ref_names,
-                        lora=job.get("lora"), sigmas=job.get("sigmas"),
-                        sampler=job.get("sampler"), attention=job.get("attention"),
-                        ref_size=job.get("refSize") or "match")
+        if job.get("chain") and job.get("prevUnit"):
+            prev = latest_result(project, job["scene"], job["prevUnit"])
+            if not prev:
+                raise RuntimeError(f"接续失败：找不到 {job['prevUnit']} 的成片")
+            last_png = project / "制作运行" / "接续帧" / f"{job['unit']}_from_{job['prevUnit']}.png"
+            last_png.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-0.1", "-i", str(project / prev),
+                            "-frames:v", "1", str(last_png)], check=True, timeout=120)
+            first_name = _stage_ref(job["port"], last_png, as_name=f"first_{jid[-10:]}{last_png.suffix}")
+            with _lock:
+                if jid in _jobs:
+                    _jobs[jid]["firstFrame"] = str(last_png.relative_to(project))
+            _save()
+            g = build_i2v_graph(job["prompt"], job["width"], job["height"], job["frames"],
+                                job["seed"], first_name, steps=job["steps"],
+                                lora=job.get("lora"), sigmas=job.get("sigmas"),
+                                sampler=job.get("sampler"), attention=job.get("attention"))
+        else:
+            g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
+                            job["seed"], job["steps"], ref_images=ref_names,
+                            lora=job.get("lora"), sigmas=job.get("sigmas"),
+                            sampler=job.get("sampler"), attention=job.get("attention"),
+                            ref_size=job.get("refSize") or "match")
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:
@@ -781,6 +861,15 @@ def _execute(project: Path, jid: str, job: dict):
             if jid in _jobs:
                 _jobs[jid].update({"status": "failed", "error": str(e)})
         _save()
+
+
+def latest_result(project: Path, scene: str, unit: str):
+    """取某单元最新的成片（项目相对路径）。"""
+    d = project / RESULT_DIR / scene / unit
+    if not d.is_dir():
+        return None
+    files = sorted(d.glob("*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
+    return str(files[0].relative_to(project)) if files else None
 
 
 def cancel_jobs(ids: list) -> dict:

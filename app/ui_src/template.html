@@ -842,6 +842,11 @@ function genUnitRow(u){
       <b class="mono" style="font-size:12.5px">${u.id}</b>
       <span class="dim" style="font-size:11.5px">${u.seconds} 秒 · ${esc(u.shots)}</span>
       <span class="dim" style="font-size:11px">${u.prompt.length} 字</span>
+      <label class="dim" style="font-size:11px;margin-left:8px;cursor:pointer;user-select:none"
+        title="用上一单元的最后一帧作为本镜第一帧（首帧驱动，接续最稳）">
+        <input type="checkbox" ${(GEN.chain||{})[u.id]?'checked':''}
+          onchange="GEN.chain=GEN.chain||{};GEN.chain['${u.id}']=this.checked"> 接上镜
+      </label>
       <span class="dim" style="font-size:11px;margin-left:6px">次数</span>
       <input type="number" min="1" max="9" value="${(GEN.count||{})[u.id]||1}"
         onchange="GEN.count=GEN.count||{};GEN.count['${u.id}']=Math.max(1,Math.min(9,parseInt(this.value)||1))"
@@ -1045,7 +1050,7 @@ document.addEventListener('keydown', ev=>{
 
 async function submitGen(){
   const units = (GEN.units||[]).filter(u=>GEN.draft[u.id]!==false)
-    .map(u=>({id:u.id, count:(GEN.count||{})[u.id]||1}));
+    .map(u=>({id:u.id, count:(GEN.count||{})[u.id]||1, chain:!!(GEN.chain||{})[u.id]}));
   if(!units.length) return toast("没有选中单元");
   const total = units.reduce((a,b)=>a+b.count,0);
   const seedRaw = String(GEN.seed||"").trim();
