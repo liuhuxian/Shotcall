@@ -726,6 +726,10 @@ def gen_history(include_deleted: bool = False) -> dict:
     items.sort(key=lambda x: x["mtime"], reverse=True)
     known = [i for i in items if i.get("renderSec") and i.get("frames")]
     rate = round(sum(i["renderSec"] / i["frames"] for i in known) / len(known), 2) if known else None
+    if rate:
+        for i in items:      # 没有实测耗时的老记录：按实测速率估算
+            if not i.get("renderSec") and i.get("frames"):
+                i["estSec"] = round(i["frames"] * rate * ((i.get("steps") or 20) / 20.0), 1)
     return {"items": items, "count": len(items),
             "totalMB": round(sum(i["sizeMB"] for i in items
                                  if isinstance(i.get("sizeMB"), (int, float))), 1),
@@ -1563,6 +1567,8 @@ class Handler(BaseHTTPRequestHandler):
                     out.append({"file": str(f.relative_to(PROJECT)),
                                 "unit": m.group(1) if m else f.parent.name,
                                 "group": f.parent.name, "name": f.name,
+                                "renderSec": job.get("seconds") or job.get("renderSec"),
+                                "frames": job.get("frames"), "steps": job.get("steps"),
                                 "chainFrom": chain_from,
                                 "chainStale": bool(chain_from and prev_latest > chain_at),
                                 "time": time.strftime("%m-%d %H:%M", time.localtime(mt)),

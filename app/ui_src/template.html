@@ -929,12 +929,14 @@ function histPanel(){
   const rows = items.map(x=>`<tr style="${x.deleted?'opacity:.55':''}">
     <td class="dim mono" style="font-size:11px;width:86px">${esc(x.time)}${x.deleted?' <span class="badge b-mut" style="font-size:9px">已删</span>':''}</td>
     <td class="mono" style="width:62px">${esc(x.unit)}</td>
+    <td class="mono" style="font-size:11.5px;width:92px;text-align:right">${
+      x.renderSec!=null ? fmtDur(x.renderSec)
+        : (x.estSec!=null ? `<span class="dim" title="按实测速率估算">≈ ${fmtDur(x.estSec)}</span>` : '—')}</td>
+    <td class="dim mono" style="font-size:11px;width:58px;text-align:right">${x.frames?x.frames+' 帧':'—'}</td>
+    <td class="dim mono" style="font-size:11px;width:46px;text-align:right">${x.steps?x.steps+' 步':'—'}</td>
     <td class="dim mono" style="font-size:10.5px;width:92px">${x.seed??'—'}</td>
     <td class="dim mono" style="font-size:11px;width:92px">${x.w&&x.h?x.w+'×'+x.h:'—'}</td>
     <td class="mono" style="font-size:10.5px;width:104px;color:#8fa3bd">${esc(x.recipe||'—')}</td>
-    <td class="dim mono" style="font-size:11px;width:58px;text-align:right">${x.frames?x.frames+' 帧':'—'}</td>
-    <td class="dim mono" style="font-size:11px;width:46px;text-align:right">${x.steps?x.steps+' 步':'—'}</td>
-    <td class="mono" style="font-size:11.5px;width:84px;text-align:right">${fmtDur(x.renderSec)}</td>
     <td class="dim mono" style="font-size:11px;width:60px;text-align:right">${x.sizeMB!=null?x.sizeMB+' MB':'—'}</td>
     <td style="width:118px;text-align:right">
       ${x.deleted ? '<span class="dim" style="font-size:10px">已删除</span>' : `
@@ -954,9 +956,9 @@ function histPanel(){
         </label>
       </span></div>
     <div class="pb">${items.length?`<table><thead><tr>
-      <th>完成时间</th><th>单元</th><th>种子</th><th>分辨率</th><th>工作流</th><th style="text-align:right">帧数</th>
-      <th style="text-align:right">步数</th><th style="text-align:right">耗时</th><th style="text-align:right">大小</th>
-      <th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table>`
+      <th>完成时间</th><th>单元</th><th style="text-align:right">耗时</th><th style="text-align:right">帧数</th>
+      <th style="text-align:right">步数</th><th>种子</th><th>分辨率</th><th>工作流</th>
+      <th style="text-align:right">大小</th><th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table>`
       :'<div class="dim" style="font-size:12.5px">还没有生成记录。</div>'}</div>
     <div id="histPlayer"></div></div>`;
 }
@@ -1076,7 +1078,8 @@ function genUnitRow(u){
             style="position:absolute;top:5px;right:5px;background:rgba(10,12,16,.72);border:1px solid var(--line);
                    color:#c9d2e0;border-radius:5px;font-size:11px;padding:2px 6px;cursor:pointer;line-height:1.4">⛶</button>
         </div>
-        <div class="mono dim" style="font-size:10px;margin-top:3px">#${idx+1} · ${esc(r.time||"")} · ${r.kb} KB</div>
+        <div class="mono dim" style="font-size:10px;margin-top:3px">#${idx+1} · ${esc(r.time||"")} · ${r.kb} KB${
+          r.renderSec?` · 耗时 ${fmtDur(r.renderSec)}`:''}</div>
         ${r.chainFrom?`<div style="font-size:9.5px;margin-top:2px;color:${r.chainStale?'var(--warn)':'#7c8798'}"
           title="${r.chainStale?'接续源已过期：上一单元有了更新的成片':'首帧取自 '+r.chainFrom+' 的最后一帧'}">
           接 ${esc(r.chainFrom)}${r.chainStale?' · 源已过期':''}</div>`:''}
