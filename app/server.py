@@ -1200,8 +1200,13 @@ class Handler(BaseHTTPRequestHandler):
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/recipe":
-            self._send(200, json.dumps({"current": vjobs.current_recipe(),
-                                        "all": [{"name": k, **v} for k, v in vjobs.RECIPES.items()]},
+            cur = vjobs.current_recipe()
+            allr = [{"name": k, **v} for k, v in vjobs.RECIPES.items()]
+            if cur["name"] not in vjobs.RECIPES:      # 导入的自定义工作流也要出现在卡片里
+                allr.insert(0, {"name": cur["name"], "label": cur.get("label") or cur["name"],
+                                "steps": cur.get("steps"), "lora": cur.get("lora"),
+                                "source": cur.get("source") or "comfyui"})
+            self._send(200, json.dumps({"current": cur, "all": allr},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/versions":

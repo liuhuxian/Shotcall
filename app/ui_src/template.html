@@ -461,7 +461,8 @@ function recipePanel(){
         ${on?'<span class="badge" style="font-size:9.5px;border-color:var(--acc);color:var(--acc)">当前</span>':''}
       </div>
       <div class="dim mono" style="font-size:10.5px;margin-top:5px">
-        ${r.steps} 步 · ${r.lora?'LoRA '+esc(r.lora.split('_').slice(2,4).join('_')):'无 LoRA'}
+        ${r.steps||'?'} 步 · ${r.lora?'LoRA '+esc(r.lora.split('_').slice(2,4).join('_')):'无 LoRA'}
+        ${r.source==='comfyui'?' · 来自 ComfyUI':''}
       </div>
     </div>`;
   }).join("");
