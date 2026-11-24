@@ -11,11 +11,16 @@
     python3 test_vjobs.py
 """
 import json
+import os
 import sys
 import tempfile
 import time
 from pathlib import Path
 from unittest import mock
+
+# 导入 vjobs 时会把 JOBS_FILE 读一遍：这里先指到 /tmp，绝不碰真实 app/run/vjobs.json
+os.environ["SHOTCALL_VJOBS_FILE"] = str(
+    Path(tempfile.mkdtemp(prefix="vjobs-boot-")) / "vjobs.json")
 
 import sched
 import vjobs

@@ -3,7 +3,9 @@
 
 与出图任务一样，只产任务，不选卡；卡由 sched 分配。
 """
+import fcntl
 import json
+import os
 import random
 import subprocess
 import re
@@ -21,24 +23,63 @@ import store
 _lock = __import__("threading").Lock()
 _jobs = {}
 _order = []
-JOBS_FILE = Path(__file__).parent / "run" / "vjobs.json"
+# M1 仍在 app/run/vjobs.json；环境变量只给测试隔离用（指向 /tmp），生产不设。
+JOBS_FILE = Path(os.environ.get("SHOTCALL_VJOBS_FILE")
+                 or (Path(__file__).parent / "run" / "vjobs.json"))
+# 终态：reconcile 不再把它们拉回 running/waiting
+TERMINAL_STATUSES = ("done", "succeeded", "failed", "cancelled",
+                     "aborted", "interrupted", "deleted")
+
+
+def _lock_path() -> Path:
+    """独立锁文件：不能锁 vjobs.json 本身——它会被 os.replace 换掉 inode。"""
+    return JOBS_FILE.with_name(JOBS_FILE.name + ".lock")
 
 
 def _save():
-    with _lock:
-        data = {"order": list(_order), "jobs": {k: dict(v) for k, v in _jobs.items()}}
+    """原子落盘：进程间 flock 排他 + 唯一临时文件 + os.replace。
+
+    调用方**不要**在持有 _lock 时调用本函数（快照会自己取一次 _lock）。
+    临时文件与目标同目录，保证 replace 是同一文件系统内的原子替换；
+    即使两个进程同时写，也只会串行替换，不会写出半截 JSON。
+    """
     try:
+        with _lock:
+            text = json.dumps({"order": list(_order),
+                               "jobs": {k: dict(v) for k, v in _jobs.items()}},
+                              ensure_ascii=False)
         JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = JOBS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(JOBS_FILE)
+        with _lock_path().open("a+") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            tmp = JOBS_FILE.with_name(
+                f"{JOBS_FILE.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(text)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, JOBS_FILE)
+            finally:
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
     except Exception:
         pass
 
 
 def _load():
+    """读锁 + 一次性读全文：不会读到另一个进程写了一半的文件。"""
     try:
-        data = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+        JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with _lock_path().open("a+") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_SH)
+            text = JOBS_FILE.read_text(encoding="utf-8")
+    except Exception:
+        return
+    try:
+        data = json.loads(text)
     except Exception:
         return
     with _lock:
@@ -258,7 +299,11 @@ def parse_units(project: Path, scene: str) -> list:
 
 
 def resume(project: Path) -> list:
-    """进程重启后，把"还在排队、从没进过 ComfyUI"的任务重新交给调度。"""
+    """进程重启后，把"还在排队、从没进过 ComfyUI"的任务重新交给调度。
+
+    依赖已经失败/取消的任务不再重排，直接标 cancelled（dependency_failed）；
+    连带取消会沿 afterIds 继续传播（含重启后只存在于 vjobs 里的失败状态）。
+    """
     todo = []
     with _lock:
         for jid in _order:
@@ -266,6 +311,30 @@ def resume(project: Path) -> list:
             # 只要还停在"排队"且不在调度待派表里，就重新送一遍（防止重启丢任务）
             if j.get("status") == "queued" and jid not in sched.pending_ids():
                 todo.append(dict(j))
+        status_of = {jid: (j.get("status") or "") for jid, j in _jobs.items()}
+    if not todo:
+        return []
+    dead_status = {"failed", "cancelled", "aborted", "interrupted", "deleted"}
+    failed = set(sched.failed_ids())
+    skipped = []
+    while todo:
+        keep = []
+        for j in todo:
+            deps = j.get("afterIds") or []
+            if any(d in failed or status_of.get(d) in dead_status for d in deps):
+                skipped.append(j)
+                failed.add(j["id"])
+                status_of[j["id"]] = "cancelled"
+            else:
+                keep.append(j)
+        if len(keep) == len(todo):
+            todo = keep
+            break
+        todo = keep
+    if skipped:
+        ids = [j["id"] for j in skipped]
+        mark_cancelled(ids, "dependency_failed")
+        sched.mark_failed(ids)          # 让仍在调度表里的下游也一起取消
     if not todo:
         return []
     units = {u["id"]: u for u in parse_units(project, todo[0].get("scene") or "N001")}
@@ -276,7 +345,9 @@ def resume(project: Path) -> list:
             continue
         with _lock:
             _jobs[j["id"]].update({"status": "queued", "prompt": u["prompt"]})
-        tasks.append({"id": j["id"], "run": _runner(project, j["id"])})
+        tasks.append({"id": j["id"], "run": _runner(project, j["id"]),
+                      "on_cancel": lambda reason, ids=[j["id"]]:
+                          mark_cancelled(ids, reason)})
     _save()
     if tasks:
         sched.submit("video", tasks)
@@ -298,7 +369,7 @@ def reconcile(project: Path = None) -> int:
     # 老记录补规格与参考图
     with _lock:
         for j in _jobs.values():
-            if j.get("status") in ("running", "waiting") and not j.get("frames"):
+            if j.get("status") in ("running", "waiting", "dispatched", "queued") and not j.get("frames"):
                 hit = units.get((j.get("prompt") or "").strip())
                 if hit:
                     j["seconds"] = hit[1].get("seconds")
@@ -307,7 +378,7 @@ def reconcile(project: Path = None) -> int:
     # 老记录补参考图（之前认领时没存）
     with _lock:
         for jid, j in _jobs.items():
-            if j.get("status") in ("running", "waiting") and not j.get("refs"):
+            if j.get("status") in ("running", "waiting", "dispatched", "queued") and not j.get("refs"):
                 hit = units.get((j.get("prompt") or "").strip())
                 if hit:
                     j["refs"] = [r["file"] for r in (hit[1].get("refs") or []) if r.get("exists")]
@@ -332,19 +403,28 @@ def reconcile(project: Path = None) -> int:
         run_now = _ids(q.get("queue_running"))
         pend_now = _ids(q.get("queue_pending"))
         if run_now or pend_now:
+            # 以 ComfyUI 实际队列为准：排队=dispatched+queueState=waiting，
+            # 真正开渲才 running；终态任务不回落。
             with _lock:
                 for jj in _jobs.values():
                     pid2 = jj.get("promptId")
-                    if pid2 in run_now and jj.get("status") not in ("running", "done"):
-                        jj["status"] = "running"; jj["error"] = None; changed = True
-                    elif pid2 in pend_now and jj.get("status") not in ("waiting", "running", "done"):
-                        jj["status"] = "waiting"; jj["error"] = None; changed = True
-        if run_now:
-            with _lock:
-                for jj in _jobs.values():
-                    if jj.get("promptId") in run_now and not jj.get("execStartedAt"):
-                        jj["execStartedAt"] = time.time()
-                        changed = True
+                    if not pid2 or jj.get("status") in TERMINAL_STATUSES:
+                        continue
+                    if pid2 in run_now:
+                        if jj.get("status") != "running" or jj.get("queueState") != "running":
+                            jj["status"] = "running"
+                            jj["queueState"] = "running"
+                            jj["error"] = None
+                            changed = True
+                        if not jj.get("execStartedAt"):
+                            jj["execStartedAt"] = time.time()
+                            changed = True
+                    elif pid2 in pend_now:
+                        if jj.get("status") != "dispatched" or jj.get("queueState") != "waiting":
+                            jj["status"] = "dispatched"
+                            jj["queueState"] = "waiting"
+                            jj["error"] = None
+                            changed = True
         entries = (q.get("queue_running") or []) + (q.get("queue_pending") or [])
         for e in entries:
             try:
@@ -359,13 +439,18 @@ def reconcile(project: Path = None) -> int:
                     continue
                 sc, unit_obj = units[text]
                 uid = unit_obj["id"]
-                running_ids = set(q.get("runningIds") or [])
-                st = "running" if pid in running_ids else "waiting"
-                if st == "running":
+                # ComfyUI 原始 /queue 只有 queue_running / queue_pending，没有 runningIds；
+                # 用 run_now / pend_now 判定，别把正在渲染的又写成 waiting。
+                running_now = pid in run_now
+                st = "running" if running_now else "dispatched"
+                qs = "running" if running_now else "waiting"
+                exec_at = time.time() if running_now else None
+                if running_now:
                     with _lock:
                         for jj in _jobs.values():
                             if jj.get("promptId") == pid and not jj.get("execStartedAt"):
                                 jj["execStartedAt"] = time.time()
+                                changed = True
                 with _lock:
                     used = {(_jobs.get(x) or {}).get("promptId") for x in _order}
                     if pid in used:          # 这个 pid 已经有任务认领了，别再重复分配
@@ -374,10 +459,13 @@ def reconcile(project: Path = None) -> int:
                     for jid in _order:
                         j = _jobs.get(jid) or {}
                         if (j.get("scene") == sc and j.get("unit") == uid
-                                and j.get("status") in ("running", "queued", "dispatched")
+                                and j.get("status") in ("running", "waiting", "queued", "dispatched")
                                 and not j.get("promptId")):
                             _jobs[jid].update({"promptId": pid, "card": card,
-                                               "status": st, "pidAt": time.time()})
+                                               "status": st, "queueState": qs,
+                                               "pidAt": time.time()})
+                            if exec_at and not _jobs[jid].get("execStartedAt"):
+                                _jobs[jid]["execStartedAt"] = exec_at
                             n += 1
                             matched = True
                             break
@@ -394,13 +482,16 @@ def reconcile(project: Path = None) -> int:
                                       "seconds": unit_obj.get("seconds"),
                                       "frames": frames_of(unit_obj.get("seconds") or 10),
                                       "steps": 20,
-                                      "seed": seed, "status": st, "card": card,
+                                      "seed": seed, "status": st, "queueState": qs,
+                                      "card": card,
                                       "promptId": pid, "pidAt": time.time(),
                                       "refs": [r["file"] for r in (unit_obj.get("refs") or [])
                                                if r.get("exists")],
                                       "file": None, "error": None,
                                       "queuedAt": time.time(), "startedAt": None,
                                       "prompt": text, "source": "adopted"}
+                        if exec_at:
+                            _jobs[jid]["execStartedAt"] = exec_at
                         _order.append(jid)
                         n += 1
             except Exception:
@@ -776,27 +867,37 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
         with _lock:
             _jobs[jid] = job
             _order.append(jid)
-        tasks.append({"id": jid, "run": _runner(project, jid), "after": list(job["afterIds"])})
+        tasks.append({"id": jid, "run": _runner(project, jid),
+                      "after": list(job["afterIds"]),
+                      # 默认参数固定 jid，避免闭包晚绑定把取消记到最后一条任务上
+                      "on_cancel": lambda reason, ids=[jid]:
+                          mark_cancelled(ids, reason)})
     _save()
     sched.submit("video", tasks)
     return {"batch": batch, "jobs": [t["id"] for t in tasks]}
 
 
 def _runner(project: Path, jid: str):
-    def run(port: int):
+    def run(port: int) -> bool:
         with _lock:
-            job = dict(_jobs.get(jid) or {})
-            if job.get("status") == "cancelled":
-                return
-            _jobs[jid].update({"status": "running", "startedAt": time.time(),
-                               "port": port, "card": port - 8188})
+            job = _jobs.get(jid)
+            if job is None or job.get("status") == "cancelled":
+                return False
+            # 派发≠生成中：真正开渲由 reconcile 按 ComfyUI running 队列改写
+            job.update({"status": "dispatched", "startedAt": time.time(),
+                        "port": port, "card": port - 8188, "error": None})
+            snapshot = dict(job)
         _save()
-        _execute(project, jid, dict(_jobs[jid]))
+        return _execute(project, jid, snapshot)
     return run
 
 
-def _execute(project: Path, jid: str, job: dict):
+def _execute(project: Path, jid: str, job: dict) -> bool:
+    """执行一条视频任务。成功返回 True；失败写 status=failed 并返回 False。"""
     try:
+        with _lock:
+            if (_jobs.get(jid) or {}).get("status") == "cancelled":
+                return False
         ref_names = []
         for i, rel in enumerate(job.get("refs") or []):
             f = project / rel
@@ -838,7 +939,12 @@ def _execute(project: Path, jid: str, job: dict):
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:
-                _jobs[jid]["promptId"] = pid
+                j = _jobs[jid]
+                j["promptId"] = pid
+                # 拿到 prompt_id 仍算 dispatched；排队/开渲由 reconcile 对账。
+                # 若对账线程已经先一步写成 running，不要把它降级。
+                if j.get("status") in (None, "queued", "starting"):
+                    j["status"] = "dispatched"
         _save()                      # 立刻落盘：重启后还能认出这条任务在 ComfyUI 里的位置
         t0 = time.time()
         gone_since = None          # 只要任务还在 ComfyUI 队列里就一直等，不设总时长上限
@@ -865,11 +971,14 @@ def _execute(project: Path, jid: str, job: dict):
                     k += 1
                 out.write_bytes(data)
                 with _lock:
-                    _jobs[jid].update({"status": "done", "file": str(out.relative_to(project)),
-                                       "renderSec": round(time.time() - t0, 1),
-                                       "finishedAt": time.time()})
+                    if jid in _jobs:
+                        _jobs[jid].update({"status": "done",
+                                           "queueState": None, "error": None,
+                                           "file": str(out.relative_to(project)),
+                                           "renderSec": round(time.time() - t0, 1),
+                                           "finishedAt": time.time()})
                 _save()
-                return
+                return True
             # 不在队列里也不在历史里：连续 10 分钟才认为真的丢了
             try:
                 q = gpus.queue_of(job["port"])
@@ -884,9 +993,36 @@ def _execute(project: Path, jid: str, job: dict):
                 raise RuntimeError("任务从 ComfyUI 队列消失超过 10 分钟")
     except Exception as e:
         with _lock:
-            if jid in _jobs:
-                _jobs[jid].update({"status": "failed", "error": str(e)})
+            j = _jobs.get(jid)
+            if j is not None and j.get("status") != "cancelled":
+                j.update({"status": "failed", "error": str(e),
+                          "finishedAt": time.time()})
         _save()
+        return False
+
+
+def mark_cancelled(ids, reason: str) -> int:
+    """把任务置 cancelled，写 cancelReason / cancelledAt 并落盘。
+
+    用于依赖失败连带取消；只改状态记录，不碰 ComfyUI（下发时已不在队列）。
+    """
+    ids = [ids] if isinstance(ids, str) else list(ids)
+    now = time.time()
+    n = 0
+    with _lock:
+        for jid in ids:
+            j = _jobs.get(jid)
+            if not j:
+                continue
+            j["status"] = "cancelled"
+            j["cancelReason"] = reason
+            j["cancelledAt"] = now
+            j["queueState"] = None
+            j.pop("vanishedAt", None)
+            n += 1
+    if n:
+        _save()
+    return n
 
 
 def latest_result(project: Path, scene: str, unit: str):

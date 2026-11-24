@@ -26,7 +26,48 @@ AUTO_SCALE = False        # 手动管理模式：不自动开卡、不自动收�
 MAX_PER_CARD = 3          # 每张卡最多堆几个任务（送达即安全，不再等卡空）
 _runners = {}             # job_id -> callable(port) 真正干活的函数
 _done = set()             # 已完成的任务 id（用于依赖判定）
-_failed = set()           # 失败的任务 id
+_failed = set()           # 失败/取消的任务 id（用于连带取消下游）
+_started = False          # 后台线程是否已启动（见 start()）
+_start_lock = threading.Lock()
+
+
+def start() -> bool:
+    """显式启动调度线程（幂等）。import 本模块不再有起线程的副作用。
+
+    server.main() 会在真正服务时调用；测试需要 worker 时也显式调用。
+    返回 True 表示本次真的启动了线程。
+    """
+    global _started
+    with _start_lock:
+        if _started:
+            return False
+        _started = True
+    threading.Thread(target=_worker, daemon=True, name="sched-worker").start()
+    threading.Thread(target=_housekeeping, daemon=True, name="sched-housekeeping").start()
+    return True
+
+
+def is_started() -> bool:
+    return _started
+
+
+def failed_ids() -> set:
+    """只读：本轮调度中已失败/被取消的任务 id。"""
+    with _lock:
+        return set(_failed)
+
+
+def mark_failed(ids) -> list:
+    """把任务记为失败（供重启恢复时把“已取消的下游”告诉调度器）。
+
+    只记账，不派发；仍在 _pending 里的下游会在下次扫描时被连带取消。
+    """
+    ids = [ids] if isinstance(ids, str) else list(ids)
+    with _lock:
+        for jid in ids:
+            _done.discard(jid)
+            _failed.add(jid)
+    return ids
 
 
 def _enabled() -> set:
@@ -125,6 +166,9 @@ def cancel_pending(ids) -> list:
                 dropped.append(_pending.pop(i)["id"])
         for jid in dropped:
             _runners.pop(jid, None)
+            # 取消也算“不会成功”：让依赖它的任务一并取消，而不是误以为可以就绪
+            _done.discard(jid)
+            _failed.add(jid)
     return dropped
 
 
@@ -135,13 +179,19 @@ def pending_ids() -> set:
 
 
 def submit(kind: str, items: list) -> list:
-    """items: [{'id':..., 'run': callable(port)->bool}]，返回任务 id 列表。"""
+    """items: [{'id':..., 'run': callable(port)->bool, 'after': [id],
+                'on_cancel': callable(reason: str)}]
+
+    run 返回 False 视为失败（异常同样算失败）；返回 None/True 视为成功。
+    after 中的任务失败时，会调用该条目的 on_cancel("dependency_failed")。
+    """
     ids = []
     with _lock:
         for it in items:
             _runners[it["id"]] = it["run"]
             _pending.append({"id": it["id"], "kind": kind,
-                             "after": list(it.get("after") or [])})
+                             "after": list(it.get("after") or []),
+                             "on_cancel": it.get("on_cancel")})
             ids.append(it["id"])
     _wake()
     return ids
@@ -163,6 +213,8 @@ def cancel(ids: list) -> int:
             if p["id"] in ids:
                 n += 1
                 _runners.pop(p["id"], None)
+                _done.discard(p["id"])
+                _failed.add(p["id"])
                 continue
             keep.append(p)
         _pending[:] = keep
@@ -196,22 +248,77 @@ def _autoscale(cards: list) -> None:
             _state["autoscaled"].add(c["index"])
 
 
-def _run_one(item: dict, idx: int) -> None:
+def _run_one(item: dict, idx: int) -> bool:
+    """在一张卡上跑一条任务，返回它是否成功。
+
+    runner 返回 False 视为失败；None/True 视为成功（兼容旧 runner）。
+    异常也视为失败。**只有成功才进 _done，失败一律进 _failed**。
+    """
     port = comfyctl.BASE_PORT + idx
     with _lock:
         _state["jobs"].setdefault(idx, set()).add(item["id"])
         _state["assign"][idx] = item["kind"]
+    ok = False
     try:
         if not comfyctl._alive(port):
             comfyctl.start(idx)
-        _runners[item["id"]](port)
+        with _lock:
+            run = _runners.get(item["id"])
+        if run is None:
+            # 派发后又被取消：不能当成成功，否则下游会被误放行
+            raise RuntimeError("任务已取消或已移出调度")
+        ok = run(port) is not False
     except Exception:
         traceback.print_exc()
+        ok = False
     finally:
         with _lock:
             _state["jobs"].get(idx, set()).discard(item["id"])
             _runners.pop(item["id"], None)
-            _done.add(item["id"])
+            if ok:
+                _failed.discard(item["id"])
+                _done.add(item["id"])
+            else:
+                _done.discard(item["id"])
+                _failed.add(item["id"])
+    return ok
+
+
+def _collect_ready() -> list:
+    """从 _pending 里挑出就绪任务，返回之；同时处理依赖失败的下游。
+
+    - 依赖已在 _failed：把下游移出 _pending，调它的 on_cancel("dependency_failed")，
+      并把下游也记入 _failed（这样下游的下游也会取消）。
+    - 依赖都在 _done（或不再由本调度器持有）：就绪。
+    - 其余继续阻塞。
+
+    on_cancel 在锁外调用，避免和 vjobs 的锁形成交叉死锁。
+    """
+    dead = []
+    with _lock:
+        ready, blocked = [], []
+        for it in _pending:
+            deps = it.get("after") or []
+            if any(d in _failed for d in deps):
+                dead.append(it)
+            elif all(d in _done or d not in _runners for d in deps):
+                ready.append(it)
+            else:
+                blocked.append(it)
+        for it in dead:
+            _runners.pop(it["id"], None)
+            _done.discard(it["id"])
+            _failed.add(it["id"])
+        _pending[:] = blocked
+    for it in dead:
+        cb = it.get("on_cancel")
+        if not callable(cb):
+            continue
+        try:
+            cb("dependency_failed")
+        except Exception:
+            traceback.print_exc()
+    return ready
 
 
 def _worker():
@@ -221,7 +328,6 @@ def _worker():
             cards = gpus.probe()
             if AUTO_SCALE:
                 _autoscale(cards)
-            busy = _busy_cards()
             with _lock:
                 enabled = set(_enabled())
             # 送达即安全：不再等卡空闲，直接按"当前负载最轻"的卡派出去，
@@ -238,27 +344,14 @@ def _worker():
                     if c["index"] in enabled and c["index"] not in _state["draining"]]
             cand.sort(key=lambda c: load_of(c))
             free = [c for c in cand if load_of(c) < MAX_PER_CARD]
+            ready = _collect_ready()
             with _lock:
-                ready, blocked, dead = [], [], []
-                for it in _pending:
-                    deps = it.get("after") or []
-                    if any(d in _failed for d in deps):
-                        dead.append(it)
-                    elif all(d in _done or d not in _runners for d in deps):
-                        ready.append(it)
-                    else:
-                        blocked.append(it)
-                for it in dead:
-                    _runners.pop(it["id"], None)
-                    _failed.add(it["id"])
-                _pending[:] = blocked
                 take = ready[:len(free)]
                 rest = ready[len(free):]
                 _pending.extend(rest)
-                batch = take
-            for item, card in zip(batch, free):
+            for item, card in zip(take, free):
                 threading.Thread(target=_run_one, args=(item, card["index"]), daemon=True).start()
-            if not batch:
+            if not take:
                 time.sleep(1.5)
         except Exception:
             traceback.print_exc()
@@ -297,5 +390,5 @@ def _housekeeping():
         time.sleep(5)
 
 
-threading.Thread(target=_worker, daemon=True).start()
-threading.Thread(target=_housekeeping, daemon=True).start()
+# 注意：这里**不再**自动启动线程。import 本模块不得有起线程/碰硬件的副作用；
+# 真正服务时由 server.main() → start_background() 调用 sched.start()。
