@@ -2438,7 +2438,7 @@ function sStageBody(no){
         :'<span class="badge b-bad" style="font-size:10px">缺失</span>'}</td>
       <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px" title="${esc(a.staleDeps.map(x=>x.path+'：'+x.reason).join('\n'))}">${stale} 处</span>`:'<span class="dim">—</span>'}</td>
       <td style="text-align:right">${a.status==='draft'
-        ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${esc(a.version||'')} 为当前版</button>
+        ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${(()=>{const m=(a.path||'').match(/-v(\d{3})/);return m?'v'+m[1]:'当前版';})()} 为当前版</button>
            <button class="btn warn" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button>`
         : `<span class="dim" style="font-size:11px">${a.confirmedAt?esc(String(a.confirmedAt).slice(0,16)):''}</span>`}</td>
     </tr>`;
@@ -2483,7 +2483,7 @@ function sPending(){
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td style="text-align:center">${stale?`<span class="badge b-warn" style="font-size:10px">依赖 ${stale}</span>`:'<span class="dim">—</span>'}</td>
       <td style="text-align:right">
-        <button class="btn ok" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${esc(a.version||'')} 为当前版</button>
+        <button class="btn ok" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${(()=>{const m=(a.path||'').match(/-v(\d{3})/);return m?'v'+m[1]:'当前版';})()} 为当前版</button>
         <button class="btn warn" style="font-size:11px;padding:3px 10px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button></td>
     </tr>`;
   }).join("");

@@ -234,6 +234,27 @@ def _stale_targets(scene: str, units: list, rel: str) -> list:
     return sorted(targets)
 
 
+def _record_file_pass(rel: str):
+    try:
+        approvals.append(PROJECT, "file", rel, "pass", path=rel,
+                         version=_version_of(rel), scope={})
+    except Exception:
+        pass
+
+
+def _confirmed_artifact(rel: str) -> dict:
+    try:
+        reg = artifacts.load_registry(PROJECT)
+        rec = next((a for a in (reg.get("artifacts") or []) if a.get("path") == rel), None)
+        if rec and rec.get("status") == "已确认-当前":
+            f = PROJECT / rel
+            if f.is_file():
+                return rec
+    except Exception:
+        pass
+    return {}
+
+
 def _generation_gate(scene: str, units: list, rel: str) -> dict:
     """文件级版本锁 + 镜头级确认 + 成果状态锁；返回缺失清单和有效 approval ids。"""
     missing, ids = [], []
@@ -244,11 +265,16 @@ def _generation_gate(scene: str, units: list, rel: str) -> dict:
             missing.append(f"成果已过期/禁止生成：{target}（{st}）")
     frec = approvals.file_ok(PROJECT, rel)
     if not frec:
-        st = approvals.state(PROJECT, "file", rel)
-        why = "已失效" if st.get("stale") else "未确认"
-        missing.append(f"提示词文件{why}：{rel}")
-    else:
-        ids.append(frec["id"])
+        rec = _confirmed_artifact(rel)
+        if rec:
+            frec = {"id": "artifact-state:" + (rec.get("sha256") or "")[:8],
+                    "sha256": rec.get("sha256")}
+        else:
+            st = approvals.state(PROJECT, "file", rel)
+            why = "已失效" if st.get("stale") else "未确认"
+            missing.append(f"提示词文件{why}：{rel}")
+    if frec:
+        ids.append(frec.get("id"))
     for item in units:
         u = item.get("unit") or {}
         shots = _unit_shots(u)
@@ -2153,6 +2179,8 @@ class Handler(BaseHTTPRequestHandler):
                             continue
                         try:
                             r = flow.confirm(PROJECT, st["key"], scene, path=drafts[0]["path"])
+                            if r.get("path"):
+                                _record_file_pass(r["path"])
                             results.append({"step": st["key"], "ok": True, "path": r.get("path")})
                         except Exception as e:
                             results.append({"step": st["key"], "ok": False, "error": str(e)})
@@ -2213,6 +2241,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 out = flow.confirm(PROJECT, str(body.get("step") or ""),
                                    str(body.get("scene") or "N001"), body.get("path"))
+                if out.get("path"):
+                    _record_file_pass(out["path"])
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
