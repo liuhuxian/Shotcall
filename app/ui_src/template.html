@@ -1101,6 +1101,52 @@ async function loadAssets(force){
 
 const STAGE_STEPS = ["未开始","已写表演","已拆镜","已出片"];
 
+function reviewBadge(st){
+  const r = (st||{}).record;
+  if(!r) return '<span class="badge b-mut" style="font-size:10px">未审</span>';
+  if(st.stale) return '<span class="badge b-bad" style="font-size:10px">已失效</span>';
+  if(r.verdict==='pass') return '<span class="badge b-ok" style="font-size:10px">通过</span>';
+  if(r.verdict==='revise') return '<span class="badge b-warn" style="font-size:10px">需修改</span>';
+  return '<span class="badge b-mut" style="font-size:10px">待定</span>';
+}
+
+async function approveScene(scene, verdict){
+  let note = '';
+  if(verdict !== 'pass'){ note = prompt('场次意见（可空，会写进审批账本）') || ''; }
+  const obj = ((SCN.data||{}).scenes||[]).find(x=>x.id===scene) || {};
+  const r = await fetch('/api/approval', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({kind:'scene', target:'scene:'+scene, verdict, path: obj.reviewPath || null,
+                          scope:{scene}, notes: note ? [{text:note}] : []})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || '记录失败');
+  toast((verdict==='pass'?'场次通过 ':verdict==='revise'?'场次需修改 ':'场次待定 ') + scene);
+  SCN.data = null; await loadScenes(true); render();
+}
+
+function sceneReviewBar(){
+  const d = SCN.data; if(!d) return '';
+  const scenes = d.scenes||[];
+  if(!scenes.length) return '';
+  const passed = scenes.filter(x=>x.approval && x.approval.record && x.approval.record.verdict==='pass' && !x.approval.stale).length;
+  const cards = scenes.map(x=>`<div style="border:1px solid ${x.approval&&x.approval.record&&x.approval.record.verdict==='pass'&&!x.approval.stale?'var(--ok)':'var(--line)'};
+      border-radius:8px;padding:8px 10px;min-width:235px;background:var(--panel)">
+    <div style="display:flex;align-items:center;gap:6px"><b class="mono" style="color:var(--acc)">${x.id}</b>${reviewBadge(x.approval)}
+      <span class="dim" style="font-size:10px;margin-left:auto">${esc(x.episode)}</span></div>
+    <div style="font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.place)}</div>
+    <div class="dim" style="font-size:10px;margin-top:1px">${esc(x.interior)} · ${esc(x.time)} · ${x.shots} 镜</div>
+    <div style="display:flex;gap:3px;margin-top:6px">
+      <button class="btn ok" style="font-size:10px;padding:1px 7px" onclick="approveScene('${x.id}','pass')">通过</button>
+      <button class="btn warn" style="font-size:10px;padding:1px 7px" onclick="approveScene('${x.id}','revise')">需修改</button>
+      <button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="approveScene('${x.id}','hold')">待定</button>
+    </div></div>`).join("");
+  return `<div class="panel" style="margin-bottom:14px;border-color:${passed===scenes.length?'var(--ok)':'var(--warn)'}">
+    <div class="ph"><span>审核一 · 场次/表演</span>
+      <span class="dim">已通过 ${passed}/${scenes.length} · 依据 05 剧本 + 08 表演</span>
+      <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>
+    <div class="pb" style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
+  </div>`;
+}
+
 function sScenes(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取分场…</div>`; }
@@ -1129,6 +1175,7 @@ function sScenes(){
     <div class="card"><div class="muted" style="font-size:12px">已出片</div><div class="kpi" style="color:var(--ok)">${s.withVideo||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">已拆镜总时长</div><div class="kpi">${s.totalSeconds||0}<small>秒</small></div></div>
   </div>
+  ${sceneReviewBar()}
   <div class="panel"><div class="ph"><span>分场进度</span><span class="dim">以「场」为主键 · 点任意行看该场镜头</span></div>
     <div class="pb"><table><thead><tr><th style="width:60px">场</th><th style="width:70px">集</th><th>地点</th>
       <th style="width:130px">内外·时间</th><th style="width:60px;text-align:center">镜头</th>
@@ -1280,6 +1327,19 @@ function cloudBar(){
     <div class="dim" style="padding:0 13px 10px;font-size:11px;line-height:1.7">${ok?'':'填 <span class="mono">app/cloud-image.json</span>：{"base":"https://api.openai.com/v1","key":"…","model":"gpt-image-1"} 后重启即可。<br>Codex 本身没有出图 API（只有 ChatGPT 登录态）。'}</div>
   </div>`;
 }
+async function approveAsset(assetId, verdict){
+  let note = '';
+  if(verdict !== 'pass'){ note = prompt('资产意见（可空，会写进审批账本）') || ''; }
+  const d = AST.data || {};
+  const r = await fetch('/api/approval', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({kind:'asset', target:'asset:'+assetId, verdict, path: d.doc || null,
+                          scope:{asset:assetId}, notes: note ? [{text:note}] : []})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || '记录失败');
+  toast((verdict==='pass'?'资产通过 ':verdict==='revise'?'资产需修改 ':'资产待定 ') + assetId);
+  AST.data = null; await loadAssets(true); render();
+}
+
 function sAssetsPage(){
   const d = AST.data;
   if(!d){ loadAssets().then(()=>render()); return `<div class="dim">读取资产…</div>`; }
@@ -1307,6 +1367,12 @@ function sAssetsPage(){
           <div style="margin-top:4px">${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
             :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
             :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}</div>
+          <div style="display:flex;align-items:center;gap:3px;margin-top:5px;flex-wrap:wrap">
+            ${reviewBadge(a.approval)}
+            <button class="btn ok" style="font-size:9.5px;padding:0 5px" onclick="approveAsset('${a.id}','pass')">通过</button>
+            <button class="btn warn" style="font-size:9.5px;padding:0 5px" onclick="approveAsset('${a.id}','revise')">需修改</button>
+            <button class="btn ghost" style="font-size:9.5px;padding:0 5px" onclick="approveAsset('${a.id}','hold')">待定</button>
+          </div>
         </div></div>`;
     }).join("");
     return `<div class="panel" style="margin-bottom:14px">
@@ -1324,6 +1390,10 @@ function sAssetsPage(){
       <div class="dim" style="font-size:11px;margin-top:3px">作者明确不生成${s.unbound?` · 待补 ${s.unbound}`:''}</div></div>
   </div>
   ${cloudBar()}
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><span>审核二 · 资产</span><span class="dim">逐项通过 / 需修改 / 待定 · 依据 ${esc(d.doc||"")}</span>
+      <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>
+  </div>
   <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
   ${groups}`;
 }
@@ -1423,8 +1493,8 @@ function sStage(){
 function sPending(){
   const d = STG.data;
   if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
-  const drafts = (d.artifacts||[]).filter(a=>a.status==='draft');
-  if(!drafts.length) return `<div class="panel"><div class="pb dim">没有待确认的成果。</div></div>`;
+  const drafts = (d.artifacts||[]).filter(a=>a.status==='draft' && (a.local&&a.local.local)!=='confirmed');
+  const localDone = (d.artifacts||[]).filter(a=>a.status==='draft' && (a.local&&a.local.local)==='confirmed');
   const rows = drafts.map(a=>{
     const stale = (a.staleDeps||[]).length;
     return `<tr>
@@ -1444,14 +1514,15 @@ function sPending(){
     <div class="card"><div class="muted" style="font-size:12px">成果总数</div><div class="kpi">${s.total||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">已确认</div><div class="kpi" style="color:var(--ok)">${s.confirmed||0}</div>
       <div class="dim" style="font-size:10.5px;margin-top:3px">含本地确认 ${s.localConfirmed||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${s.draft||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">草稿待确认</div><div class="kpi" style="color:var(--warn)">${drafts.length}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">登记草稿 ${s.draft||0} · 本地已确认 ${localDone.length}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">异常</div>
       <div class="kpi" style="color:${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)?'var(--bad)':'var(--dim)'}">${(s.modified||0)+(s.missing||0)+(s.staleDeps||0)}</div>
       <div class="dim" style="font-size:11px;margin-top:3px">改动 ${s.modified||0} · 缺失 ${s.missing||0} · 失效依赖 ${s.staleDeps||0}</div></div>
   </div>`;
   const unreg = (d.unregistered||[]);
   const unregHtml = unreg.length ? `<div class="panel" style="margin-top:14px">
-    <div class="ph"><span>未登记的文档</span><span class="dim">目录里有文件，但 artifact-state.json 里没有记录 · 可在工作台直接确认（记在 制作运行/确认状态.json）</span></div>
+    <div class="ph"><span>未登记的文档</span><span class="dim">目录里有文件，但 artifact-state.json 里没有记录 · 可在工作台直接确认（记在制作运行/approvals.jsonl）</span></div>
     <div class="pb"><table>
       <thead><tr><th style="width:40px">阶段</th><th>文件</th><th style="width:110px">修改时间</th>
         <th style="width:70px;text-align:right">大小</th><th style="width:90px;text-align:center">本地状态</th>
@@ -1473,11 +1544,18 @@ function sPending(){
           <button class="btn ok" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','pass')">确认</button>
           <button class="btn warn" style="font-size:10.5px;padding:2px 8px" onclick="confirmArt('${esc(u.path)}','revise')">退回</button>
         </td></tr>`;}).join("")}</tbody></table></div></div>` : "";
+  const localHtml = localDone.length ? `<div class="panel" style="margin-top:14px">
+    <div class="ph"><span>本地已确认（登记仍为草稿）</span><span class="dim">${localDone.length} 项 · 审批账本已有效，登记表未改</span></div>
+    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th><th style="width:150px">确认时间</th></tr></thead>
+      <tbody>${localDone.map(a=>`<tr><td class="mono dim">${a.stage}</td>
+        <td class="mono" style="font-size:11px">${esc(a.path)}</td>
+        <td class="dim mono" style="font-size:11px">${esc((a.local&&a.local.at)||'—')}</td></tr>`).join("")}</tbody></table></div></div>` : "";
   return kpis + `<div class="panel">
-    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入 approvals 审批账本（不改项目登记表）</span></div>
-    <div class="pb"><table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
+    <div class="ph"><span>待确认</span><span class="dim">${drafts.length} 项草稿 · 确认后写入 approvals 审批账本（不改项目登记表）</span>
+      <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>
+    <div class="pb">${drafts.length?`<table><thead><tr><th style="width:40px">阶段</th><th>成果</th>
       <th style="width:150px">范围</th><th style="width:80px;text-align:center">依赖</th>
-      <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div></div>` + unregHtml;
+      <th style="width:150px;text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="dim" style="font-size:12.5px">没有待确认的成果。</div>'}</div></div>` + localHtml + unregHtml;
 }
 
 /* ---------- 成果清单 ---------- */

@@ -1047,6 +1047,38 @@ def export_markdown() -> str:
     return "\n".join(lines)
 
 
+def review_export() -> str:
+    """把 approvals 账本导出成导演审核单（四段 + 批次）。"""
+    KIND = {"file": "文件", "scene": "场次", "asset": "资产", "shot": "镜头",
+            "pick": "挑片", "batch": "批次"}
+    VERD = {"pass": "通过", "revise": "需修改", "hold": "待定", "na": "不适用"}
+    lines = ["# 导演审核单", "",
+             f"生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+             f"项目：{PROJECT}", ""]
+    recs = approvals.latest(PROJECT)
+    if not recs:
+        lines.append("- （尚未有任何审批）")
+    for kind in ("scene", "asset", "shot", "file", "pick", "batch"):
+        group = [r for r in recs if r.get("kind") == kind]
+        if not group:
+            continue
+        lines += [f"## {KIND.get(kind, kind)}", ""]
+        for r in group:
+            st = approvals.state(PROJECT, kind, r.get("target"))
+            stale = " · **已失效**" if st.get("stale") else ""
+            lines.append(f"- `{r.get('target')}` — **{VERD.get(r.get('verdict'), r.get('verdict'))}**{stale}")
+            if r.get("path"):
+                lines.append(f"  - 依据：`{r['path']}` `{(r.get('sha256') or '')[:12]}`")
+            if r.get("version"):
+                lines.append(f"  - 版本：{r['version']}")
+            for n in r.get("notes") or []:
+                if n.get("text"):
+                    lines.append(f"  - 意见：{n['text']}")
+            lines.append(f"  - 记录：{r.get('id')} · {r.get('at')}")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def payload(ep: str = EPISODE, refresh: bool = False) -> dict:
     with _lock:
         sig = file_sig(ep)
@@ -1416,7 +1448,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"scene": sc, "results": out}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/scenes":
-            self._send(200, json.dumps(scenes.build(PROJECT), ensure_ascii=False).encode("utf-8"),
+            d = scenes.build(PROJECT)
+            for sc in d.get("scenes", []):
+                sc["reviewPath"] = scenes.SCREENPLAY
+                sc["approval"] = approvals.state(PROJECT, "scene", f"scene:{sc['id']}")
+            self._send(200, json.dumps(d, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/scenes/shots":
             q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
@@ -1431,7 +1467,11 @@ class Handler(BaseHTTPRequestHandler):
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/assets":
-            self._send(200, json.dumps(assetsdb.build(PROJECT), ensure_ascii=False).encode("utf-8"),
+            d = assetsdb.build(PROJECT)
+            for a in d.get("assets", []):
+                a["reviewPath"] = d.get("doc")
+                a["approval"] = approvals.state(PROJECT, "asset", f"asset:{a['id']}")
+            self._send(200, json.dumps(d, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/stages":
             q2 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
@@ -1442,13 +1482,23 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             payload = artifacts.build(proj)
-            states = confirms.all_states(proj)
+            def _local(path):
+                st = approvals.state(proj, "file", path)
+                rec = st.get("record")
+                if not rec:
+                    return {"local": "none"}
+                if st.get("stale"):
+                    return {"local": "stale", "at": rec.get("at"), "record": rec,
+                            "reason": st.get("reason")}
+                if rec.get("verdict") == "pass":
+                    return {"local": "confirmed", "at": rec.get("at"), "record": rec}
+                return {"local": "rejected", "at": rec.get("at"), "record": rec}
             for a in payload["artifacts"]:
-                a["local"] = states.get(a["path"], {"local": "none"})
+                a["local"] = _local(a["path"])
             for u in payload.get("unregistered", []):
-                u["local"] = states.get(u["path"], {"local": "none"})
+                u["local"] = _local(u["path"])
             payload["summary"]["localConfirmed"] = sum(
-                1 for s in states.values() if s.get("local") == "confirmed")
+                1 for a in payload["artifacts"] if a["local"].get("local") == "confirmed")
             self._send(200, json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path in ("/api/gpus", "/api/sched/state"):
@@ -1540,6 +1590,14 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps({"batches": list_batches(),
                                "decisions": store.latest(PROJECT)}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/reviews/export":
+            md = review_export().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="review-notes.md"')
+            self.send_header("Content-Length", str(len(md)))
+            self.end_headers()
+            self.wfile.write(md)
         elif path == "/api/export":
             md = export_markdown().encode("utf-8")
             self.send_response(200)
