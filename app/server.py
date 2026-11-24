@@ -1614,6 +1614,32 @@ class Handler(BaseHTTPRequestHandler):
                                     "kb": max(1, f.stat().st_size // 1024)})
             body = json.dumps({"files": out}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/refs":
+            roots = [PROJECT / "07-图像资产", PROJECT / "制作运行/引用图",
+                     store.state_dir(PROJECT) / "首帧候选",
+                     store.state_dir(PROJECT) / "引用图"]
+            seen, items = set(), []
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                for f in root.rglob("*"):
+                    if not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                        continue
+                    try:
+                        rel = str(f.relative_to(PROJECT))
+                    except ValueError:
+                        rel = str(f)
+                    if rel in seen:
+                        continue
+                    seen.add(rel)
+                    items.append({"file": rel, "name": f.name,
+                                  "kind": "首帧" if "首帧候选" in str(f) else
+                                          ("引用图" if "引用图" in str(f) else "资产"),
+                                  "sizeKB": round(f.stat().st_size / 1024),
+                                  "mtime": int(f.stat().st_mtime)})
+            items.sort(key=lambda x: x["mtime"], reverse=True)
+            self._send(200, json.dumps({"items": items[:300]}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/candidates":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             asset = q.get("asset", [""])[0]
@@ -1793,6 +1819,46 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/img/upload":
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n <= 0 or n > 25 * 1024 * 1024:
+                    raise ValueError("文件为空或超过 25MB")
+                data = self.rfile.read(n)
+                sig = data[:12]
+                ext = ""
+                if sig.startswith(b"\x89PNG"):
+                    ext = ".png"
+                elif sig.startswith(b"\xff\xd8"):
+                    ext = ".jpg"
+                elif sig.startswith(b"RIFF") and sig[8:12] == b"WEBP":
+                    ext = ".webp"
+                elif sig.startswith(b"GIF8"):
+                    ext = ".gif"
+                if not ext:
+                    raise ValueError("不是可识别的图片")
+                name = str(self.headers.get("X-Filename") or "ref")
+                name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", name)[:60]
+                d = PROJECT / "制作运行/引用图"
+                try:
+                    d.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    d = store.state_dir(PROJECT) / "引用图"
+                    d.mkdir(parents=True, exist_ok=True)
+                out = d / (uuid.uuid4().hex[:10] + "-" + name.rsplit(".", 1)[0] + ext)
+                out.write_bytes(data)
+                try:
+                    rel = str(out.relative_to(PROJECT))
+                except ValueError:
+                    rel = str(out)
+                self._send(200, json.dumps({"ok": True, "file": rel, "name": out.name,
+                                            "sizeKB": round(len(data) / 1024)},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/img/generate":
