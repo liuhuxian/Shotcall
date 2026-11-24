@@ -2242,6 +2242,7 @@ async function cancelAllQueued(){
 let TICK = null;
 
 async function pollTick(){
+  if(typeof VIEW !== 'undefined' && VIEW.path) return;   // 文件查看器打开时不刷新页面
   try{
     if(state.tab === 'backend'){
       const b = await fetch('/api/backend').then(r=>r.json()).catch(()=>null);
@@ -2258,6 +2259,7 @@ async function pollTick(){
 }
 
 async function pollProgOnce(){
+  if(typeof VIEW !== 'undefined' && VIEW.path) return false;
   try{
     // 生成台：只看该场产物有没有新增，别的抖动一律不重绘
     if(state.tab === 'history'){
