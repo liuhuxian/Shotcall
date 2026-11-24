@@ -28,14 +28,28 @@
 - 任务单只负责“把提示词交给 Agent”；写盘后仍需导演在流程页登记/确认（保持确认门禁）。
 - API：`POST /api/agent/dispatch`、`GET /api/agent/tasks`。
 
-## 3 09b 依赖
+## 3 09b 依赖（B 已完成）
 
-- 工作台 `flow.register` 已给 09b 传 `--depends-on`（09a 镜头表 + 07 资产），新登记会带依赖。
-- 项目 `artifact_guard.py` 的提示词正则仍只认 `minimax-h3-vNNN.md`，不认 `-ref2va-`；**未直接改项目技能**（避免影响现有 v011 草稿）。下一步要么改 guard 兼容 `ref2va`，要么清洗 v011 依赖后重登。
+- 已备份并按兼容规则修改两个项目的 `artifact_guard.py`：
+  - `minimax-h3-ref2va-vNNN.md` 现在会被识别为 H3 提示词变体；
+  - 依赖可用 `generation-units-minimax-h3` **或** 同场 `shot-plan`（ref2va 允许直接依赖镜头表）；
+  - 普通 `minimax-h3-vNNN.md` 仍必须依赖生成单元。
+  - 备份：`/tmp/guard-backup-20261124-164739/`
+- 正式项目：**未覆盖 v011**，新增 `minimax-h3-ref2va-v012.md`（正文同 v011，仅加依赖清洗说明），登记并确认；
+  - v012 状态 `已确认-当前`，依赖：`09-…/镜头规划/N001/shot-plan-v001.md`、`07-图像资产/assets-v004.md`；
+  - v010/v011 保留为旧草稿，不再作为当前。
+- 测试项目 guard 同步兼容；`test_guard_compat.py` 3/0。
+
+## 3.1 新项目初始化（B 已完成）
+
+- 项目下拉末尾「＋ 初始化新项目…」：在 `~/short_v/<名字>` 建 00–09、制作运行、07 候选/绑定、09 镜头/提示词/生成结果等目录；
+- 自动复制 `.agents` 技能模板（从已有项目），不伪造 `artifact-state.json`（由 guard 首次登记时生成）；
+- 有生成任务在跑时拒绝初始化/切换；新项目创建后自动切过去；
+- 项目列表增加登记数 / 有无技能 / 最后修改；`test_projects.py` 10/0（含临时根初始化）。
 
 ## 4 测试
 
 - `test_gate.py` 2/0：过期 09b 触发视频门禁。
 - `test_agent.py` 6/0：无命令生成任务单、不自动执行、下一版路径、任务可列、配置命令会启动并完成。
-- `test_all` **48 通过 / 0 失败 / 2 跳过**。
+- `test_all` **49 通过 / 0 失败 / 2 跳过**。
 - 8799 修订场景实测：首帧接口 400（镜头表过期）。

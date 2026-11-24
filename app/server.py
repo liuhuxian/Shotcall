@@ -1910,6 +1910,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/project/init":
+            try:
+                body = self._json_body()
+                active = [j for j in vjobs.list_jobs() if j.get("status") in ("queued", "dispatched", "running", "waiting")]
+                active += [j for j in imgjobs.list_jobs() if j.get("status") in ("queued", "running")]
+                if active:
+                    raise ValueError("当前还有生成任务在跑，暂停初始化/切换；等队列清空后再试")
+                made = projects.create(str(body.get("name") or ""))
+                _switch_project(made["path"])
+                self._send(200, json.dumps({"ok": True, "project": made, "projects": projects.discover()},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(409 if "任务" in str(e) else 400,
+                           json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/project/switch":
             try:
                 body = self._json_body()

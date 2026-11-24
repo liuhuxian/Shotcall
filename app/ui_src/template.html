@@ -1646,6 +1646,15 @@ async function confirmFlow(key){
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
 }
 
+async function dispatchFlow(key){
+  const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001'})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
+  if(j.started) toast('已派给 Agent：'+j.task.id);
+  else toast('任务单已生成（未配置 Agent 命令）：'+j.task.promptFile);
+  FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
+}
+
 async function returnFlow(key){
   const note=prompt('退回修改的原因（会写进流程记录）：');
   if(note===null) return;
@@ -1700,6 +1709,7 @@ function sFlow(){
           ${st.skipped?'已跳过：'+esc(st.skipped.note||'')+' · '+esc(st.skipped.at):''}</div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="copyFlow('${st.key}',this)">复制提示词</button>
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="dispatchFlow('${st.key}')">派给 Agent</button>
           ${is06?`<select id="flow-outcome-06" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:11px">
             <option value="passed">结论：通过</option><option value="revision-required">结论：需修订</option><option value="uncertain">结论：不确定</option>
           </select>`:''}
@@ -3593,10 +3603,18 @@ async function loadProjects(){
 }
 function sProjSel(){
   if(!PROJECTS || !PROJECTS.projects) return '<span class="dim">项目…</span>';
-  const opts=PROJECTS.projects.map(p=>`<option value="${esc(p.path)}" ${p.path===PROJECTS.active?'selected':''}>${esc(p.name)}${p.hasArtifacts?'':' · 空'}</option>`).join('');
-  return `<select onchange="switchProject(this.value)" title="切换项目" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:3px 8px;font-size:12px;max-width:220px">${opts}</select>`;
+  const opts=PROJECTS.projects.map(p=>`<option value="${esc(p.path)}" ${p.path===PROJECTS.active?'selected':''}>${esc(p.name)}${p.hasArtifacts?' · '+p.artifactCount+'项':''}${p.hasAgents?'':' · 无技能'}</option>`).join('');
+  return `<select onchange="switchProject(this.value)" title="切换项目" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:3px 8px;font-size:12px;max-width:240px">${opts}<option value="__new__">＋ 初始化新项目…</option></select>`;
 }
 async function switchProject(path){
+  if(path==='__new__'){
+    const name=prompt('新项目名（建在 ~/short_v 下，会复制 .agents 技能模板）：');
+    if(!name) return;
+    const r=await fetch('/api/project/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const j=await r.json();
+    if(!r.ok) return toast(j.error||'初始化失败');
+    toast('已创建并切换：'+j.project.name); location.reload(); return;
+  }
   const r=await fetch('/api/project/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
   const j=await r.json();
   if(!r.ok) return toast(j.error||'切换失败');

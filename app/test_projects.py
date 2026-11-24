@@ -31,6 +31,15 @@ def main():
 
     # 切换项目时，状态目录不能串到启动项目
     other = Path(tempfile.mkdtemp(prefix="other-proj-"))
+    # 初始化新项目（临时根，不写真实 ~/short_v）
+    tmp_root = Path(tempfile.mkdtemp(prefix="proj-root-"))
+    with mock.patch.object(projects, "ROOT", tmp_root):
+        made = projects.create("测试新项目")
+        check("初始化目录", (tmp_root / "测试新项目/00-项目管理").is_dir() and
+              (tmp_root / "测试新项目/07-图像资产/候选图片").is_dir(), made)
+        check("初始化后可发现", any(x["id"] == "测试新项目" for x in projects.discover()))
+        check("初始化不伪造登记", not (tmp_root / "测试新项目/00-项目管理/artifact-state.json").exists())
+
     p2 = Path(found["有谁共鸣2_2"]["path"])
     with mock.patch.dict(os.environ, {"WORKBENCH_PROJECT": str(p2),
                                       "WORKBENCH_STATE": "/tmp/pinned-state"}):
