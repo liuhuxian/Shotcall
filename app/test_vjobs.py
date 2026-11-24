@@ -271,6 +271,14 @@ def main():
           us3["U010-B"].get("chainFrom"))
     check("continuation 类型保留", us3["U010-B"].get("continuation") == "same-shot")
 
+    print("\n= LoRA 强度两条路径 =")
+    g4 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"],
+                           lora="x.safetensors", lora_strength=0.7)
+    g5 = vjobs.build_i2v_graph("p", 1344, 768, 124, 7, "f.png",
+                               lora="x.safetensors", lora_strength=0.7)
+    check("接图路径带强度", g4["20"]["inputs"]["strength_model"] == 0.7, g4["20"]["inputs"])
+    check("首帧路径带强度", g5["20"]["inputs"]["strength_model"] == 0.7, g5["20"]["inputs"])
+
     print("\n= 参考音频接线 =")
     g2 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"], ref_audios=["v.wav"])
     loads_a = [v for v in g2.values() if v["class_type"] == "LoadAudio"]

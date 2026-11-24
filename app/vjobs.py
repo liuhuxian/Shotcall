@@ -791,7 +791,8 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
 
 def build_i2v_graph(prompt: str, width: int, height: int, frames: int, seed: int,
                     first_frame: str, steps: int = 20, lora: str = None,
-                    sigmas: str = None, sampler: str = None, attention: dict = None) -> dict:
+                    sigmas: str = None, sampler: str = None, attention: dict = None,
+                    lora_strength: float = None) -> dict:
     """首帧驱动（fl2va）：用上一镜的最后一帧作为本镜第一帧，接续最稳。"""
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS_FL2V, "weight_dtype": "default"}},
@@ -985,7 +986,8 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
             g = build_i2v_graph(job["prompt"], job["width"], job["height"], job["frames"],
                                 job["seed"], first_name, steps=job["steps"],
                                 lora=job.get("lora"), sigmas=job.get("sigmas"),
-                                sampler=job.get("sampler"), attention=job.get("attention"))
+                                sampler=job.get("sampler"), attention=job.get("attention"),
+                                lora_strength=job.get("loraStrength"))
         elif job.get("chain") and job.get("prevUnit"):
             prev = None
             with _lock:
@@ -1007,7 +1009,8 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
             g = build_i2v_graph(job["prompt"], job["width"], job["height"], job["frames"],
                                 job["seed"], first_name, steps=job["steps"],
                                 lora=job.get("lora"), sigmas=job.get("sigmas"),
-                                sampler=job.get("sampler"), attention=job.get("attention"))
+                                sampler=job.get("sampler"), attention=job.get("attention"),
+                                lora_strength=job.get("loraStrength"))
         else:
             g = build_graph(job["prompt"], job["width"], job["height"], job["frames"],
                             job["seed"], job["steps"], ref_images=ref_names,
