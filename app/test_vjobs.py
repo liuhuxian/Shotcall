@@ -228,6 +228,25 @@ def main():
           [u["id"] for u in us])
     check("时长正确", [u["seconds"] for u in us] == [6, 5], [u["seconds"] for u in us])
 
+    print("\n= 接续声明解析 =")
+    d3 = tmp / vjobs.VP_DIR / "N003"
+    d3.mkdir(parents=True, exist_ok=True)
+    body = (
+        "# t\n\n### U010-A｜6秒｜SH010\n\n```text\nsubject_definitions: a\n```\n\n"
+        "### U010-B｜5秒｜SH011\n\n```text\nsubject_definitions: b\n```\n")
+    js = json.dumps([
+        {"id": "U010-A", "referenceImages": [], "referenceAudios": [],
+         "chainFrom": None, "continuation": None},
+        {"id": "U010-B", "referenceImages": [], "referenceAudios": [],
+         "chainFrom": "U010-A", "continuation": "same-shot"}])
+    (d3 / "minimax-h3-ref2va-v001.md").write_text(body + "\n```yoko-shots\n" + js + "\n```\n",
+                                                 encoding="utf-8")
+    us3 = {u["id"]: u for u in vjobs.parse_units(tmp, "N003")}
+    check("无声明单元 chainFrom 为空", us3["U010-A"].get("chainFrom") is None)
+    check("声明单元带 chainFrom", us3["U010-B"].get("chainFrom") == "U010-A",
+          us3["U010-B"].get("chainFrom"))
+    check("continuation 类型保留", us3["U010-B"].get("continuation") == "same-shot")
+
     print("\n= 参考音频接线 =")
     g2 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"], ref_audios=["v.wav"])
     loads_a = [v for v in g2.values() if v["class_type"] == "LoadAudio"]

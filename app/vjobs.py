@@ -262,6 +262,8 @@ def parse_sync_refs(project: Path, scene: str) -> dict:
         for i, path in enumerate(u.get("referenceAudios") or [], 1):
             audios.append({"n": i, "file": path, "exists": (project / path).exists()})
         out[u.get("id")] = {"refs": refs, "assetIds": u.get("assetIds") or [],
+                            "chainFrom": u.get("chainFrom"),
+                            "continuation": u.get("continuation"),
                             "audios": audios,
                             "audioAssetIds": [r.get("assetId") for r in (u.get("referenceAudioRoles") or [])],
                             "storyboard": u.get("storyboardReference") or None}
@@ -292,6 +294,8 @@ def parse_units(project: Path, scene: str) -> list:
         s = sync.get(u["id"]) or {}
         u["refs"] = s.get("refs") or []
         u["audios"] = s.get("audios") or []
+        u["chainFrom"] = s.get("chainFrom")
+        u["continuation"] = s.get("continuation")
         u["audioAssetIds"] = s.get("audioAssetIds") or []
         u["assetIds"] = [a.split("--")[-1] for a in (s.get("assetIds") or [])]
         sb = s.get("storyboard") or {}

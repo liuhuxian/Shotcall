@@ -1894,11 +1894,16 @@ class Handler(BaseHTTPRequestHandler):
                         u = by.get(x.get("id"))
                         if u:
                             idx = order.index(u["id"])
-                            prev = order[idx - 1] if idx > 0 else None
+                            declared = u.get("chainFrom")
+                            prev = (declared if declared in order else None) or \
+                                   (order[idx - 1] if idx > 0 else None)
+                            want_chain = x.get("chain")
+                            if want_chain is None:          # 未显式传值时按提示词声明
+                                want_chain = bool(declared)
                             n = int(x.get("count") or 1)
-                            deps = [batch_prev[prev]] if (x.get("chain") and prev in batch_prev) else []
+                            deps = [batch_prev[prev]] if (want_chain and prev in batch_prev) else []
                             units.append({"unit": u, "count": n,
-                                          "chain": bool(x.get("chain")) and bool(prev),
+                                          "chain": bool(want_chain) and bool(prev),
                                           "prevUnit": prev, "afterIds": deps})
                     elif x in by:
                         units.append({"unit": by[x], "count": 1})
