@@ -56,8 +56,10 @@ def parse_bindings(project: Path) -> dict:
     files = sorted(d.glob(BIND_GLOB))
     if not files:
         return {}
-    txt = files[-1].read_text(encoding="utf-8")
     out = {}
+    txt = ""
+    for f in files:                     # 合并全部快照，后者覆盖前者
+        txt += "\n" + f.read_text(encoding="utf-8")
     for block in re.split(r"^## ", txt, flags=re.M)[1:]:
         name = block.split("\n")[0].strip()
         aid = re.search(r"资产 ID：(.+)", block)
@@ -101,6 +103,18 @@ def parse_ignored(project: Path) -> dict:
 
 def build(project: Path) -> dict:
     assets = parse_assets(project)
+    try:
+        import voice as voice_mod
+        vd = voice_mod.build(project)
+        for it in vd.get("items") or []:
+            assets.append({"id": it["id"], "name": it["name"], "type": "voice",
+                           "section": "音色", "ignored": False,
+                           "binding": {"version": "v1" if it.get("bound") else "",
+                                       "image": "", "audio": (it.get("path") or ""),
+                                       "duration": it.get("duration") or ""},
+                           "bound": bool(it.get("bound"))})
+    except Exception:
+        pass
     binds = parse_bindings(project)
     # 绑定键可能带 C01--C01-A，统一按短 ID 对齐
     short = {}
@@ -111,6 +125,8 @@ def build(project: Path) -> dict:
         short.setdefault(k, v)
     ignored = parse_ignored(project)
     for a in assets:
+        if a.get("type") == "voice":      # 音色已由 voice 模块判定，不走图像绑定
+            continue
         base = a["id"].split("／")[0].strip()
         ig = ignored.get(a["id"]) or ignored.get(base)
         a["ignored"] = bool(ig)
@@ -119,19 +135,23 @@ def build(project: Path) -> dict:
              or short.get(base) or short.get(base + "-A"))
         a["binding"] = b
         a["bound"] = bool(b and b.get("exists"))
-    bound = sum(1 for a in assets if a["bound"])
-    ign = sum(1 for a in assets if a["ignored"])
+    img = [a for a in assets if a.get("type") != "voice"]   # 图像资产口径保持 36 项
+    vos = [a for a in assets if a.get("type") == "voice"]
+    bound = sum(1 for a in img if a["bound"])
+    ign = sum(1 for a in img if a.get("ignored"))
     return {
         "doc": str(latest_asset_doc(project).relative_to(project)) if latest_asset_doc(project) else None,
         "bindingsFile": str(sorted((project / ASSET_DIR).glob(BIND_GLOB))[-1].relative_to(project))
                         if list((project / ASSET_DIR).glob(BIND_GLOB)) else None,
         "assets": assets,
         "summary": {
-            "total": len(assets),
+            "total": len(img),
             "bound": bound,
             "ignored": ign,
-            "unbound": len(assets) - bound - ign,
+            "unbound": len(img) - bound - ign,
             "character": sum(1 for a in assets if a["type"] == "character"),
+            "voice": len(vos),
+            "voiceBound": sum(1 for a in vos if a["bound"]),
             "scene": sum(1 for a in assets if a["type"] == "scene"),
             "prop": sum(1 for a in assets if a["type"] == "prop"),
         },

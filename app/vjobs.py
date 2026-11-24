@@ -258,7 +258,12 @@ def parse_sync_refs(project: Path, scene: str) -> dict:
         refs = []
         for i, path in enumerate(u.get("referenceImages") or [], 1):
             refs.append({"n": i, "file": path, "exists": (project / path).exists()})
+        audios = []
+        for i, path in enumerate(u.get("referenceAudios") or [], 1):
+            audios.append({"n": i, "file": path, "exists": (project / path).exists()})
         out[u.get("id")] = {"refs": refs, "assetIds": u.get("assetIds") or [],
+                            "audios": audios,
+                            "audioAssetIds": [r.get("assetId") for r in (u.get("referenceAudioRoles") or [])],
                             "storyboard": u.get("storyboardReference") or None}
     return out
 
@@ -286,6 +291,8 @@ def parse_units(project: Path, scene: str) -> list:
     for u in out:
         s = sync.get(u["id"]) or {}
         u["refs"] = s.get("refs") or []
+        u["audios"] = s.get("audios") or []
+        u["audioAssetIds"] = s.get("audioAssetIds") or []
         u["assetIds"] = [a.split("--")[-1] for a in (s.get("assetIds") or [])]
         sb = s.get("storyboard") or {}
         u["storyboard"] = ({
@@ -689,7 +696,8 @@ def list_jobs(batch: str = None) -> list:
 
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
                 ref_images: list = None, lora: str = None, sigmas: str = None,
-                sampler: str = None, attention: dict = None, ref_size: str = "match") -> dict:
+                sampler: str = None, attention: dict = None, ref_size: str = "match",
+                ref_audios: list = None) -> dict:
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MODELS["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MODELS["clip"], "type": "minimax", "device": "default"}},
@@ -745,6 +753,10 @@ def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, st
         nid = str(40 + i)
         g[nid] = {"class_type": "LoadImage", "inputs": {"image": name}}
         g["5"]["inputs"][f"ref_images.ref_image_{i}"] = [nid, 0]
+    for j, name in enumerate(ref_audios or []):
+        nid = str(60 + j)
+        g[nid] = {"class_type": "LoadAudio", "inputs": {"audio": name}}
+        g["5"]["inputs"][f"ref_audios.ref_audio_{j}"] = [nid, 0]
     return g
 
 
@@ -860,6 +872,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
                    "refSize": recipe.get("refSize"), "recipe": recipe.get("name"),
                    "seed": seed_i,
                    "refs": [r["file"] for r in (u.get("refs") or []) if r.get("exists")],
+                   "audios": [a["file"] for a in (u.get("audios") or []) if a.get("exists")],
                    "status": "queued", "card": None, "file": None, "error": None,
                    "queuedAt": time.time(), "startedAt": None, "prompt": u["prompt"],
                    "afterIds": []}
@@ -914,9 +927,16 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
             if not f.exists():
                 raise RuntimeError(f"参考图缺失：{rel}")
             ref_names.append(_stage_ref(job["port"], f, as_name=f"u_{jid[-10:]}_{i}{f.suffix}"))
+        audio_names = []
+        for i, rel in enumerate(job.get("audios") or []):
+            f = project / rel
+            if not f.exists():
+                raise RuntimeError(f"参考音频缺失：{rel}")
+            audio_names.append(_stage_ref(job["port"], f, as_name=f"a_{jid[-10:]}_{i}{f.suffix}"))
         with _lock:
             if jid in _jobs:
                 _jobs[jid]["usedRefs"] = ref_names
+                _jobs[jid]["usedAudios"] = audio_names
         _save()
         if job.get("chain") and job.get("prevUnit"):
             prev = None
@@ -945,7 +965,8 @@ def _execute(project: Path, jid: str, job: dict) -> bool:
                             job["seed"], job["steps"], ref_images=ref_names,
                             lora=job.get("lora"), sigmas=job.get("sigmas"),
                             sampler=job.get("sampler"), attention=job.get("attention"),
-                            ref_size=job.get("refSize") or "match")
+                            ref_size=job.get("refSize") or "match",
+                            ref_audios=audio_names)
         pid = _api(job["port"], "/prompt", {"prompt": g, "client_id": "shotcall-video"})["prompt_id"]
         with _lock:
             if jid in _jobs:

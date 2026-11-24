@@ -228,6 +228,16 @@ def main():
           [u["id"] for u in us])
     check("时长正确", [u["seconds"] for u in us] == [6, 5], [u["seconds"] for u in us])
 
+    print("\n= 参考音频接线 =")
+    g2 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"], ref_audios=["v.wav"])
+    loads_a = [v for v in g2.values() if v["class_type"] == "LoadAudio"]
+    h3b = [v for v in g2.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]
+    check("LoadAudio 节点存在", len(loads_a) == 1, len(loads_a))
+    check("H3 接上 ref_audios", "ref_audios.ref_audio_0" in h3b["inputs"], list(h3b["inputs"]))
+    g3 = vjobs.build_graph("p", 1344, 768, 158, 7, 20)
+    check("无音色时不接 LoadAudio",
+          not [v for v in g3.values() if v["class_type"] == "LoadAudio"])
+
     print("\n= 提示词文件选择 =")
     d = tmp / "N001"
     d.mkdir()

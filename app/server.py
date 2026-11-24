@@ -1206,6 +1206,40 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/workflow":
             self._send(200, json.dumps({"workflow": workflow_all()}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/proj/audio":
+            qa = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            rel = qa.get("p", [""])[0]
+            f = (PROJECT / rel).resolve()
+            root = PROJECT.resolve()
+            if (not str(f).startswith(str(root)) or not f.is_file()
+                    or f.suffix.lower() not in (".wav", ".mp3", ".flac", ".m4a")):
+                self._send(404, b'{"error":"not found"}', "application/json; charset=utf-8")
+                return
+            ctype = {"wav": "audio/wav", "mp3": "audio/mpeg",
+                     "flac": "audio/flac", "m4a": "audio/mp4"}[f.suffix.lower()[1:]]
+            data = f.read_bytes()
+            rng = self.headers.get("Range")
+            if rng:
+                m = re.match(r"bytes=(\d*)-(\d*)", rng)
+                if m:
+                    s = int(m.group(1) or 0)
+                    e = int(m.group(2)) if m.group(2) else len(data) - 1
+                    e = min(e, len(data) - 1)
+                    chunk = data[s:e + 1]
+                    self.send_response(206)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Range", f"bytes {s}-{e}/{len(data)}")
+                    self.send_header("Content-Length", str(len(chunk)))
+                    self.end_headers()
+                    self.wfile.write(chunk)
+                    return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif path == "/api/proj/text":
             qt = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             rel = qt.get("p", [""])[0]

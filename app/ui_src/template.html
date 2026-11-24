@@ -855,6 +855,7 @@ function genUnitRow(u){
       ${running?`<span class="badge ${running.status==='running'?'b-acc':'b-warn'}" style="font-size:10px">${runLabel}</span>`:''}
       ${mine.length?`<span class="badge b-ok" style="font-size:10px">已有 ${mine.length} 条</span>`:''}
       ${(u.storyboard&&u.storyboard.path)?`<span class="badge" style="font-size:10px;border-color:var(--acc);color:var(--acc)">分镜图 第${u.storyboard.row}行</span>`:''}
+      ${(u.audios||[]).length?`<span class="badge" style="font-size:10px;border-color:var(--ok);color:var(--ok)">音色 ${u.audios.length}</span>`:''}
       <button class="btn ghost" style="margin-left:auto;font-size:11px;padding:3px 9px"
         onclick="GEN.open=GEN.open||{};GEN.open['${u.id}']=!GEN.open['${u.id}'];render()">
         ${GEN.open && GEN.open[u.id] ? '收起' : '审核稿'}</button>
@@ -1179,6 +1180,27 @@ async function approveShot(scene, shot, verdict){
   render();
 }
 
+function shotApprovalBar(scene){
+  const sh = (SHOTS[scene]||{}).shots || [];
+  if(!sh.length) return '';
+  const passed = sh.filter(x=>x.approval && x.approval.record && x.approval.record.verdict==='pass' && !x.approval.stale).length;
+  const cards = sh.map(x=>`<div style="border:1px solid ${x.approval&&x.approval.record&&x.approval.record.verdict==='pass'&&!x.approval.stale?'var(--ok)':'var(--line)'};
+      border-radius:8px;padding:8px 10px;min-width:180px;background:var(--panel)">
+    <div style="display:flex;align-items:center;gap:6px"><b class="mono">${x.id}</b>${shotBadge(x)}</div>
+    <div class="dim" style="font-size:10.5px;margin-top:2px">${x.duration}s · ${esc((x.size||'').slice(0,18))}</div>
+    <div style="display:flex;gap:3px;margin-top:6px">
+      <button class="btn ok" style="font-size:10px;padding:1px 7px" onclick="approveShot('${scene}','${x.id}','pass')">通过</button>
+      <button class="btn warn" style="font-size:10px;padding:1px 7px" onclick="approveShot('${scene}','${x.id}','revise')">需修改</button>
+      <button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="approveShot('${scene}','${x.id}','hold')">待定</button>
+    </div></div>`).join("");
+  return `<div class="panel" style="margin-bottom:14px;border-color:${passed===sh.length?'var(--ok)':'var(--warn)'}">
+    <div class="ph"><span>镜头确认 · ${scene}</span>
+      <span class="dim">已通过 ${passed}/${sh.length} · 覆盖这些镜头的生成单元才允许提交</span></div>
+    <div class="pb" style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
+    <div class="dim" style="padding:0 13px 10px;font-size:11px">生成门禁：提示词版本已确认 + 该单元覆盖的每个镜头都是“通过”；缺一项提交会被 400 拒绝并点名。</div>
+  </div>`;
+}
+
 function sShots(){
   const d = SCN.data;
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
@@ -1207,6 +1229,7 @@ function sShots(){
   </tr>`).join("");
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+  ${shotApprovalBar(scene)}
   ${storyboardStrip(scene)}
   <div class="panel">
     <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
@@ -1245,15 +1268,20 @@ function sAssetsPage(){
   const d = AST.data;
   if(!d){ loadAssets().then(()=>render()); return `<div class="dim">读取资产…</div>`; }
   const s = d.summary||{};
-  const typeName = {character:"角色", scene:"场景", prop:"道具", extra:"辅助"};
-  const groups = ["character","scene","prop","extra"].map(tp=>{
+  const typeName = {character:"角色", scene:"场景", prop:"道具", extra:"辅助", voice:"音色"};
+  const groups = ["character","scene","prop","extra","voice"].map(tp=>{
     const items = (d.assets||[]).filter(a=>a.type===tp);
     if(!items.length) return "";
     const cards = items.map(a=>{
       const b = a.binding;
       const img = a.bound && b && b.image;
+      const aud = (a.type === "voice" && b && b.audio) ? b.audio : null;
       return `<div style="border:1px solid ${a.bound?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
-        ${img?`<img src="/api/proj/file?p=${encodeURIComponent(b.image)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(b.image)}')"
+        ${aud?`<div style="padding:8px">
+            <audio controls preload="none" src="/api/proj/audio?p=${encodeURIComponent(aud)}" style="width:100%;height:30px"></audio>
+            <div class="dim mono" style="font-size:9.5px;margin-top:3px">${esc(b.duration||'')}</div>
+          </div>`:''}
+        ${(!aud && img)?`<img src="/api/proj/file?p=${encodeURIComponent(b.image)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(b.image)}')"
              style="width:100%;height:110px;object-fit:cover;display:block;cursor:zoom-in">
             <div class="dim" style="font-size:10px;padding:2px 6px">点击放大</div>`
           :`<div style="height:110px;display:flex;align-items:center;justify-content:center" class="dim">未绑定</div>`}
