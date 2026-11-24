@@ -213,6 +213,12 @@ function tryAssetGen(name){
 
 function go(tab, opts){
   Object.assign(state, opts||{}, {tab});
+  if(tab === 'gen'){
+    GEN.loaded = false;                 // 每次进生成台都重新读单元与确认状态
+    render();
+    if(GEN.scene) loadGen(GEN.scene, true).then(()=>render());
+    return;
+  }
   if(tab === 'backend'){
     BK.data = null;                       // 先清空，避免显示旧快照
     render();
