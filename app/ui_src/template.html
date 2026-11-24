@@ -1588,9 +1588,53 @@ function sImageGen(){
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
 let FLOW = {data:null, scene:null, loading:false};
+let AGCFG = null;
 const FLOW_STATUS = {confirmed:['b-ok','已确认'], draft:['b-warn','草稿待确认'],
   conclusion:['b-acc','已完成-结论'], superseded:['b-mut','历史已替代'],
   empty:['b-mut','未开始'], missing:['b-bad','缺文件'], invalid:['b-bad','作废']};
+
+async function loadAgentConfig(force){
+  if(AGCFG && !force) return AGCFG;
+  try{ AGCFG = await (await fetch('/api/agent/config')).json(); }catch(e){ AGCFG = {error:String(e)}; }
+  return AGCFG;
+}
+
+function agentCtl(){
+  if(!AGCFG) return '<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取 Agent 配置…</div>';
+  if(AGCFG.error) return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">Agent 配置读取失败：${esc(AGCFG.error)}</div>`;
+  const cur=AGCFG.current||{};
+  const agents=AGCFG.agents||[];
+  const sel=agents.find(a=>a.id===cur.agent)||agents[0]||{};
+  const opts=agents.map(a=>`<option value="${esc(a.id)}" ${a.id===cur.agent?'selected':''}>${esc(a.label)}${a.available?'':'（未安装）'}</option>`).join('');
+  const models=(sel.models||[]).map(m=>`<option value="${esc(m)}"></option>`).join('');
+  return `<div class="panel" style="margin-bottom:10px"><div class="pb" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="dim" style="font-size:11.5px">Agent</span>
+    <select id="agentSel" onchange="agentPick(this.value)" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 7px;font-size:11.5px">${opts}</select>
+    <span class="dim" style="font-size:11.5px">模型</span>
+    <input id="agentModel" list="agentModels" value="${esc(cur.model||'')}" placeholder="模型 id" style="width:190px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 7px;font-size:11.5px">
+    <datalist id="agentModels">${models}</datalist>
+    <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="saveAgentCfg()">保存 Agent 设置</button>
+    <span class="dim" style="font-size:10.5px">${cur.configured?('已配置'+(cur.agent?' · '+esc(cur.agent):'')+(cur.model?' / '+esc(cur.model):'')):'未配置：只生成任务单'}
+      ${sel.available===false?' · 本机未安装该命令':''}</span>
+  </div></div>`;
+}
+
+async function agentPick(id){
+  const a=(AGCFG&&AGCFG.agents||[]).find(x=>x.id===id);
+  const el=document.getElementById('agentModel');
+  if(a && el) el.value=a.default_model||'';
+  const dl=document.getElementById('agentModels');
+  if(dl) dl.innerHTML=(a&&a.models||[]).map(m=>`<option value="${esc(m)}"></option>`).join('');
+}
+
+async function saveAgentCfg(){
+  const agent=(document.getElementById('agentSel')||{}).value||'';
+  const model=(document.getElementById('agentModel')||{}).value||'';
+  const r=await fetch('/api/agent/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({agent,model})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'保存失败');
+  AGCFG=j; toast('已保存 Agent：'+agent+' / '+model); render();
+}
 
 async function loadFlow(scene, force){
   if(!force && FLOW.data && FLOW.scene===scene) return FLOW.data;
@@ -1650,8 +1694,9 @@ async function dispatchFlow(key){
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({step:key,scene:FLOW.scene||'N001'})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
-  if(j.started) toast('已派给 Agent：'+j.task.id);
-  else toast('任务单已生成（未配置 Agent 命令）：'+j.task.promptFile);
+  if(j.started) toast('已派给 Agent：'+j.task.id+'（'+(j.task.agent||'')+' / '+(j.task.model||'')+'）');
+  else if(j.reason) toast('未启动：'+j.reason);
+  else toast('任务单已生成（未配置 Agent）：'+j.task.promptFile);
   FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
 }
 
@@ -1735,7 +1780,9 @@ function sFlow(){
         </details>
       </div></div>`;
   }).join("");
+  if(!AGCFG){ loadAgentConfig().then(()=>render()); }
   return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
+    ${agentCtl()}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
       <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>

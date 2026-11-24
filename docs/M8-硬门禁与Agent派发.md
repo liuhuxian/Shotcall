@@ -28,16 +28,16 @@
 
 ## 2 Agent 派发（第一版）
 
-- 流程卡新增「派给 Agent」：
-  - 未配置命令：只生成任务单 `制作运行/agent-tasks/AG-*.md`（含提示词 + 下一版路径 + “写回来登记”），返回任务单路径；不猜 CLI。
-  - 配置命令后：后台启动，日志写 `AG-*.log`，任务状态 queued → running → done/failed。
-- 配置方式（二选一）：
-  - 环境变量 `SHOTCALL_AGENT_CMD`（JSON 数组或字符串），如
-    `["claude","-p"]` / `["codex","exec"]` / `["dsh", ...]`。
-  - 项目内 `00-项目管理/工作台/agent.json`：
-    `{"command":["claude","-p"], "cwd":"<project>", "timeout":1800}`
-  - 参数含 `{prompt_file}` 时用任务单路径替换；否则提示词从 stdin 传入。
-- 任务单只负责“把提示词交给 Agent”；写盘后仍需导演在流程页登记/确认（保持确认门禁）。
+- 流程页顶部新增 **Agent 选择 + 模型选择 + 保存**：
+  - 内置 **DSH** / **Codex**；模型为可输入的 datalist（DSH: deepseek-flash/chat/reasoner；Codex: gpt-5.1-codex 等）。
+  - 选择保存到项目 `00-项目管理/工作台/agent.json`；未保存前「派给 Agent」只生成任务单。
+- 内置命令：
+  - DSH：`dsh --profile headless --patch <每次任务生成的 model.patch.yml> --approval-policy never -`；模型 patch 写入 `agent-default-model`。
+  - Codex：`codex exec --skip-git-repo-check --model <model> -`；提示词走 stdin。
+  - 自定义命令仍可用 `SHOTCALL_AGENT_CMD` 或 agent.json 的 `command` 覆盖。
+- 配置后：后台启动，日志 `AG-*.log`，状态 queued → running → done/failed；成功后**自动登记为草稿**（不确认），流程页仍需导演点确认。
+- 实测：DSH headless + model patch 返回 `OK`；本机没有 `codex` 命令，Codex 显示“未安装”，有 Codex 的机器上会按模板执行。
+- 任务单只负责“把提示词交给 Agent”；写盘后仍需导演在流程页确认（保持确认门禁）。
 - API：`POST /api/agent/dispatch`、`GET /api/agent/tasks`。
 
 ## 3 09b 依赖（B 已完成）
@@ -62,6 +62,6 @@
 ## 4 测试
 
 - `test_gate.py` 2/0：过期 09b 触发视频门禁。
-- `test_agent.py` 6/0：无命令生成任务单、不自动执行、下一版路径、任务可列、配置命令会启动并完成。
+- `test_agent.py` 10/0：无命令生成任务单、不自动执行、下一版路径、任务可列、配置命令会启动并完成、DSH 模型 patch、成功后自动登记。
 - `test_all` **50 通过 / 0 失败 / 2 跳过**。
 - 8799 修订场景实测：首帧接口 400（镜头表过期）。

@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Agent 派发：把流程卡提示词落成任务单；可选调用本机已配置的 Agent 命令。
+"""Agent 派发：流程卡提示词 → 任务单 → 可选本机 Agent 执行。
 
-默认只生成任务单（不猜 Agent CLI）；配置后才真正执行。
-配置优先级：
-  1. 环境变量 SHOTCALL_AGENT_CMD（JSON 数组或字符串）
-  2. <project>/00-项目管理/工作台/agent.json
-     {"command":["claude","-p"], "cwd":"<project>", "timeout":1800}
-命令参数可用 {prompt_file} 占位；没有占位时提示词从 stdin 传入。
+支持两种内置 Agent：
+- dsh：`dsh --profile headless --patch <model.patch.yml> --approval-policy never -`
+- codex：`codex exec --skip-git-repo-check --model <model> -`
+模型通过每次任务生成的 DSH patch / Codex --model 指定。
+默认不自动执行；用户在工作台保存 Agent/模型后才启动。
 """
 from __future__ import annotations
 
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -24,6 +24,16 @@ import store
 
 _lock = threading.Lock()
 
+AGENTS = [
+    {"id": "dsh", "label": "DSH", "available": bool(shutil.which("dsh")),
+     "models": ["deepseek-flash", "deepseek-chat", "deepseek-reasoner"],
+     "default_model": "deepseek-flash", "default_provider": "deepseek-official"},
+    {"id": "codex", "label": "Codex", "available": bool(shutil.which("codex")),
+     "models": ["gpt-5.1-codex", "gpt-5-codex", "gpt-5", "o4-mini"],
+     "default_model": "gpt-5.1-codex", "default_provider": "openai"},
+]
+AGENT_BY_ID = {a["id"]: a for a in AGENTS}
+
 
 def _dir(project: Path) -> Path:
     d = store.state_dir(project) / "agent-tasks"
@@ -31,23 +41,103 @@ def _dir(project: Path) -> Path:
     return d
 
 
-def config(project: Path) -> dict:
+def _config_path(project: Path) -> Path:
+    return project / "00-项目管理/工作台/agent.json"
+
+
+def _default() -> dict:
+    a = AGENT_BY_ID["dsh"]
+    return {"agent": "dsh", "model": a["default_model"],
+            "provider": a["default_provider"], "configured": False}
+
+
+def load_config(project: Path) -> dict:
     env = os.environ.get("SHOTCALL_AGENT_CMD")
     if env:
         try:
             v = json.loads(env)
         except Exception:
             v = shlex.split(env)
-        return {"command": v if isinstance(v, list) else shlex.split(str(v)), "mode": "stdin"}
-    f = project / "00-项目管理/工作台/agent.json"
+        cmd = v if isinstance(v, list) else shlex.split(str(v))
+        return {"agent": "custom", "model": "", "provider": "", "command": cmd,
+                "configured": True, "source": "env"}
+    cfg = _default()
+    f = _config_path(project)
     if f.exists():
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
-            if isinstance(d, dict) and d.get("command"):
-                return d
+            if isinstance(d, dict):
+                cfg.update({k: d[k] for k in ("agent", "model", "provider", "command")
+                            if d.get(k)})
+                cfg["configured"] = bool(d.get("command") or d.get("agent"))
+                cfg["source"] = "project"
         except Exception:
             pass
-    return {}
+    return cfg
+
+
+def save_config(project: Path, agent: str, model: str, provider: str = "") -> dict:
+    if agent not in AGENT_BY_ID:
+        raise ValueError("未知 Agent；只支持 dsh / codex")
+    a = AGENT_BY_ID[agent]
+    model = (model or "").strip() or a["default_model"]
+    provider = (provider or "").strip() or a["default_provider"]
+    f = _config_path(project)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    old = {}
+    if f.exists():
+        try:
+            old = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            old = {}
+    data = dict(old)
+    data.update({"agent": agent, "model": model, "provider": provider,
+                 "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    data.pop("command", None)  # 选择内置 Agent 时清掉旧的自定义命令
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(f)
+    return public_config(project)
+
+
+def public_config(project: Path) -> dict:
+    cfg = load_config(project)
+    return {"current": cfg, "agents": AGENTS,
+            "configPath": str(_config_path(project)),
+            "command": cfg.get("command") or []}
+
+
+def _model_patch(project: Path, task: dict, cfg: dict) -> Path:
+    d = _dir(project)
+    f = d / (task["id"] + ".model.patch.yml")
+    provider = cfg.get("provider") or "deepseek-official"
+    model = cfg.get("model") or "deepseek-flash"
+    f.write_text(
+        "- id: agent-default-model\n"
+        "  config:\n"
+        f"    provider: {provider}\n"
+        f"    model: {model}\n", encoding="utf-8")
+    return f
+
+
+def _command_for(project: Path, task: dict, cfg: dict):
+    """返回 (args, use_stdin)；默认命令按内置模板生成。"""
+    if cfg.get("command"):
+        return [str(x) for x in cfg["command"]], True
+    agent = cfg.get("agent") or "dsh"
+    model = cfg.get("model") or ""
+    if agent == "dsh":
+        patch = _model_patch(project, task, cfg)
+        args = ["dsh", "--profile", "headless", "--patch", str(patch),
+                "--approval-policy", "never", "-"]
+        return args, True
+    if agent == "codex":
+        args = ["codex", "exec", "--skip-git-repo-check"]
+        if model:
+            args += ["--model", model]
+        args += ["-"]
+        return args, True
+    return [], True
 
 
 def list_tasks(project: Path, limit: int = 50) -> list:
@@ -68,20 +158,16 @@ def _update(project: Path, task: dict):
 
 
 def _run(project: Path, task: dict, prompt: str, cfg: dict):
-    cmd = cfg.get("command") or []
-    if isinstance(cmd, str):
-        cmd = shlex.split(cmd)
-    if not cmd:
+    args, use_stdin = _command_for(project, task, cfg)
+    if not args:
         return
-    prompt_file = task["promptFile"]
-    args = [str(x).replace("{prompt_file}", prompt_file) for x in cmd]
-    use_stdin = not any("{prompt_file}" in str(x) for x in cmd)
-    log = _dir(project) / (task["id"] + ".log")
-    task.update({"status": "running", "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    task.update({"status": "running", "agent": cfg.get("agent"), "model": cfg.get("model"),
+                 "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
     _update(project, task)
+    log = _dir(project) / (task["id"] + ".log")
     try:
         with open(log, "w", encoding="utf-8") as lf:
-            p = subprocess.Popen(args, cwd=str(cfg.get("cwd") or project), stdin=subprocess.PIPE,
+            p = subprocess.Popen(args, cwd=str(project), stdin=subprocess.PIPE,
                                  stdout=lf, stderr=subprocess.STDOUT, text=True)
             if use_stdin:
                 p.communicate(prompt, timeout=float(cfg.get("timeout") or 1800))
@@ -90,6 +176,16 @@ def _run(project: Path, task: dict, prompt: str, cfg: dict):
         task.update({"status": "done" if p.returncode == 0 else "failed",
                      "returncode": p.returncode,
                      "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        # 自动登记：只登记，不确认；导演仍要在流程页点确认
+        if p.returncode == 0:
+            try:
+                files = flow._new_files(project, flow.BY_KEY[task["step"]],
+                                        task.get("scene") if flow.BY_KEY[task["step"]]["scope"] == "{scene}" else None)
+                if files:
+                    reg = flow.register(project, task["step"], task.get("scene") or "N001", path=files[0])
+                    task["registered"] = reg
+            except Exception as e:
+                task["registerWarning"] = str(e)[-400:]
     except Exception as e:
         task.update({"status": "failed", "error": str(e)[-400:],
                      "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
@@ -101,6 +197,9 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     st = next((x for x in data.get("steps") or [] if x["key"] == step_key), None)
     if not st:
         raise ValueError("未知流程")
+    cfg = load_config(project)
+    if not cfg.get("configured"):
+        cfg = dict(cfg); cfg["configured"] = False
     tid = "AG-" + time.strftime("%Y%m%d-%H%M%S") + "-" + step_key + "-" + uuid.uuid4().hex[:4]
     d = _dir(project)
     md = d / (tid + ".md")
@@ -108,13 +207,20 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     md.write_text(prompt, encoding="utf-8")
     task = {"id": tid, "step": step_key, "scene": scene, "status": "queued",
             "promptFile": str(md.relative_to(project)) if str(md).startswith(str(project)) else str(md),
-            "output": st["nextPath"], "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S")}
-    cfg = config(project)
-    task["command"] = cfg.get("command") or []
+            "output": st["nextPath"], "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "agent": cfg.get("agent"), "model": cfg.get("model"),
+            "command": cfg.get("command") or []}
     _update(project, task)
     started = False
-    if cfg.get("command"):
-        threading.Thread(target=_run, args=(project, task, prompt, cfg), daemon=True).start()
-        started = True
+    reason = ""
+    if cfg.get("configured"):
+        args, _ = _command_for(project, task, cfg)
+        if args and shutil.which(args[0]):
+            threading.Thread(target=_run, args=(project, task, prompt, cfg), daemon=True).start()
+            started = True
+        elif args:
+            task.update({"status": "unavailable", "error": f"本机找不到命令：{args[0]}"})
+            _update(project, task)
+            reason = task["error"]
     return {"ok": True, "task": task, "started": started,
-            "config": bool(cfg.get("command"))}
+            "config": cfg, "reason": reason}

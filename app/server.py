@@ -1253,6 +1253,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"active": str(PROJECT), "projects": projects.discover()},
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/agent/config":
+            self._send(200, json.dumps(agentrunner.public_config(PROJECT), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/agent/tasks":
             self._send(200, json.dumps({"items": agentrunner.list_tasks(PROJECT)}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -1944,6 +1947,18 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(409 if "任务" in str(e) else 400,
                            json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/agent/config":
+            try:
+                body = self._json_body()
+                out = agentrunner.save_config(PROJECT, str(body.get("agent") or ""),
+                                              str(body.get("model") or ""),
+                                              str(body.get("provider") or ""))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/agent/dispatch":
