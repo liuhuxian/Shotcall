@@ -176,6 +176,29 @@ def main():
                       if all(d in SC._done or d not in SC._runners for d in (it.get("after") or []))]
         check("A 完成后 B 才就绪", [x["id"] for x in ready2] == ["A", "B"], [x["id"] for x in ready2])
 
+    print("\n= 同时提交两组 =")
+    reset()
+    with mock.patch.object(sched, "submit", side_effect=lambda k, items: [i["id"] for i in items]), \
+         mock.patch.object(vjobs, "parse_units", return_value=[
+             {"id": "U001-A", "prompt": "p1", "seconds": 6, "refs": []},
+             {"id": "U001-B", "prompt": "p2", "seconds": 5, "refs": []}]):
+        ua = {"id": "U001-A", "prompt": "p1", "seconds": 6, "refs": []}
+        ub = {"id": "U001-B", "prompt": "p2", "seconds": 5, "refs": []}
+        r1 = vjobs.submit(tmp, "N001", [{"unit": ua, "count": 1},
+                                        {"unit": ub, "count": 1, "chain": True, "prevUnit": "U001-A"}])
+        r2 = vjobs.submit(tmp, "N001", [{"unit": ua, "count": 1},
+                                        {"unit": ub, "count": 1, "chain": True, "prevUnit": "U001-A"}])
+    check("两组批次号不同", r1["batch"] != r2["batch"], (r1["batch"], r2["batch"]))
+    ids = set(r1["jobs"]) | set(r2["jobs"])
+    check("四条任务 id 互不重复", len(ids) == 4, sorted(ids))
+    # 依赖只在各自批次内
+    b1 = [j for j in r1["jobs"] if "U001-B" in j][0]
+    b2 = [j for j in r2["jobs"] if "U001-B" in j][0]
+    check("B 的依赖指向本批 A",
+          vjobs._jobs[b1]["afterIds"] == [j for j in r1["jobs"] if "U001-A" in j]
+          and vjobs._jobs[b2]["afterIds"] == [j for j in r2["jobs"] if "U001-A" in j],
+          (vjobs._jobs[b1]["afterIds"], vjobs._jobs[b2]["afterIds"]))
+
     print("\n= 参考图接线 =")
     g = vjobs.build_graph("p", 1344, 768, 328, 7, 20, ref_images=["a.png", "b.png"])
     h3 = [v for v in g.values() if v["class_type"] == "MiniMaxH3ReferenceToVideo"][0]

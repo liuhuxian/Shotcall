@@ -8,6 +8,7 @@ import random
 import subprocess
 import re
 import time
+import uuid
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -737,7 +738,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
 
     带 chain 的任务会自动依赖同批上一单元的最后一条任务，保证串行。
     """
-    batch = time.strftime("VID-%Y%m%d-%H%M%S")
+    batch = time.strftime("VID-%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
     recipe = current_recipe()
     plan = []            # (item, unit, k, jid, job)
     by_unit = {}         # unit_id -> [jid, ...]（按提交顺序）
@@ -807,7 +808,12 @@ def _execute(project: Path, jid: str, job: dict):
                 _jobs[jid]["usedRefs"] = ref_names
         _save()
         if job.get("chain") and job.get("prevUnit"):
-            prev = latest_result(project, job["scene"], job["prevUnit"])
+            prev = None
+            with _lock:
+                dep = (_jobs.get((job.get("afterIds") or [None])[0]) or {})
+                if dep.get("file"):
+                    prev = dep["file"]
+            prev = prev or latest_result(project, job["scene"], job["prevUnit"])
             if not prev:
                 raise RuntimeError(f"接续失败：找不到 {job['prevUnit']} 的成片")
             last_png = project / "制作运行" / "接续帧" / f"{job['unit']}_from_{job['prevUnit']}.png"
@@ -853,6 +859,10 @@ def _execute(project: Path, jid: str, job: dict):
                     data = r.read()
                 out = project / RESULT_DIR / job["scene"] / job["unit"] / f"{job['seed']}.mp4"
                 out.parent.mkdir(parents=True, exist_ok=True)
+                k = 2
+                while out.exists():
+                    out = out.with_name(f"{job['seed']}_{k}.mp4")
+                    k += 1
                 out.write_bytes(data)
                 with _lock:
                     _jobs[jid].update({"status": "done", "file": str(out.relative_to(project)),
