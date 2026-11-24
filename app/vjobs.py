@@ -58,14 +58,26 @@ RECIPES = {
 
 
 def current_recipe() -> dict:
-    name = "base20"
     try:
-        name = json.loads(RECIPE_FILE.read_text(encoding="utf-8")).get("name") or "base20"
+        saved = json.loads(RECIPE_FILE.read_text(encoding="utf-8"))
     except Exception:
-        pass
-    if name not in RECIPES:
-        name = "base20"
-    return {"name": name, **RECIPES[name]}
+        saved = {}
+    name = saved.get("name") or "base20"
+    if name in RECIPES:
+        return {"name": name, **RECIPES[name]}
+    if saved.get("steps"):                       # 从 ComfyUI 工作流导入的自定义配方
+        return {"name": name, "label": saved.get("label") or name,
+                "lora": saved.get("lora"), "steps": saved["steps"],
+                "sigmas": saved.get("sigmas"), "sampler": saved.get("sampler"),
+                "res": saved.get("res"), "refSize": saved.get("refSize"),
+                "source": saved.get("source")}
+    return {"name": "base20", **RECIPES["base20"]}
+
+
+def save_recipe(spec: dict) -> dict:
+    RECIPE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RECIPE_FILE.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+    return current_recipe()
 
 
 def set_recipe(name: str) -> dict:

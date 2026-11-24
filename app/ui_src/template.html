@@ -430,6 +430,23 @@ async function pickRecipe(name){
   await loadRecipe(true); render();
 }
 
+let WFS = {data:null};
+
+async function loadWorkflows(force){
+  if(WFS.data && !force) return WFS.data;
+  try{ WFS.data = (await (await fetch('/api/gen/workflows')).json()).items || []; }catch(e){ WFS.data = []; }
+  return WFS.data;
+}
+
+async function importWorkflow(file){
+  const r = await fetch('/api/gen/recipe', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({file})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error || "导入失败");
+  toast("已切换：" + j.current.label);
+  await loadRecipe(true); await loadWorkflows(true); render();
+}
+
 function recipePanel(){
   const d = RCP.data;
   if(!d){ loadRecipe().then(()=>render()); return `<div class="panel"><div class="pb dim">读取出图工作流…</div></div>`; }
@@ -452,7 +469,27 @@ function recipePanel(){
     <div class="ph"><span>出图工作流</span><span class="dim">当前：${esc(cur.label||'')} · 点卡片切换</span></div>
     <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${cards}</div>
     <div class="dim" style="padding:0 13px 10px;font-size:10.5px">生成台提交时按此工作流建图（步数/是否挂 LoRA）；分辨率仍在生成台单独选。</div>
+    ${wfList()}
   </div>`;
+}
+
+function wfList(){
+  const items = WFS.data;
+  if(items === null || items === undefined){ loadWorkflows().then(()=>render()); return ''; }
+  if(!items.length) return '';
+  return `<div style="border-top:1px solid var(--line);padding:10px 13px">
+    <div class="dim" style="font-size:11px;margin-bottom:8px">ComfyUI 已保存的工作流（扫描 ${items.length} 个）· 点「可复刻」的导入</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      ${items.map(w=>`<div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
+        <span class="badge ${w.ok?'b-ok':'b-mut'}" style="font-size:9.5px;flex:none">${w.ok?'可复刻':'不支持'}</span>
+        <span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${w.ok?'#c9d2e0':'#6b7686'}">${esc(w.file)}</span>
+        <span class="dim mono" style="font-size:10px;flex:none">${w.steps?w.steps+'步':''}${w.lora?' · LoRA':''}</span>
+        ${w.ok?`<button class="btn ghost" style="font-size:10px;padding:1px 7px;flex:none"
+          onclick="importWorkflow('${esc(w.file)}')">导入</button>`
+          :`<span class="dim" style="font-size:9.5px;flex:none;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+             title="${esc((w.blockers||[]).join('；'))}">${esc((w.blockers||[])[0]||'')}</span>`}
+      </div>`).join("")}
+    </div></div>`;
 }
 
 /* ---------- 算力 ---------- */

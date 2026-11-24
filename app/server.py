@@ -375,6 +375,103 @@ def _probe_video(f: Path) -> dict:
     return out
 
 
+WF_DIR = Path("/checkpoints/huxian/h3/ComfyUI/user/default/workflows")
+UNSUPPORTED = {
+    "ManualSigmas": "自定义 sigma 曲线（渐进采样）",
+    "BlockSparseAttention": "注意力后端节点",
+    "ModelAttentionBackend": "注意力后端节点",
+    "SplitSigmas": "分段采样",
+}
+
+
+def scan_workflows() -> list:
+    """扫描 ComfyUI 已保存工作流，判断工作台能否复刻。"""
+    out = []
+    if not WF_DIR.is_dir():
+        return out
+    for f in sorted(WF_DIR.glob("*.json")):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        nodes = d.get("nodes") or []
+        types = [n.get("type") for n in nodes]
+        def first_widget(tp):
+            for n in nodes:
+                if n.get("type") == tp:
+                    w = n.get("widgets_values") or []
+                    return w[0] if w else None
+            return None
+
+        model = first_widget("UNETLoader")
+        h3 = next((n for n in nodes if n.get("type") == "MiniMaxH3ReferenceToVideo"), None)
+        sched = next((n for n in nodes if n.get("type") == "BasicScheduler"), None)
+        lora = first_widget("LoraLoaderModelOnly")
+        sampler = first_widget("KSamplerSelect")
+        hw = h3.get("widgets_values") if h3 else None
+        width = hw[1] if hw and len(hw) > 3 else None
+        height = hw[2] if hw and len(hw) > 3 else None
+        ref_size = hw[4] if hw and len(hw) > 4 else None
+        steps = None
+        if sched and len(sched.get("widgets_values") or []) >= 2:
+            steps = sched["widgets_values"][1]
+        blockers = [why for node, why in UNSUPPORTED.items() if node in types]
+        if types.count("SamplerCustomAdvanced") > 1:
+            blockers.append("多段采样（%d 个采样器）" % types.count("SamplerCustomAdvanced"))
+
+        # 开关节点只用来切「LoRA / 裸模型」两支：按连线解析当前实际分支
+        variants = None
+        by_id = {n.get("id"): n for n in nodes}
+        links = {l[0]: l for l in (d.get("links") or []) if isinstance(l, list) and len(l) >= 5}
+
+        def src_of(node, input_name):
+            for inp in node.get("inputs") or []:
+                if inp.get("name") == input_name:
+                    link = links.get(inp.get("link"))
+                    return by_id.get(link[1]) if link else None
+            return None
+
+        if "ComfySwitchNode" in types:
+            sw = next(n for n in nodes if n.get("type") == "ComfySwitchNode")
+            flag_node = src_of(sw, "switch")
+            flag = bool((flag_node or {}).get("widgets_values", [False])[0])
+            chosen = src_of(sw, "on_true" if flag else "on_false")
+            chosen_type = (chosen or {}).get("type")
+            if chosen_type == "LoraLoaderModelOnly":
+                lora = (chosen.get("widgets_values") or [None])[0]
+            elif chosen_type == "UNETLoader":
+                lora = None
+            # 步数：找到 BasicScheduler 的 steps 输入来源
+            steps_src = src_of(sched, "steps") if sched else None
+            if steps_src and steps_src.get("type") == "ComfySwitchNode":
+                steps = None            # 步数也走开关，下面按分支取
+                for nm in ("on_false", "on_true"):
+                    branch = src_of(steps_src, nm)
+                    val = (branch or {}).get("widgets_values", [None])[0]
+                    variants = variants or {}
+                    variants["on_true" if nm == "on_true" else "on_false"] = val
+                want = "on_true" if flag else "on_false"
+                steps = (variants or {}).get(want)
+            variants = variants or {}
+            variants["switchOn"] = flag
+        active = ("LoRA 支 · %d 步" % steps) if lora else ("裸模型支 · %d 步" % steps if steps else "—")
+        if not (model and "ref2va" in str(model)):
+            blockers.append("不是 Ref2VA 视频工作流")
+        if not h3:
+            blockers.append("没有 H3 参考视频节点")
+        if not sched and "ManualSigmas" not in types:
+            blockers.append("没有可识别的步数调度")
+        out.append({
+            "file": f.name, "sizeKB": round(f.stat().st_size / 1024),
+            "mtime": int(f.stat().st_mtime),
+            "nodes": len(nodes), "model": model, "steps": steps, "lora": lora,
+            "variants": variants, "active": active,
+            "sampler": sampler, "width": width, "height": height, "refSize": ref_size,
+            "ok": not blockers, "blockers": blockers,
+        })
+    return out
+
+
 def _recipe_label(j: dict) -> str:
     """历史任务的工作流标签：优先用记录，没有就按 LoRA/步数反推。"""
     name = j.get("recipe")
@@ -1097,6 +1194,10 @@ class Handler(BaseHTTPRequestHandler):
                                   "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime))})
             self._send(200, json.dumps({"scene": sc, "items": items}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/gen/workflows":
+            self._send(200, json.dumps({"dir": str(WF_DIR), "items": scan_workflows()},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/gen/recipe":
             self._send(200, json.dumps({"current": vjobs.current_recipe(),
                                         "all": [{"name": k, **v} for k, v in vjobs.RECIPES.items()]},
@@ -1449,6 +1550,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/gen/recipe":
             try:
                 body = self._json_body()
+                if body.get("file"):
+                    wf = next((w for w in scan_workflows() if w["file"] == body["file"]), None)
+                    if not wf:
+                        raise ValueError("找不到该工作流")
+                    if not wf["ok"]:
+                        raise ValueError("工作台无法复刻：" + "；".join(wf["blockers"]))
+                    cur = vjobs.save_recipe({"name": wf["file"].replace(".json", ""),
+                                             "label": wf["file"].replace(".json", ""),
+                                             "steps": wf["steps"], "lora": wf["lora"],
+                                             "res": [wf["width"], wf["height"]] if wf["width"] else None,
+                                             "refSize": wf["refSize"], "source": "comfyui"})
+                    self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
+                               "application/json; charset=utf-8")
+                    return
                 cur = vjobs.set_recipe(body.get("name") or "")
                 self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
