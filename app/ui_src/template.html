@@ -164,6 +164,7 @@ tr:hover td{background:#12161c}
 <header>
   <div>
     <h1>导演工作台</h1>
+    <div class="epsel" id="projsel"></div>
     <div class="epsel" id="epsel"></div>
   </div>
 </header>
@@ -3458,6 +3459,7 @@ function sEmptyEp(){
 function render(){
   nav();
   document.getElementById("epsel").innerHTML = sEpSel();
+  if(document.getElementById("projsel")) document.getElementById("projsel").innerHTML = sProjSel();
   document.getElementById("bannerStat").textContent =
     `${S.scenes} 场 · ${S.shots} 镜 · ${(S.totalDur/60).toFixed(1)} 分 · 断链 ${S.brokenOcc} 处`;
   const map={overview:sOverview,workflow:sWorkflow,dev:sDev,r1:sR1,r1a:sR1a,r2:sR2,shot:sShot,checks:sChecks,pick:sPick,batch:sBatch,img:sImg,img2:sImg2,export:sExport};
@@ -3527,7 +3529,24 @@ function showDraftModal(){
     </div></div>`;
   document.body.appendChild(m);
 }
+let PROJECTS = null;
+async function loadProjects(){
+  try{ PROJECTS = await (await fetch('/api/projects')).json(); }catch(e){ PROJECTS = null; }
+  const el=document.getElementById('projsel'); if(el) el.innerHTML = sProjSel();
+}
+function sProjSel(){
+  if(!PROJECTS || !PROJECTS.projects) return '<span class="dim">项目…</span>';
+  const opts=PROJECTS.projects.map(p=>`<option value="${esc(p.path)}" ${p.path===PROJECTS.active?'selected':''}>${esc(p.name)}${p.hasArtifacts?'':' · 空'}</option>`).join('');
+  return `<select onchange="switchProject(this.value)" title="切换项目" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:3px 8px;font-size:12px;max-width:220px">${opts}</select>`;
+}
+async function switchProject(path){
+  const r=await fetch('/api/project/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
+  const j=await r.json();
+  if(!r.ok) return toast(j.error||'切换失败');
+  location.reload();
+}
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && state.candModal){ state.candModal=null; render(); }});
+loadProjects();
 render();
 </script>
 </body>

@@ -60,7 +60,12 @@ STEPS = [
          kind="05 剧本深度融合", scope="全项目",
          pattern=r"^05-正式剧本/screenplay-v(\d{3})(?:-\d+)?\.md$",
          output="05-正式剧本/screenplay-{v}.md", deps=["04", "02", "03"],
-         prompt=_prompt("05", "正式剧本", "film-screenplay", ["04/02/03 已确认版；原著"], "05-正式剧本/screenplay-vNNN.md + screenplay-timing-audit-vNNN.md", "当前批次")),
+         prompt=_prompt("05", "正式剧本", "film-screenplay", ["04/02/03 已确认版；原著"], "05-正式剧本/screenplay-vNNN.md（时长复核由 05b 卡单独登记）", "当前批次")),
+    dict(key="05b", no="05b", stage="05", name="时长复核", skill="film-screenplay",
+         kind="05 成稿时长复核", scope="全项目",
+         pattern=r"^05-正式剧本/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
+         output="05-正式剧本/screenplay-timing-audit-{v}.md", deps=["05"],
+         prompt=_prompt("05b", "时长复核", "film-screenplay", ["05 已确认正式剧本"], "05-正式剧本/screenplay-timing-audit-vNNN.md", "当前批次")),
     dict(key="06", no="06", stage="06", name="剧本压力测试（可选）", skill="film-stress-test",
          kind="06 剧本压力测试", scope="全项目", register="conclusion",
          pattern=r"^06-剧本压力测试/stress-test-report-v(\d{3})(?:-\d+)?\.md$",
@@ -91,6 +96,7 @@ STEPS = [
 BY_KEY = {s["key"]: s for s in STEPS}
 STATUS = {"已确认-当前": "confirmed", "外部提供-已确认": "confirmed",
           "草稿待确认": "draft", "历史已替代": "superseded",
+          "已过期-禁止使用": "superseded",
           "已完成-结论": "conclusion", "已作废（不合格）": "invalid",
           "缺文件-阻断": "missing"}
 
@@ -197,8 +203,14 @@ def steps_payload(project: Path, scene: str = "N001"):
 
 
 def guard_script(project: Path):
-    cands = sorted((project / ".agents/skills").glob("*/ai-film-router/scripts/artifact_guard.py"),
-                   key=lambda p: p.stat().st_mtime)
+    """兼容两种项目技能布局：
+    - 嵌套：.agents/skills/<包名>/ai-film-router/scripts/artifact_guard.py
+    - 扁平：.agents/skills/ai-film-router/scripts/artifact_guard.py
+    """
+    root = project / ".agents/skills"
+    cands = list(root.glob("*/ai-film-router/scripts/artifact_guard.py"))
+    cands += list(root.glob("ai-film-router/scripts/artifact_guard.py"))
+    cands = sorted(set(cands), key=lambda p: p.stat().st_mtime)
     return cands[-1] if cands else None
 
 

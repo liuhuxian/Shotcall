@@ -24,6 +24,7 @@ _lock = __import__("threading").Lock()
 _jobs = {}
 _order = []
 # M1 仍在 app/run/vjobs.json；环境变量只给测试隔离用（指向 /tmp），生产不设。
+LEGACY_PROJECT = str(Path.home() / "short_v/有谁共鸣2")
 JOBS_FILE = Path(os.environ.get("SHOTCALL_VJOBS_FILE")
                  or (Path(__file__).parent / "run" / "vjobs.json"))
 # 终态：reconcile 不再把它们拉回 running/waiting
@@ -692,10 +693,14 @@ def mark_deleted(rel: str) -> int:
     return n
 
 
-def list_jobs(batch: str = None) -> list:
+def list_jobs(batch: str = None, project=None) -> list:
+    want = str(Path(project).expanduser().resolve()) if project else None
     with _lock:
         # 返回浅拷贝，避免 HTTP 线程 json.dumps 时与 _execute/reconcile 的 update 竞态
-        return [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
+        items = [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
+    if want:
+        items = [j for j in items if (j.get("project") or LEGACY_PROJECT) == want]
+    return items
 
 
 def build_graph(prompt: str, width: int, height: int, frames: int, seed: int, steps: int = 20,
@@ -867,6 +872,7 @@ def submit(project: Path, scene: str, units: list, seed: int = None,
             jid = f"{batch}-{u['id']}-{k+1}" if count > 1 else f"{batch}-{u['id']}"
             seed_i = (seed + k) if seed is not None else random.randint(1, 2 ** 31 - 1)
             job = {"id": jid, "batch": batch, "scene": scene, "unit": u["id"],
+                   "project": str(project),
                    "chain": bool(item.get("chain")),
                    "prevUnit": item.get("prevUnit"),
                    "seq": k + 1, "seconds": u["seconds"], "frames": frames_of(u["seconds"]),

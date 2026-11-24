@@ -21,6 +21,7 @@ _order = []
 JOBS_FILE = Path(os.environ.get("SHOTCALL_IMGJOBS_FILE")
                  or (Path(__file__).parent / "run" / "imgjobs.json"))
 TERMINAL = ("done", "failed", "cancelled")
+LEGACY_PROJECT = str(Path.home() / "short_v/有谁共鸣2")
 
 
 def _save():
@@ -70,9 +71,13 @@ def _job_dir(project: Path, ep: str, asset_id: str, out_root: str = None) -> Pat
     raise RuntimeError("没有任何可写目录用于保存候选图")
 
 
-def list_jobs(batch: str = None) -> list:
+def list_jobs(batch: str = None, project=None) -> list:
+    want = str(Path(project).expanduser().resolve()) if project else None
     with _lock:
-        return [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
+        items = [dict(_jobs[j]) for j in _order if not batch or _jobs[j]["batch"] == batch]
+    if want:
+        items = [j for j in items if (j.get("project") or LEGACY_PROJECT) == want]
+    return items
 
 
 def cancel(ids: list) -> dict:
@@ -115,7 +120,7 @@ def submit_batch(project: Path, ep: str, items: list, out_root: str = None) -> d
         n = max(1, int(it.get("n") or 4))
         for k in range(n):
             jid = f"{batch}-{it['id']}-{k+1}"
-            job = {"id": jid, "batch": batch, "asset": it["id"],
+            job = {"id": jid, "batch": batch, "asset": it["id"], "project": str(project),
                    "dir": f"{it['id']}-{_safe_name(it.get('name',''))}",
                    "name": it.get("name", ""), "card": None, "port": None,
                    "seed": (int(it["seed"]) + k) if it.get("seed") is not None

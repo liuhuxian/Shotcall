@@ -43,10 +43,12 @@ import scenes
 import vjobs
 import planner
 import preflight as pf
+import projects
 import runner
 import store
 
-PROJECT = Path(os.environ.get("WORKBENCH_PROJECT") or (Path.home() / "short_v/有谁共鸣2")).expanduser()
+PROJECT = projects.active_path()
+BOOT_PROJECT = PROJECT
 EPISODE = "EP002"
 
 _lock = threading.Lock()
@@ -88,6 +90,15 @@ def list_batches() -> list:
 
 LABEL = {"pass": "通过", "revise": "需修改", "hold": "待定", "na": "不适用"}
 MEDIA = Path(os.environ.get("WORKBENCH_MEDIA") or (PROJECT / "剧集" / EPISODE / "制作成果"))
+
+def _switch_project(target: str) -> Path:
+    """切换当前项目；只在生成队列空闲时调用。"""
+    global PROJECT, MEDIA
+    p = projects.set_active(target)
+    PROJECT = p
+    store.ACTIVE_PROJECT = p
+    MEDIA = Path(os.environ.get("WORKBENCH_MEDIA") or (PROJECT / "剧集" / EPISODE / "制作成果"))
+    return p
 
 
 THUMB_CACHE = {}
@@ -417,12 +428,15 @@ def _script_title(ep_dir: Path):
 
 
 def _video_recovery_loop():
-    """每 30 秒认领一次孤儿产物：进程重启后仍在 ComfyUI 里跑完的任务。"""
+    """每 30 秒认领一次孤儿产物：进程重启后仍在 ComfyUI 里跑完的任务。
+
+    只恢复启动项目，避免切换项目后把另一个项目的任务重新提交。
+    """
     while True:
         try:
-            vjobs.reconcile(PROJECT)
+            vjobs.reconcile(BOOT_PROJECT)
             vjobs.sweep()
-            got = vjobs.recover(PROJECT)
+            got = vjobs.recover(BOOT_PROJECT)
             if got:
                 print("[recover] 认领视频：", got, flush=True)
         except Exception as e:
@@ -580,7 +594,7 @@ def gen_history(include_deleted: bool = False) -> dict:
     """导演台生成过的视频历史：以磁盘文件为准，任务记录补充耗时/规格。"""
     root = PROJECT / vjobs.RESULT_DIR
     by_file = {}
-    for j in vjobs.list_jobs():
+    for j in vjobs.list_jobs(project=PROJECT):
         if j.get("file"):
             by_file[j["file"]] = j
     items = []
@@ -608,7 +622,7 @@ def gen_history(include_deleted: bool = False) -> dict:
             })
     if include_deleted:
         present = {i["file"] for i in items}
-        for j in vjobs.list_jobs():
+        for j in vjobs.list_jobs(project=PROJECT):
             if j.get("status") == "deleted" and j.get("file") and j["file"] not in present:
                 f = j.get("file")
                 items.append({
@@ -635,12 +649,12 @@ def gen_history(include_deleted: bool = False) -> dict:
             "measured": len(known)}
 
 
-def backend_state() -> dict:
+def backend_state(project=None) -> dict:
     """算力页：只列**已启动**的实例。"""
     cards = gpus.probe()
     live = [c for c in cards if c["state"] != "offline"]
-    img_jobs = imgjobs.list_jobs()
-    vid_jobs = vjobs.list_jobs()
+    img_jobs = imgjobs.list_jobs(project=project)
+    vid_jobs = vjobs.list_jobs(project=project)
     inst = []
     for c in live:
         port = c["port"]
@@ -1210,6 +1224,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             else:
                 self._send(200, STATUS_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif path == "/api/projects":
+            self._send(200, json.dumps({"active": str(PROJECT), "projects": projects.discover()},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/data":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             body = json.dumps(response(q.get("ep", [None])[0]), ensure_ascii=False).encode("utf-8")
@@ -1343,7 +1361,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         elif path == "/api/backend":
-            self._send(200, json.dumps(backend_state(), ensure_ascii=False).encode("utf-8"),
+            self._send(200, json.dumps(backend_state(PROJECT), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/backend/log":
             q7 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
@@ -1419,10 +1437,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(gen_history(inc), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/jobs":
-            self._send(200, json.dumps({"jobs": vjobs.list_jobs()}, ensure_ascii=False).encode("utf-8"),
+            self._send(200, json.dumps({"jobs": vjobs.list_jobs(project=PROJECT)}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/gen/active":
-            active = [j for j in vjobs.list_jobs()
+            active = [j for j in vjobs.list_jobs(project=PROJECT)
                       if j.get("status") in ("queued", "dispatched", "running", "starting")]
             self._send(200, json.dumps({"jobs": active}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -1430,7 +1448,7 @@ class Handler(BaseHTTPRequestHandler):
             q6 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = q6.get("scene", ["N001"])[0]
             root = PROJECT / vjobs.RESULT_DIR / sc
-            jobs_by_file = {j.get("file"): j for j in vjobs.list_jobs() if j.get("file")}
+            jobs_by_file = {j.get("file"): j for j in vjobs.list_jobs(project=PROJECT) if j.get("file")}
             def newest_of(unit):
                 d = root / unit
                 if not d.is_dir():
@@ -1539,7 +1557,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/comfy/progress":
             snap = sched.snapshot()
-            jobs = imgjobs.list_jobs()
+            jobs = imgjobs.list_jobs(project=PROJECT)
             batch = jobs[-1]["batch"] if jobs else None
             same = [j for j in jobs if j["batch"] == batch]
             snap.update({"batch": batch, "total": len(same),
@@ -1606,7 +1624,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/img/jobs":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
-            body = json.dumps({"jobs": imgjobs.list_jobs(q.get("batch", [None])[0])},
+            body = json.dumps({"jobs": imgjobs.list_jobs(q.get("batch", [None])[0], project=PROJECT)},
                               ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
         elif path == "/api/img/file":
@@ -1849,6 +1867,25 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
             except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/project/switch":
+            try:
+                body = self._json_body()
+                target = str(body.get("path") or body.get("id") or "")
+                active = [j for j in vjobs.list_jobs() if j.get("status") in ("queued", "dispatched", "running", "waiting")]
+                active += [j for j in imgjobs.list_jobs() if j.get("status") in ("queued", "running")]
+                if active and str(PROJECT) != str(Path(target).expanduser().resolve()):
+                    raise ValueError("当前还有生成任务在跑，暂停切换；等队列清空后再切")
+                p = _switch_project(target)
+                _cache["by"] = {}; _cache["sig"] = None
+                self._send(200, json.dumps({"ok": True, "project": str(PROJECT),
+                                            "projects": projects.discover()},
+                                           ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(409 if "任务" in str(e) else 400,
+                           json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
         if path == "/api/workflow/register":

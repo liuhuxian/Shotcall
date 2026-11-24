@@ -18,6 +18,7 @@ UNIT_TYPES = {"scene", "shot", "asset", "music", "batch"}
 
 
 FALLBACK = Path(__file__).resolve().parent / "run"
+ACTIVE_PROJECT = None  # 切换项目后由 server 设置；用于避免 WORKBENCH_STATE 串账
 
 
 def _has_records(d: Path) -> bool:
@@ -63,6 +64,9 @@ def state_dir(project: Path) -> Path:
     """
     env = os.environ.get("WORKBENCH_STATE")
     if env:
+        if ACTIVE_PROJECT is not None:
+            # 一旦切换过项目，就按项目自身目录落账，避免启动项目的 WORKBENCH_STATE 串账
+            return project / "制作运行"
         d = Path(env)
         d.mkdir(parents=True, exist_ok=True)
         return d
