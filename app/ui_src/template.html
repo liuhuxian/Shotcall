@@ -717,8 +717,8 @@ function playBackend(file){
 
 function execPanel(){
   if(!EXEC.loaded){ loadExec().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin:10px 0">读取生成成果…</div>`; }
-  const vids=(EXEC.videos||[]).filter(x=>!x.deleted).slice(0,8);
-  const imgs=(EXEC.images||[]).slice(0,12);
+  const vids=(EXEC.videos||[]).filter(x=>!x.deleted && x.source==='workbench').slice(0,8);
+  const imgs=(EXEC.images||[]).filter(x=>x.source==='workbench').slice(0,12);
   const vRows=vids.map(x=>`<div onclick="playBackend('${esc(x.file)}')" style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #1b2028;cursor:pointer">
     <span class="badge b-ok" style="font-size:9px">▶</span>
     <span class="mono" style="font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.unit)} · ${esc(x.file.split('/').pop())}</span>
@@ -730,9 +730,9 @@ function execPanel(){
     <div class="dim mono" style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.label)} · ${esc(x.name)}</div>
   </div>`).join("");
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-    <div class="panel"><div class="ph"><span>视频成果</span><span class="dim">最近 ${vids.length} / ${(EXEC.videos||[]).length} 条 · 点播放</span></div>
+    <div class="panel"><div class="ph"><span>视频成果</span><span class="dim">导演台任务 · 最近 ${vids.length} / ${(EXEC.videos||[]).filter(x=>x.source==='workbench').length} 条 · 点播放</span></div>
       <div class="pb">${vRows||'<div class="dim" style="font-size:11.5px">还没有生成过的视频。</div>'}</div></div>
-    <div class="panel"><div class="ph"><span>图片成果</span><span class="dim">最近 ${imgs.length} / ${(EXEC.images||[]).length} 张 · 点图放大</span></div>
+    <div class="panel"><div class="ph"><span>图片成果</span><span class="dim">导演台任务 · 最近 ${imgs.length} / ${(EXEC.images||[]).filter(x=>x.source==='workbench').length} 张 · 点图放大</span></div>
       <div class="pb" style="display:flex;gap:7px;flex-wrap:wrap">${imgsHtml||'<div class="dim" style="font-size:11.5px">还没有生成过的图片。</div>'}</div></div>
   </div><div id="backendPlayer"></div>`;
 }
