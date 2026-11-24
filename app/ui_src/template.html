@@ -2185,7 +2185,7 @@ function sFlow(){
         <div class="ph"><span>阶段</span><span class="dim">01 → 09b</span></div>
         <div class="pb" style="padding:8px">${nav}</div>
       </div>
-      <div style="flex:1;min-width:0">${cards}</div>
+      <div style="flex:1;min-width:0">${cards}${inlineViewer()}</div>
     </div>`;
 }
 
@@ -4052,7 +4052,8 @@ function render(){
   } else {
     html = (map[state.tab] || sStages)();
   }
-  document.getElementById("app").innerHTML = statusBar() + html + inlineViewer();
+  const inlineInFlow = state.tab === "stages" && (state.wf || "flow") === "flow";
+  document.getElementById("app").innerHTML = statusBar() + html + (inlineInFlow ? "" : inlineViewer());
   if(state.batchModal) document.body.insertAdjacentHTML("beforeend", batchModalHtml());
   if(state.candModal) showDraftModal();
   else {
