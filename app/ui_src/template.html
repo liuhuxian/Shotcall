@@ -180,7 +180,7 @@ const S = D.stats;
 
 /* ---- 原型内的模拟状态（仅内存） ---- */
 const state = {
-  tab:"stages", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
+  tab:"stages", wf:"flow", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
   filter:"all", verdicts:{}, picks:{}, candModal:null, batchModal:null, reasonChips:[], drafts:{}, preflight:null, plan:null, exec:null
 };
 const vkey=(t,id)=>t+"::"+id;
@@ -275,7 +275,7 @@ function reviewDot(tab){
 
 function nav(){
   const items=[
-    ["stages","工作流"],["flow","流程"],["scenes","场次"],["assets","资产"],["shots","镜头"],
+    ["stages","工作流"],["scenes","场次"],["assets","资产"],["shots","镜头"],
     ["gen","生成台"],["first","首帧"],["backend","算力"],["pending","待确认"],["verify","校验"]];
   document.getElementById("nav").innerHTML = items.map(([k,label])=>{
     const dot = reviewDot(k);
@@ -1919,7 +1919,7 @@ function sFlow(){
   state.scene = scene;
   if(!FLOW.data || FLOW.scene!==scene){ loadFlow(scene).then(()=>render()); return '<div class="dim">读取流程…</div>'; }
   const steps=FLOW.data.steps||[];
-  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('flow',{scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
+  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=steps.map(st=>{
     const is06=st.key==='06';
@@ -1978,9 +1978,16 @@ function sFlow(){
 
 /* ---------- 阶段看板 ---------- */
 function sStages(){
+  const wf = state.wf || 'flow';
+  const wfBar = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn ${wf==='flow'?'acc':'ghost'}" style="font-size:11px;padding:3px 12px" onclick="go('stages',{wf:'flow'})">流程 · 提示词/登记</button>
+    <button class="btn ${wf==='stages'?'acc':'ghost'}" style="font-size:11px;padding:3px 12px" onclick="go('stages',{wf:'stages'})">阶段 · 成果登记</button>
+    <span class="dim" style="font-size:11px">同一个「工作流」入口；流程负责派发/登记，阶段负责看已登记成果</span>
+  </div>`;
+  if(wf === 'flow') return wfBar + sFlow();
   const d = STG.data;
-  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取成果登记…</div>`; }
-  if(!d.exists) return `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
+  if(!d){ if(!STG.loading) loadStages().then(()=>render()); return wfBar + `<div class="dim">读取成果登记…</div>`; }
+  if(!d.exists) return wfBar + `<div class="alert" style="cursor:default"><div class="ic" style="background:#2a1212;color:var(--bad)">!</div>
     <div><b>没有找到成果登记表</b><div class="dim" style="font-size:12px">${esc(d.registryPath||"00-项目管理/artifact-state.json")}</div></div></div>`;
   const stages = d.stages||[];
   const sel = state.stage && stages.some(s=>s.no===state.stage)
@@ -1990,7 +1997,7 @@ function sStages(){
     const color = STAGE_COLOR[st.state] || "var(--dim)";
     const on = st.no === sel;
     const last = i === stages.length-1;
-    return `<div onclick="go('stages',{stage:'${st.no}'})"
+    return `<div onclick="go('stages',{wf:'stages',stage:'${st.no}'})"
       style="display:flex;gap:10px;cursor:pointer;align-items:flex-start">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
         <div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -2007,7 +2014,7 @@ function sStages(){
   }).join("");
 
   const detail = sStageBody(sel);
-  return `<div style="display:flex;gap:16px;align-items:flex-start">
+  return wfBar + `<div style="display:flex;gap:16px;align-items:flex-start">
     <div class="panel" style="width:260px;flex-shrink:0">
       <div class="ph"><span>工作流</span><span class="dim">00 → 09</span></div>
       <div class="pb" style="padding:14px 14px 0">${rail}</div>
@@ -3795,8 +3802,6 @@ function render(){
   let html;
   if (state.tab === "stages") {
     html = sStages();
-  } else if (state.tab === "flow") {
-    html = sFlow();
   } else if (state.tab === "scenes") {
     html = sScenes();
   } else if (state.tab === "assets") {
