@@ -336,6 +336,29 @@ def slot_history(project: Path) -> dict:
     return out
 
 
+def set_ignored(project: Path, asset_id: str, ignored: bool) -> dict:
+    """设置资产忽略（写入 project.json.trashedSlots；不删除 slots）。"""
+    proj = _read_project(project)
+    slots = proj.get("slots") or []
+    slot = next((s for s in slots if s.get("stateId") == asset_id or s.get("id") == asset_id
+                 or str(s.get("id", "")).endswith("--" + asset_id)), None)
+    if not slot:
+        raise ValueError(f"project.json 找不到槽位 {asset_id}")
+    trash = proj.setdefault("trashedSlots", [])
+    keep = [x for x in trash
+            if not ((x.get("slot") or {}).get("stateId") == asset_id
+                    or (x.get("slot") or {}).get("id") == slot.get("id")
+                    or (x.get("slot") or {}).get("stateId") == slot.get("stateId"))]
+    if ignored:
+        keep.append({"slot": slot, "index": slots.index(slot),
+                     "removedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
+    proj["trashedSlots"] = keep
+    proj["revision"] = int(proj.get("revision") or 0) + 1
+    _write_project(project, proj)
+    return {"ok": True, "asset": asset_id, "ignored": bool(ignored),
+            "revision": proj["revision"], "trashed": len(keep)}
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     try:

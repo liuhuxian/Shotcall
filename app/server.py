@@ -1826,6 +1826,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/asset/ignore":
+            try:
+                body = self._json_body()
+                out = assetsdb.set_ignored(PROJECT, str(body.get("asset") or ""),
+                                           bool(body.get("ignored")))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/img/recipe":
             try:
                 body = self._json_body()

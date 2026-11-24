@@ -180,7 +180,7 @@ const S = D.stats;
 
 /* ---- 原型内的模拟状态（仅内存） ---- */
 const state = {
-  tab:"stages", wf:"flow", ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
+  tab:"stages", wf:"flow", hideIgnored:true, ep:"EP002", scene:D.scenes[0].id, shot:"SHOT-EP002-SC001-03A",
   filter:"all", verdicts:{}, picks:{}, candModal:null, batchModal:null, reasonChips:[], drafts:{}, preflight:null, plan:null, exec:null
 };
 const vkey=(t,id)=>t+"::"+id;
@@ -1429,13 +1429,23 @@ async function approveAsset(assetId, verdict){
   AST.data = null; await loadAssets(true); render();
 }
 
+async function setAssetIgnored(id, ignored){
+  const r=await fetch('/api/asset/ignore',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({asset:id,ignored})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'操作失败');
+  toast((ignored?'已忽略 ':'已取消忽略 ')+id);
+  AST.data=null; await loadAssets(true); render();
+}
+
 function sAssetsPage(){
   const d = AST.data;
   if(!d){ loadAssets().then(()=>render()); return `<div class="dim">读取资产…</div>`; }
   const s = d.summary||{};
   const typeName = {character:"角色", scene:"场景", prop:"道具", extra:"辅助", voice:"音色"};
+  const hideIgnored = state.hideIgnored !== false;
   const groups = ["character","scene","prop","extra","voice"].map(tp=>{
-    const items = (d.assets||[]).filter(a=>a.type===tp);
+    const allItems = (d.assets||[]).filter(a=>a.type===tp);
+    const items = allItems.filter(a=>!(hideIgnored && a.ignored));
     if(!items.length) return "";
     const cards = items.map(a=>{
       const b = a.binding;
@@ -1454,11 +1464,15 @@ function sAssetsPage(){
           <div class="mono dim" style="font-size:10px">${esc(a.id)}</div>
           <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-decoration:underline dotted"
             title="打开生成历史 / 出图 / 改图" onclick="openAsset('${esc(a.id)}')">${esc(a.name)}</div>
-          <div style="display:flex;align-items:center;gap:4px;margin-top:4px;flex-wrap:wrap">
-            ${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
-            :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
-            :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}
-            ${assetReviewBadge(a.approval)}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:4px">
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+              ${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
+              :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
+              :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}
+              ${assetReviewBadge(a.approval)}
+            </div>
+            <span onclick="setAssetIgnored('${a.id}',${a.ignored?'false':'true'})" title="${a.ignored?'取消忽略':'忽略此资产，不再显示'}"
+              style="cursor:pointer;font-size:9.5px;color:#6f7a8b;white-space:nowrap">${a.ignored?'取消忽略':'忽略'}</span>
           </div>
           <div style="display:flex;align-items:center;gap:3px;margin-top:5px;flex-wrap:wrap">
             <button class="btn ok" style="font-size:9.5px;padding:0 5px" onclick="approveAsset('${a.id}','pass')">通过</button>
@@ -1468,7 +1482,7 @@ function sAssetsPage(){
         </div></div>`;
     }).join("");
     return `<div class="panel" style="margin-bottom:14px">
-      <div class="ph"><span>${typeName[tp]||tp}</span><span class="dim">${items.length} 项 · 已绑定 ${items.filter(x=>x.bound).length} · 已忽略 ${items.filter(x=>x.ignored).length}</span></div>
+      <div class="ph"><span>${typeName[tp]||tp}</span><span class="dim">${items.length} 项显示 · 共 ${allItems.length} · 已绑定 ${allItems.filter(x=>x.bound).length} · 已忽略 ${allItems.filter(x=>x.ignored).length}</span></div>
       <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div></div>`;
   }).join("");
   return `
@@ -1486,7 +1500,13 @@ function sAssetsPage(){
     <div class="ph"><span>审核二 · 资产</span><span class="dim">逐项通过 / 待定 · 「修改」直接进资产详情改图 · 依据 ${esc(d.doc||"")}</span>
       <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>
   </div>
-  <div class="dim" style="font-size:11.5px;margin-bottom:10px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
+  <div class="dim" style="font-size:11.5px;margin-bottom:8px">来源：${esc(d.doc||"")} · 绑定表：${esc(d.bindingsFile||"")}</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:#9aa5b4;cursor:pointer">
+      <input type="checkbox" ${hideIgnored?'checked':''} onchange="state.hideIgnored=this.checked;render()"> 隐藏已忽略（${s.ignored||0}）
+    </label>
+    <span class="dim" style="font-size:10.5px">取消勾选可查看并恢复被忽略资产</span>
+  </div>
   ${groups}`;
 }
 
