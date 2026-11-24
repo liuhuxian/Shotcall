@@ -202,11 +202,16 @@ def _unit_shots(unit: dict) -> list:
 
 
 def _prompt_confirm(rel: str) -> dict:
-    """提示词版本的文件级确认状态；以 approvals 为准。"""
+    """提示词版本的文件级确认状态；approvals 优先，registry current 兜底。"""
     rec = approvals.file_ok(PROJECT, rel)
     if rec:
         return {"local": "confirmed", "at": rec.get("at"), "approval": rec.get("id"),
                 "sha256": rec.get("sha256"), "version": rec.get("version")}
+    cur = _confirmed_artifact(rel)
+    if cur:
+        return {"local": "confirmed", "at": cur.get("confirmedAt") or cur.get("created_at"),
+                "sha256": cur.get("sha256"), "version": _version_of(rel),
+                "approval": "artifact-state"}
     st = approvals.state(PROJECT, "file", rel)
     if st.get("record"):
         return {"local": "stale" if st.get("stale") else "rejected",
