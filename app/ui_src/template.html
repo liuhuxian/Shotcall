@@ -1682,7 +1682,7 @@ function assetDetailHtml(){
 }
 
 /* ---------- 分镜首帧 ---------- */
-let FF = {data:null, scene:null};
+let FF = {data:null, scene:null, pick:{}};
 
 async function loadFirst(scene, force){
   if(!force && FF.data && FF.scene===scene) return FF.data;
@@ -1691,11 +1691,21 @@ async function loadFirst(scene, force){
   return FF.data;
 }
 
+function ffPickRef(shot,file){
+  FF.pick[shot]=file||'';
+  const root=document.getElementById('ffrefpick-'+shot);
+  if(root) root.querySelectorAll('[data-ref]').forEach(el=>{
+    const on=(el.getAttribute('data-ref')||'')===(file||'');
+    el.style.borderColor=on?'var(--acc)':'var(--line)';
+    el.style.background=on?'rgba(90,160,255,.08)':'var(--panel)';
+  });
+}
+
 async function ffGenerate(shot){
   const scene=FF.scene||'N001';
   const prompt=(document.getElementById('ffp-'+shot)||{}).value||'';
   if(!prompt.trim()) return toast('提示词为空');
-  const ref=(document.getElementById('ffref-'+shot)||{}).value||null;
+  const ref=FF.pick[shot]||null;
   const r=await fetch('/api/firstframe/generate',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({scene,shot,prompt,ref,n:1,width:1536,height:864,steps:6})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
@@ -1721,7 +1731,18 @@ function sFirst(){
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=(FF.data.shots||[]).map(sh=>{
     const refs=sh.refs||[];
-    const refOpts=refs.map(r=>`<option value="${esc(r.file)}">${esc(r.asset)} · ${esc(r.file.split('/').pop())}</option>`).join("");
+    const picked=FF.pick[sh.id]!==undefined ? FF.pick[sh.id] : ((refs[0]||{}).file||'');
+    FF.pick[sh.id]=picked;
+    const refCards=`<div id="ffrefpick-${sh.id}" style="display:flex;gap:6px;flex-wrap:wrap;align-items:stretch">
+      <div data-ref="" onclick="ffPickRef('${sh.id}','')" title="不用参考图"
+        style="width:96px;height:62px;border:1px solid ${picked===''?'var(--acc)':'var(--line)'};border-radius:6px;
+        display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#7c8798;background:${picked===''?'rgba(90,160,255,.08)':'var(--panel)'}">不用参考图</div>
+      ${refs.map(r=>`<div data-ref="${esc(r.file)}" onclick="ffPickRef('${sh.id}','${esc(r.file)}')" title="${esc(r.asset)} · ${esc(r.file)}"
+        style="width:96px;border:1px solid ${picked===r.file?'var(--acc)':'var(--line)'};border-radius:6px;overflow:hidden;cursor:pointer;background:var(--panel)">
+        <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" style="width:100%;height:62px;object-fit:cover;display:block">
+        <div class="dim" style="font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.asset)}</div>
+      </div>`).join("")}
+    </div>`;
     const cands=(sh.candidates||[]).slice(0,4).map(c=>`<div style="width:170px">
       <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
         style="width:100%;height:95px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
@@ -1736,8 +1757,7 @@ function sFirst(){
         <textarea id="ffp-${sh.id}" style="width:100%;min-height:100px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(sh.prompt||'')}</textarea>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
           <span class="dim" style="font-size:11px">参考图</span>
-          <select id="ffref-${sh.id}" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px;min-width:250px">
-            <option value="">不用参考图</option>${refOpts}</select>
+          ${refCards}
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="ffGenerate('${sh.id}')">出首帧</button>
           <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadFirst('${scene}',true).then(()=>render())">刷新</button>
           <span class="dim" style="font-size:10.5px">采用后，09b 首单元视频会取该首帧</span>
