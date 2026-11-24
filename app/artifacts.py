@@ -146,6 +146,19 @@ def build(project: Path) -> dict:
             "stage": stages.stage_of_kind(a.get("kind", "")) or stages.stage_of_path(p),
         }
 
+    # 同族旧草稿自动视为历史已替代：例如 09b 已确认 v012 后，v010/v011 不再算待确认
+    confirmed_max = {}
+    for item in known.values():
+        fam, ver = family_of(item["path"])
+        if item["status"] == "confirmed":
+            confirmed_max[fam] = max(confirmed_max.get(fam, 0), ver)
+    for item in known.values():
+        fam, ver = family_of(item["path"])
+        if item["status"] == "draft" and ver < confirmed_max.get(fam, 0):
+            item["status"] = "superseded"
+            item["statusText"] = "历史已替代"
+            item["supersededBy"] = "同族更高版本已确认"
+
     # 依赖失效判定：上游被改过 / 缺失 / 尚未确认
     for item in known.values():
         stale = []
