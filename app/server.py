@@ -1231,15 +1231,31 @@ class Handler(BaseHTTPRequestHandler):
             q6 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sc = q6.get("scene", ["N001"])[0]
             root = PROJECT / vjobs.RESULT_DIR / sc
+            jobs_by_file = {j.get("file"): j for j in vjobs.list_jobs() if j.get("file")}
+            def newest_of(unit):
+                d = root / unit
+                if not d.is_dir():
+                    return 0
+                fs = sorted(d.glob("*.mp4"), key=lambda f: f.stat().st_mtime)
+                return int(fs[-1].stat().st_mtime) if fs else 0
             out = []
             if root.is_dir():
                 import re as _re
                 for f in sorted(root.rglob("*.mp4"), key=lambda x: x.stat().st_mtime):
                     m = _re.match(r"(U\d{3})", f.stem)
                     mt = f.stat().st_mtime
+                    job = jobs_by_file.get(str(f.relative_to(PROJECT))) or {}
+                    chain_from = job.get("prevUnit")
+                    chain_at = 0
+                    if job.get("firstFrame"):
+                        pf = PROJECT / job["firstFrame"]
+                        chain_at = int(pf.stat().st_mtime) if pf.exists() else 0
+                    prev_latest = newest_of(chain_from) if chain_from else 0
                     out.append({"file": str(f.relative_to(PROJECT)),
                                 "unit": m.group(1) if m else f.parent.name,
                                 "group": f.parent.name, "name": f.name,
+                                "chainFrom": chain_from,
+                                "chainStale": bool(chain_from and prev_latest > chain_at),
                                 "time": time.strftime("%m-%d %H:%M", time.localtime(mt)),
                                 "kb": max(1, f.stat().st_size // 1024),
                                 "mtime": mt})
