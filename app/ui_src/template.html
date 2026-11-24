@@ -64,6 +64,11 @@ main{padding:18px 20px 60px;max-width:1560px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
 .kpi{font-size:26px;font-weight:600;letter-spacing:.5px}
 .kpi small{font-size:12px;color:var(--mut);font-weight:400;margin-left:4px}
+.grid4.compactKpi .card{padding:7px 12px;border-radius:8px}
+.grid4.compactKpi .muted{font-size:11px}
+.grid4.compactKpi .kpi{font-size:20px;line-height:1.15;margin-top:2px}
+.grid4.compactKpi .kpi small{font-size:11px}
+.grid4.compactKpi .dim{font-size:10px;margin-top:1px!important}
 
 .row{display:flex;gap:12px}
 .col{display:flex;flex-direction:column}
@@ -692,7 +697,7 @@ function sBackend(){
   const cards = d.cards||[];
   const free = cards.filter(c=>!c.hasInstance && c.state==='free').length;
   return `
-  <div class="grid4" style="margin-bottom:14px">
+  <div class="grid4 compactKpi" style="margin-bottom:12px">
     <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">排队任务</div>
