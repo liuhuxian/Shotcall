@@ -1967,7 +1967,7 @@ async function confirmArt(path, verdict){
     body: JSON.stringify({path, verdict, kind:art?art.kind:"", scope:art?art.scope:"", stage:art?art.stage:""})});
   const j = await r.json();
   if(!r.ok) return toast(j.error||"记录失败");
-  toast(verdict==='pass' ? ("已确认："+path) : ("已退回："+path));
+  toast(verdict==='pass' ? ((j.flow && !j.flow.already) ? ("已确认并登记："+path) : ("已确认："+path)) : ("已退回："+path));
   await loadStages(true);
   if(typeof GEN !== 'undefined' && GEN.scene){ await loadGen(GEN.scene, true); }
   render();

@@ -236,6 +236,16 @@ def _render(step, project, scene):
             "nextPath": out, "inputs": inputs}
 
 
+def artifact_step(project: Path, path: str):
+    """把一个登记成果路径映射到流程卡；返回 (step, scene) 或 (None, None)。"""
+    scenes = re.findall(r"(?<![A-Z])(N\d{3})(?![0-9])", path or "")
+    scene = scenes[0] if scenes else "N001"
+    for s in STEPS:
+        if _match(s, path, scene if s["scope"] == "{scene}" else None) is not None:
+            return s, (scene if s["scope"] == "{scene}" else None)
+    return None, None
+
+
 def steps_payload(project: Path, scene: str = "N001"):
     out = []
     for s in STEPS:
@@ -318,10 +328,22 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
         if not a:
             raise ValueError("没有可确认的成果")
         rel = a["path"]
-    scope = scene if step["scope"] == "{scene}" else step["scope"]
-    out = _run_guard(project, ["confirm", "--project", str(project), "--kind", step["kind"],
-                               "--scope", scope, "--path", rel])
-    return {"ok": True, "path": rel, "output": out}
+    # 以登记记录自己的 kind/scope/model 为准；阶段默认 scope 可能与历史记录不同
+    rec = next((a for a in _all(project) if a.get("path") == rel), None)
+    if rec:
+        kind = rec.get("kind") or step["kind"]
+        scope = rec.get("scope") or (scene if step["scope"] == "{scene}" else step["scope"])
+        model = rec.get("model") or ""
+    else:
+        kind = step["kind"]
+        scope = scene if step["scope"] == "{scene}" else step["scope"]
+        model = ""
+    args = ["confirm", "--project", str(project), "--kind", kind,
+            "--scope", scope, "--path", rel]
+    if model:
+        args += ["--model", model]
+    out = _run_guard(project, args)
+    return {"ok": True, "path": rel, "output": out, "kind": kind, "scope": scope}
 
 
 def return_step(project: Path, step_key: str, note: str = "", scene: str = "N001"):

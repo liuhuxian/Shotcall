@@ -2082,6 +2082,36 @@ class Handler(BaseHTTPRequestHandler):
                 if not _inside(PROJECT, f) or not f.is_file():
                     raise ValueError("path 不在项目内或文件不存在")
                 notes = [{"text": body.get("note")}] if body.get("note") else []
+                # 阶段成果的“确认/退回”必须同时更新 artifact-state，不能只记本地审批
+                flow_info = {}
+                flow_step, flow_scene = flow.artifact_step(PROJECT, rel)
+                if flow_step and verdict in ("pass", "revise"):
+                    try:
+                        if verdict == "pass":
+                            if flow_step["key"] != "06":
+                                reg = artifacts.load_registry(PROJECT)
+                                rec0 = next((a for a in (reg.get("artifacts") or [])
+                                             if a.get("path") == rel), None)
+                                key0 = "::".join([(rec0 or {}).get("kind", ""),
+                                                  (rec0 or {}).get("scope", ""),
+                                                  (rec0 or {}).get("model", "")])
+                                cur0 = (reg.get("current") or {}).get(key0) or {}
+                                if cur0.get("draft") != rel:
+                                    flow_info = {"step": flow_step["key"],
+                                                 "warning": "登记表没有对应待确认草稿；只记本地审批"}
+                                else:
+                                    fr = flow.confirm(PROJECT, flow_step["key"],
+                                                      flow_scene or "N001", path=rel)
+                                    flow_info = {"step": flow_step["key"], **fr}
+                        else:
+                            fr = flow.return_step(PROJECT, flow_step["key"],
+                                                  body.get("note") or "", flow_scene or "N001")
+                            flow_info = {"step": flow_step["key"], **fr}
+                    except Exception as e:
+                        if "不是待确认草稿" in str(e):
+                            flow_info = {"step": flow_step["key"], "already": True}
+                        else:
+                            raise
                 rec = approvals.append(
                     PROJECT, "file", rel, verdict,
                     path=rel, version=body.get("version") or _version_of(rel),
@@ -2095,7 +2125,8 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 local = approvals.state(PROJECT, "file", rel)
-                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                self._send(200, json.dumps({"ok": True, "record": rec, "local": local,
+                                            "flow": flow_info},
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -2528,7 +2559,8 @@ class Handler(BaseHTTPRequestHandler):
                 rec = store.select(PROJECT, body["shot"], body["candidate"],
                                    body["status"], body.get("reason"))
                 local = confirms.state_of(PROJECT, body["path"]) if body.get("path") else {}
-                self._send(200, json.dumps({"ok": True, "record": rec, "local": local},
+                self._send(200, json.dumps({"ok": True, "record": rec, "local": local,
+                                            "flow": flow_info},
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:

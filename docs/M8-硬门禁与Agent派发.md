@@ -14,6 +14,18 @@
 - 错误文案示例：`镜头表已过期，禁止出首帧：shot-plan-v001.md（已过期-禁止使用）`。
 - 在 `_2` 修订场景实测：01 v002 确认后 07/09a/09b 全部过期，首帧接口 400；不会再加任务。
 
+## 1.1 阶段成果页「确认」为什么不改登记（已修）
+
+- 现象：校验/成果清单里点「确认」，只出现“本地已确认”，行仍是「草稿」。
+- 原因：`/api/artifact/confirm` 只写 approvals 本地审批账本，没有调用 `artifact_guard confirm`，所以 artifact-state 不变。
+- 修复：阶段成果的 pass/revise 现在同时映射到流程卡：
+  - `flow.artifact_step` 把路径映射到 01–09b（09b 含 `Nxxx` 场次）；
+  - pass 且登记表有对应草稿 → 调 `artifact_guard confirm`，更新 registry；
+  - revise → 写 `flow-returns.jsonl` 退回记录；
+  - 非阶段文件或旧 mock 数据没有 current 草稿时，只记本地审批并返回 warning，不误 500。
+- 已用真实 05b 验证：点确认后 `05-正式剧本/screenplay-timing-audit-v001.md` 从 `草稿待确认` → `已确认-当前`。
+- 回归：`test_artifact_confirm.py` 2/0；`test_m2_reviews.py` 8/0。
+
 ## 2 Agent 派发（第一版）
 
 - 流程卡新增「派给 Agent」：
@@ -51,5 +63,5 @@
 
 - `test_gate.py` 2/0：过期 09b 触发视频门禁。
 - `test_agent.py` 6/0：无命令生成任务单、不自动执行、下一版路径、任务可列、配置命令会启动并完成。
-- `test_all` **49 通过 / 0 失败 / 2 跳过**。
+- `test_all` **50 通过 / 0 失败 / 2 跳过**。
 - 8799 修订场景实测：首帧接口 400（镜头表过期）。
