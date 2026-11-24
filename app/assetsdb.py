@@ -359,6 +359,39 @@ def set_ignored(project: Path, asset_id: str, ignored: bool) -> dict:
             "revision": proj["revision"], "trashed": len(keep)}
 
 
+def current_ref(project: Path, path: str) -> dict:
+    """把提示词里引用的旧候选图解析到该资产当前绑定图。"""
+    try:
+        proj = _read_project(project)
+    except Exception:
+        return {}
+    cands = {c.get("path"): c for c in (proj.get("candidates") or []) if c.get("path")}
+    c = cands.get(path)
+    slots = proj.get("slots") or []
+    slot = None
+    if c:
+        sid = c.get("suggestedSlotId") or ""
+        for s in slots:
+            ids = {s.get("id", ""), s.get("stateId", ""),
+                   "--".join([s.get("id", ""), s.get("stateId", "")])}
+            if sid in ids or s.get("stateId") in sid:
+                slot = s
+                break
+            hist = [h.get("candidateId") for h in (s.get("history") or [])]
+            if c.get("id") in hist or c.get("id") in (s.get("currentCandidateId"), s.get("preferredCandidateId")):
+                slot = s
+                break
+    if not slot:
+        return {}
+    cid = slot.get("currentCandidateId") or slot.get("preferredCandidateId")
+    cur = next((x for x in (proj.get("candidates") or []) if x.get("id") == cid), None)
+    if not cur or not cur.get("path"):
+        return {}
+    cp = cur["path"]
+    return {"asset": slot.get("stateId") or slot.get("id"), "currentPath": cp,
+            "changed": cp != path, "promptPath": path}
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     try:

@@ -1032,8 +1032,10 @@ function genUnitRow(u){
       <button class="btn ghost" style="font-size:11px;padding:3px 9px" title="用 DeepSeek 重新翻译本单元"
         onclick="translateUnit('${u.id}', this)">${u.zhStale?'重译':'翻译'}</button>
     </div>
+    ${(u.refs||[]).some(r=>r.changed)?`<div class="dim" style="padding:0 13px 4px;font-size:10px;color:var(--warn)">${u.refs.filter(r=>r.changed).length} 张参考图已按资产当前绑定更新（原提示词里是旧候选图）。</div>`:''}
     ${(u.refs||[]).length?`<div style="padding:0 13px 12px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
       ${u.refs.map(r=>`<div style="width:120px">
+        ${r.changed?`<span class="badge b-warn" style="font-size:8.5px;margin-bottom:2px" title="提示词旧图 ${esc(r.promptFile||'')}">当前绑定</span>`:''}
         ${r.exists?`<img src="/api/proj/file?p=${encodeURIComponent(r.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(r.file)}')"
             style="width:100%;height:74px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">`
           :`<div style="height:74px;border-radius:6px;border:1px dashed var(--bad);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bad)">缺图</div>`}

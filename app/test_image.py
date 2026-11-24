@@ -39,6 +39,9 @@ def main():
     check("C01-A 有提示词", bool(next((a for a in d["assets"] if a["id"] == "C01-A"), {}).get("prompt")))
     c01 = next((a for a in d["assets"] if a["id"] == "C01-A"), {})
     check("资产带采用历史", len(c01.get("history") or []) >= 1, c01.get("history"))
+    old="07-图像资产/候选图片/1b239c3a362606947e6bcc3ed5e1c2daf1b3614003d587c8208f1fe0b7683811.png"
+    cur=assetsdb.current_ref(REAL, old)
+    check("旧参考图解析到当前绑定", cur.get("asset") == "L01-A" and cur.get("changed"), cur)
 
     p = Path(tempfile.mkdtemp(prefix="img-test-"))
     (p / "07-图像资产/资产绑定").mkdir(parents=True)

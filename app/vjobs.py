@@ -291,6 +291,10 @@ def parse_units(project: Path, scene: str) -> list:
             "source": f.name,
         })
     sync = parse_sync_refs(project, scene)
+    try:
+        import assetsdb
+    except Exception:
+        assetsdb = None
     for u in out:
         s = sync.get(u["id"]) or {}
         u["refs"] = s.get("refs") or []
@@ -299,6 +303,15 @@ def parse_units(project: Path, scene: str) -> list:
         u["continuation"] = s.get("continuation")
         u["audioAssetIds"] = s.get("audioAssetIds") or []
         u["assetIds"] = [a.split("--")[-1] for a in (s.get("assetIds") or [])]
+        if assetsdb:
+            for r in u.get("refs") or []:
+                cur = assetsdb.current_ref(project, r.get("file") or "")
+                if cur and cur.get("currentPath"):
+                    r["promptFile"] = r.get("file")
+                    r["file"] = cur["currentPath"]
+                    r["bindingAsset"] = cur.get("asset")
+                    r["changed"] = bool(cur.get("changed"))
+                    r["exists"] = (project / r["file"]).exists()
         sb = s.get("storyboard") or {}
         u["storyboard"] = ({
             "path": sb.get("path"),
