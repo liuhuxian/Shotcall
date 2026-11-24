@@ -1681,8 +1681,13 @@ class Handler(BaseHTTPRequestHandler):
                        "application/json; charset=utf-8")
         elif path == "/api/gen/recipe":
             cur = vjobs.current_recipe()
-            allr = [{"name": k, **v} for k, v in vjobs.RECIPES.items()]
-            if cur["name"] not in vjobs.RECIPES:      # 导入的自定义工作流也要出现在卡片里
+            allr = [{"name": k, **v} for k, v in vjobs.RECIPES.items() if not v.get("hidden")]
+            seen = {x["name"] for x in allr}
+            for item in vjobs.load_extra():           # 导入过的工作流常驻卡片
+                if item.get("name") and item["name"] not in seen:
+                    allr.insert(0, item)
+                    seen.add(item["name"])
+            if cur["name"] not in seen:               # 当前用的是临时导入的也补一张
                 allr.insert(0, {"name": cur["name"], "label": cur.get("label") or cur["name"],
                                 "steps": cur.get("steps"), "lora": cur.get("lora"),
                                 "source": cur.get("source") or "comfyui"})

@@ -94,10 +94,11 @@ RECIPE_FILE = Path(__file__).parent / "run" / "gen_recipe.json"
 
 RECIPES = {
     "base20":   {"label": "原模型 20 步（验收基准）", "lora": None, "steps": 20},
-    "base12":   {"label": "原模型 12 步（快测）",     "lora": None, "steps": 12},
+    "base12":   {"label": "原模型 12 步（快测）",     "lora": None, "steps": 12, "hidden": True},
     "turbo4":   {"label": "turbo_4step LoRA · 4 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 4},
     "turbo8":   {"label": "turbo_4step LoRA · 8 步",  "lora": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", "steps": 8},
     "progressive": {
+        "hidden": True,
         "label": "渐进采样 · er_sde · 15 段 sigma",
         "lora": None, "steps": 15,
         "sigmas": "1, 0.99, 0.975, 0.95, 0.915, 0.87, 0.81, 0.735, 0.645, 0.545, 0.435, 0.325, 0.22, 0.13, 0.055, 0",
@@ -131,9 +132,33 @@ def current_recipe() -> dict:
     return {"name": "base20", **RECIPES["base20"]}
 
 
+RECIPES_EXTRA = Path(__file__).with_name("run") / "gen_recipes_extra.json"
+
+
+def load_extra() -> list:
+    """导入过的 ComfyUI 工作流，作为常驻卡片。"""
+    try:
+        data = json.loads(RECIPES_EXTRA.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _remember_recipe(spec: dict) -> None:
+    items = [x for x in load_extra() if x.get("name") != spec.get("name")]
+    items.insert(0, {k: spec.get(k) for k in
+                     ("name", "label", "steps", "lora", "loraStrength", "sampler",
+                      "sigmaShift", "sigmas", "attention", "res", "refSize", "source")})
+    RECIPES_EXTRA.parent.mkdir(parents=True, exist_ok=True)
+    RECIPES_EXTRA.write_text(json.dumps(items[:24], ensure_ascii=False, indent=1),
+                             encoding="utf-8")
+
+
 def save_recipe(spec: dict) -> dict:
     RECIPE_FILE.parent.mkdir(parents=True, exist_ok=True)
     RECIPE_FILE.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+    if spec.get("source") == "comfyui":
+        _remember_recipe(spec)
     return current_recipe()
 
 
