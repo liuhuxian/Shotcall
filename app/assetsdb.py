@@ -392,6 +392,31 @@ def current_ref(project: Path, path: str) -> dict:
             "changed": cp != path, "promptPath": path}
 
 
+def ref_asset(project: Path, path: str) -> str:
+    """参考图 -> 资产 ID（用于资产审核门禁）。"""
+    try:
+        data = build(project)
+    except Exception:
+        return ""
+    for a in data.get("assets") or []:
+        if (a.get("binding") or {}).get("image") == path:
+            return a.get("id") or ""
+    try:
+        proj = _read_project(project)
+    except Exception:
+        return ""
+    cand = next((c for c in (proj.get("candidates") or []) if c.get("path") == path), None)
+    if not cand:
+        return ""
+    sid = str(cand.get("suggestedSlotId") or "")
+    base = sid.split("--")[0]
+    for a in data.get("assets") or []:
+        aid = a.get("id") or ""
+        if aid == sid or aid == base or aid.split("／")[0] == base or aid.startswith(base + "／"):
+            return aid
+    return base
+
+
 def build(project: Path) -> dict:
     assets = parse_assets(project)
     try:

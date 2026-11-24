@@ -33,6 +33,10 @@ def main():
         g = server._generation_gate("N001", units, rel)
         check("视频门禁拦截过期提示词", any("成果已过期" in x for x in g["missing"]), g)
         check("门禁整体不通过", not g["ok"], g)
+        units2 = [{"unit": {"id": "U002", "source": "minimax-h3-ref2va-v001.md",
+                            "shots": "SH001", "refs": [], "assetIds": ["L99-A"]}}]
+        g2 = server._generation_gate("N001", units2, rel)
+        check("资产未通过会拦截", any("资产L99-A" in x for x in g2["missing"]), g2)
     finally:
         server.PROJECT = old
     print(f"\n通过 {len(PASS)} · 失败 {len(FAIL)}")

@@ -280,6 +280,33 @@ def _generation_gate(scene: str, units: list, rel: str) -> dict:
             missing.append(f"提示词文件{why}：{rel}")
     if frec:
         ids.append(frec.get("id"))
+    # 资产门禁：本单元引用的角色/场景/道具必须已通过，否则不能生成视频
+    asset_ids = set()
+    for item in units:
+        u = item.get("unit") or {}
+        for aid in u.get("assetIds") or []:
+            if aid:
+                asset_ids.add(str(aid).split("--")[-1])
+        for r in u.get("refs") or []:
+            aid = r.get("bindingAsset")
+            if aid and str(aid) != "default":
+                asset_ids.add(str(aid).split("--")[-1])
+    try:
+        amap = {}
+        for a in assetsdb.build(PROJECT).get("assets") or []:
+            amap.setdefault(str(a.get("id", "")).split("／")[0], a.get("id"))
+        asset_ids = {amap.get(str(x).split("／")[0], x) for x in asset_ids}
+    except Exception:
+        pass
+    for aid in sorted(asset_ids):
+        st = approvals.state(PROJECT, "asset", f"asset:{aid}")
+        rec = st.get("record")
+        if not rec or rec.get("verdict") != "pass" or st.get("stale"):
+            why = "已失效" if st.get("stale") else ("未确认" if not rec else "不是通过")
+            missing.append(f"资产{aid}：{why}")
+        else:
+            ids.append(rec["id"])
+
     for item in units:
         u = item.get("unit") or {}
         shots = _unit_shots(u)

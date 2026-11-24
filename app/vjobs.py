@@ -309,9 +309,14 @@ def parse_units(project: Path, scene: str) -> list:
                 if cur and cur.get("currentPath"):
                     r["promptFile"] = r.get("file")
                     r["file"] = cur["currentPath"]
-                    r["bindingAsset"] = cur.get("asset")
+                    bid = cur.get("asset") or ""
+                    if bid in ("", "default"):
+                        bid = assetsdb.ref_asset(project, r["file"]) or bid
+                    r["bindingAsset"] = bid
                     r["changed"] = bool(cur.get("changed"))
                     r["exists"] = (project / r["file"]).exists()
+                elif not r.get("bindingAsset"):
+                    r["bindingAsset"] = assetsdb.ref_asset(project, r.get("file") or "")
         sb = s.get("storyboard") or {}
         u["storyboard"] = ({
             "path": sb.get("path"),
