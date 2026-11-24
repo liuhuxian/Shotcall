@@ -4,6 +4,7 @@
 图结构来自本机实测可用的 ComfyUI 工作流（test_h3_image.py 的 t2i / edit 分支）。
 """
 import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -15,6 +16,45 @@ VAE = "minimax_h3_image_vae_fp16.safetensors"
 
 DEFAULT_W, DEFAULT_H = 2656, 1504      # 16:9 · 3.99 MP，均为 32 倍数
 DEFAULT_STEPS = 8
+
+# 出图工作流（UI 可选；不影响已知可用的图构造，只控制默认步数/尺寸与标签）
+RECIPES = {
+    "auto": {"label": "H3 Image · 二合一（有参考图走改图）", "mode": "auto",
+             "steps": 6, "width": 2656, "height": 1504,
+             "desc": "有参考图走 Edit，无参考图走 T2I"},
+    "t2i6": {"label": "H3 Image · 文生图 6 步", "mode": "t2i",
+             "steps": 6, "width": 2656, "height": 1504,
+             "desc": "纯文生图，6 步"},
+    "edit4mp": {"label": "H3 Image · 改图 4MP", "mode": "edit",
+                "steps": 6, "width": 2656, "height": 1504,
+                "desc": "参考图改图 / image_1 为主图"},
+    "t2i8": {"label": "H3 Image · 文生图 8 步", "mode": "t2i",
+             "steps": 8, "width": 2656, "height": 1504,
+             "desc": "更慢、更细的文生图"},
+}
+RECIPE_FILE = Path(os.environ.get("SHOTCALL_IMG_RECIPE_FILE")
+                   or (Path(__file__).parent / "run" / "image_recipe.json"))
+
+
+def current_recipe() -> dict:
+    name = "auto"
+    try:
+        name = json.loads(RECIPE_FILE.read_text(encoding="utf-8")).get("name") or "auto"
+    except Exception:
+        pass
+    if name not in RECIPES:
+        name = "auto"
+    return {"name": name, **RECIPES[name]}
+
+
+def set_recipe(name: str) -> dict:
+    if name not in RECIPES:
+        raise ValueError("未知出图工作流")
+    RECIPE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = RECIPE_FILE.with_name(RECIPE_FILE.name + ".tmp")
+    tmp.write_text(json.dumps({"name": name}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(RECIPE_FILE)
+    return current_recipe()
 
 
 def _post(port, path, payload, timeout=60):

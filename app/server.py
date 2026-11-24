@@ -1614,6 +1614,11 @@ class Handler(BaseHTTPRequestHandler):
                                     "kb": max(1, f.stat().st_size // 1024)})
             body = json.dumps({"files": out}, ensure_ascii=False).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/img/recipe":
+            cur = imagegen.current_recipe()
+            allr = [{"name": k, **v} for k, v in imagegen.RECIPES.items()]
+            self._send(200, json.dumps({"current": cur, "all": allr}, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/refs":
             roots = [PROJECT / "07-图像资产", PROJECT / "制作运行/引用图",
                      store.state_dir(PROJECT) / "首帧候选",
@@ -1821,6 +1826,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/img/recipe":
+            try:
+                body = self._json_body()
+                cur = imagegen.set_recipe(str(body.get("name") or ""))
+                self._send(200, json.dumps({"ok": True, "current": cur}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/img/upload":
             try:
                 n = int(self.headers.get("Content-Length") or 0)
@@ -1885,9 +1900,10 @@ class Handler(BaseHTTPRequestHandler):
                     f = (PROJECT / ref).resolve()
                     if not _inside(PROJECT, f) or not f.is_file():
                         raise ValueError("底图不在项目内或不存在")
-                width = int(body.get("width") or imagegen.DEFAULT_W)
-                height = int(body.get("height") or imagegen.DEFAULT_H)
-                steps = int(body.get("steps") or imagegen.DEFAULT_STEPS)
+                rec = imagegen.current_recipe()
+                width = int(body.get("width") or rec.get("width") or imagegen.DEFAULT_W)
+                height = int(body.get("height") or rec.get("height") or imagegen.DEFAULT_H)
+                steps = int(body.get("steps") or rec.get("steps") or imagegen.DEFAULT_STEPS)
                 n = max(1, min(4, int(body.get("n") or 1)))
                 it = {"id": asset_id, "name": asset.get("name") or asset_id,
                       "prompt": prompt, "ref": ref, "n": n,

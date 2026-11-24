@@ -28,6 +28,8 @@ def main():
     ge = imagegen.build_graph("edit", 1536, 864, 42, ref_image="ref.png", steps=6)
     check("改图接 image_1", ge["5"]["inputs"].get("images.image_1") == ["41", 0], ge["5"]["inputs"])
 
+    check("出图工作流可选", len(imagegen.RECIPES) >= 4 and imagegen.current_recipe().get("label"),
+          imagegen.RECIPES.keys())
     d = assetsdb.build(REAL)
     with_prompt = [a for a in d["assets"] if a.get("prompt")]
     check("资产提示词可解析", len(with_prompt) >= 20, len(with_prompt))
