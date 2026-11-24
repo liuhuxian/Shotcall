@@ -2174,18 +2174,23 @@ class Handler(BaseHTTPRequestHandler):
                 f = (PROJECT / rel).resolve()
                 if not _inside(PROJECT, f) or not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
                     raise ValueError("候选图不在项目内或格式不对")
-                assets = assetsdb.build(PROJECT).get("assets") or []
-                asset = next((a for a in assets if a.get("id") == asset_id), None)
-                if not asset:
-                    raise ValueError("未知资产")
-                binding = assetsdb.write_binding(PROJECT, asset, rel)
+                ad = assetsdb.adopt_image(PROJECT, asset_id, rel)
+                reg = {}
+                try:
+                    reg = flow.register(PROJECT, "07", "N001", path=ad["assetDoc"])
+                except Exception as e:
+                    reg = {"ok": False, "error": str(e)}
                 rec = {"ep": ep, "asset": asset_id, "file": rel,
-                       "binding": str(binding.relative_to(PROJECT)),
+                       "binding": ad["bindingFile"], "assetDoc": ad["assetDoc"],
+                       "registration": reg,
                        "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 f = store.state_dir(PROJECT) / "图片采用.jsonl"
                 with open(f, "a", encoding="utf-8") as out:
                     out.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                self._send(200, json.dumps({"ok": True, "record": rec, "bindingFile": rec["binding"]},
+                self._send(200, json.dumps({"ok": True, "record": rec,
+                                            "bindingFile": ad["bindingFile"],
+                                            "assetDoc": ad["assetDoc"],
+                                            "registration": reg},
                                            ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:

@@ -55,6 +55,28 @@ def main():
     check("候选落 07", j.get("outRoot") == "07-图像资产/候选图片", j.get("outRoot"))
     check("sched 收到图片任务", sub.called)
 
+
+    # 采用闭环：binding + project.json + 新 assets-vNNN
+    p2 = Path(tempfile.mkdtemp(prefix="img-adopt-"))
+    (p2 / "00-项目管理/工作台").mkdir(parents=True)
+    (p2 / "07-图像资产/资产绑定").mkdir(parents=True)
+    (p2 / "07-图像资产/候选图片/C01-A").mkdir(parents=True)
+    (p2 / "07-图像资产/assets-v001.md").write_text(
+        "# 图像资产\n\n状态：已确认-当前\n\n## 角色\n\n### C01-A｜陈铭\n\n- 图片状态：旧\n",
+        encoding="utf-8")
+    (p2 / "07-图像资产/候选图片/C01-A/y.png").write_bytes(b"fake2")
+    (p2 / "00-项目管理/工作台/project.json").write_text(json.dumps({
+        "revision": 10,
+        "slots": [{"id": "C01--C01-A", "stateId": "C01-A", "label": "陈铭",
+                   "bindingVersion": 5, "currentCandidateId": "old",
+                   "preferredCandidateId": "old", "history": []}],
+        "candidates": [], "bindingManifest": ""}, ensure_ascii=False), encoding="utf-8")
+    ad = assetsdb.adopt_image(p2, "C01-A", "07-图像资产/候选图片/C01-A/y.png")
+    check("采用写新 assets 版本", ad.get("assetDoc", "").endswith("assets-v002.md"), ad)
+    pr = json.loads((p2 / "00-项目管理/工作台/project.json").read_text(encoding="utf-8"))
+    check("project.json 绑定版本+1", pr["slots"][0]["bindingVersion"] == 6, pr["slots"][0])
+    check("project.json 候选已登记", len(pr.get("candidates") or []) == 1, pr.get("candidates"))
+
     print(f"\n通过 {len(PASS)} · 失败 {len(FAIL)}")
     return 0 if not FAIL else 1
 

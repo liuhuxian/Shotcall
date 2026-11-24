@@ -2,8 +2,11 @@
 """图像资产索引：解析 07-图像资产/assets-*.md 的资产条目与最新绑定快照。"""
 import hashlib
 import json
+import os
 import re
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 ASSET_DIR = "07-图像资产"
@@ -158,7 +161,7 @@ def write_binding(project: Path, asset: dict, image_rel: str, version: str = Non
     aid = old_id or asset["id"]
     typ = {"character": "character", "scene": "scene", "prop": "prop",
            "extra": "extra", "voice": "voice"}.get(asset.get("type"), asset.get("type", ""))
-    ver = version or asset.get("binding", {}).get("version") or "v1"
+    ver = version or (asset.get("binding") or {}).get("version") or "v1"
     m = re.match(r"v(\d+)", str(ver))
     ver = "v" + str((int(m.group(1)) if m else 0) + 1)
     scenes = (asset.get("binding") or {}).get("scenes") or ""
@@ -188,6 +191,98 @@ def write_binding(project: Path, asset: dict, image_rel: str, version: str = Non
         k += 1
     out.write_text(header.rstrip() + "\n\n" + "\n".join(blocks).strip() + "\n", encoding="utf-8")
     return out
+
+
+def _read_project(project: Path) -> dict:
+    return json.loads((project / WB_PROJECT).read_text(encoding="utf-8"))
+
+
+def _write_project(project: Path, data: dict) -> None:
+    f = project / WB_PROJECT
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f.name + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:6]}")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def _next_asset_ver(project: Path) -> int:
+    nums = []
+    for f in (project / ASSET_DIR).glob("assets-v*.md"):
+        m = re.search(r"-v(\d{3})", f.name)
+        if m:
+            nums.append(int(m.group(1)))
+    return (max(nums) + 1) if nums else 1
+
+
+def _update_asset_doc(project: Path, asset: dict, image_rel: str, binding_rel: str,
+                      version: int, sha: str) -> Path:
+    """从最新 assets-v*.md 复制下一版，只改本资产的“图片状态”和状态行。"""
+    latest = latest_asset_doc(project)
+    if not latest:
+        raise ValueError("没有 assets-v*.md")
+    text = latest.read_text(encoding="utf-8")
+    nv = _next_asset_ver(project)
+    out = latest.with_name(f"assets-v{nv:03d}.md")
+    text = re.sub(r"(?m)^状态：.*$", "状态：草稿待确认", text)
+    text = text.replace("# 图像资产\n", "# 图像资产\n\n采用更新：导演台采用 " + image_rel +
+                        "（绑定 " + binding_rel + "，版本 v" + str(version) + "）\n", 1)
+    aid = asset["id"]
+    pat = re.compile(r"(?m)^### " + re.escape(aid) + r"｜.*$")
+    m = pat.search(text)
+    if m:
+        end_m = re.search(r"(?m)^(### |## )", text[m.end():])
+        end = m.end() + (end_m.start() if end_m else len(text) - m.end())
+        sec = text[m.end():end]
+        line = f"- 图片状态：导演台采用 v{version}；图片：{image_rel}；SHA256：{sha}；绑定快照：{binding_rel}。"
+        if re.search(r"(?m)^- 图片状态：.*$", sec):
+            sec = re.sub(r"(?m)^- 图片状态：.*$", line, sec, count=1)
+        else:
+            sec = sec.rstrip() + "\n" + line + "\n"
+        text = text[:m.end()] + sec + text[end:]
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
+def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
+    """导演台采用：新 binding 快照 + project.json 候选/绑定 + 新 assets-vNNN（草稿）。"""
+    img = (project / image_rel).resolve()
+    if not img.is_file():
+        raise ValueError("候选图不存在")
+    assets = build(project).get("assets") or []
+    asset = next((a for a in assets if a.get("id") == asset_id), None)
+    if not asset:
+        raise ValueError("未知资产")
+    sha = hashlib.sha256(img.read_bytes()).hexdigest()
+    binding = write_binding(project, asset, image_rel)
+    binding_rel = str(binding.relative_to(project))
+    proj = _read_project(project)
+    slot = next((s for s in proj.get("slots") or []
+                 if s.get("stateId") == asset_id or s.get("id") == asset_id
+                 or str(s.get("id", "")).endswith("--" + asset_id)), None)
+    if not slot:
+        raise ValueError(f"project.json 找不到槽位 {asset_id}")
+    cands = proj.setdefault("candidates", [])
+    cand = next((c for c in cands if c.get("sha256") == sha), None)
+    if not cand:
+        cand = {"id": "wb-" + sha[:16], "path": image_rel, "mimeType": "image/png",
+                "sha256": sha, "bytes": img.stat().st_size, "source": "workbench",
+                "suggestedSlotId": slot.get("id"),
+                "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+        cands.append(cand)
+    ver = int(slot.get("bindingVersion") or 0) + 1
+    slot["bindingVersion"] = ver
+    slot["currentCandidateId"] = cand["id"]
+    slot["preferredCandidateId"] = cand["id"]
+    hist = slot.setdefault("history", [])
+    hist.append({"candidateId": cand["id"], "version": ver,
+                 "adoptedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
+    proj["revision"] = int(proj.get("revision") or 0) + 1
+    proj["bindingManifest"] = binding_rel
+    _write_project(project, proj)
+    doc = _update_asset_doc(project, asset, image_rel, binding_rel, ver, sha)
+    return {"ok": True, "bindingFile": binding_rel, "projectRevision": proj["revision"],
+            "assetDoc": str(doc.relative_to(project)), "candidateId": cand["id"],
+            "version": ver, "sha256": sha}
 
 
 def build(project: Path) -> dict:
