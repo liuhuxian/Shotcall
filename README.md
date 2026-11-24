@@ -101,7 +101,7 @@ python3 app/test_all.py
 ```
 
 - 不需要启动 8790、不需要 GPU、不写正式项目；临时项目 + fake ComfyUI。
-- M1 当前：`test_all` 40 通过 / 0 失败 / 2 跳过；独立验收 `test_m1_acceptance.py` 80 通过 / 0 失败 / 2 跳过（2 项为浏览器 UI 断言）。
+- M1 当前：`test_all` 41 通过 / 0 失败 / 2 跳过；独立验收 `test_m1_acceptance.py` 80 通过 / 0 失败 / 2 跳过（2 项为浏览器 UI 断言）。
 - `test_all` 会在进程内起一个临时 HTTP 服务，不访问 8790。
 
 ## 当前边界（M1）
