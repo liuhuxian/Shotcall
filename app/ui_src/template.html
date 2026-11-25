@@ -2386,10 +2386,29 @@ function sFlow(onlyStage){
           <pre class="mono" style="white-space:pre-wrap;font-size:11px;line-height:1.7;background:#0f1216;border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:6px 0 0;color:#c9d2e0;max-height:340px;overflow:auto">${esc(st.prompt)}</pre>
         </details>
         <details open style="margin-top:6px"><summary class="dim" style="font-size:11.5px;cursor:pointer">版本与依赖（${(st.versions||[]).length}）· 点路径查看</summary>
-          <div style="margin-top:5px">${(st.versions||[]).map(v=>`<div class="dim mono" style="font-size:10.5px;line-height:1.8;cursor:pointer;text-decoration:underline dotted"
-            onclick="viewInline('${esc(v.path)}')">
-            ${esc(v.version)} · ${esc(v.statusText||'')} · ${esc(v.path)} · sha ${esc((v.sha256||'').slice(0,10))}
-            ${(v.dependsOn||[]).length?'· 依赖：'+v.dependsOn.map(esc).join('、'):''}</div>`).join('')||'<span class="dim" style="font-size:11px">还没有版本</span>'}</div>
+          <div style="margin-top:6px">
+          ${(st.versions||[]).map(v=>{
+            const deps = v.dependsOn||[];
+            const stCls = /已确认/.test(v.statusText||'') ? 'b-ok'
+                        : /草稿/.test(v.statusText||'') ? 'b-warn'
+                        : /替代/.test(v.statusText||'') ? 'b-mut' : 'b-mut';
+            return `<div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:6px;background:#0e1218">
+              <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                <b class="mono" style="font-size:12px">${esc(v.version)}</b>
+                <span class="badge ${stCls}" style="font-size:9.5px">${esc(v.statusText||'—')}</span>
+                <span class="mono" style="font-size:11px;cursor:pointer;text-decoration:underline dotted;
+                  color:#9fb0c6;word-break:break-all" onclick="viewInline('${esc(v.path)}')">${esc(v.path)}</span>
+                <span class="dim mono" style="font-size:10px;margin-left:auto">sha ${esc((v.sha256||'').slice(0,10))}</span>
+              </div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px">
+                <span class="dim" style="font-size:10px">依赖 ${deps.length} 项</span>
+                ${deps.length? deps.map(d=>`<span class="mono" style="font-size:10px;padding:1px 6px;border:1px solid #202833;
+                  border-radius:4px;color:#8fa3bd;cursor:pointer" onclick="viewInline('${esc(d)}')">${esc(d.split('/').pop())}</span>`).join('')
+                  : '<span class="dim" style="font-size:10px">无</span>'}
+              </div>
+            </div>`;
+          }).join('')||'<span class="dim" style="font-size:11px">还没有版本</span>'}
+          </div>
         </details>
       </div></div>`;
   }).join("");
