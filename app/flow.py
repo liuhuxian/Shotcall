@@ -387,9 +387,55 @@ def _last_for(project: Path, name: str, key: str):
     return rows[-1] if rows else None
 
 
-def _next_ver(project: Path, step, scene=None):
-    a = _latest(project, step, scene)
-    return (_ver(a["path"]) + 1) if a else 1
+def _max_disk_ver(project: Path, step, scene=None, episode=None) -> int:
+    """磁盘上匹配该卡产出模板的最大版本（含未登记文件）。"""
+    best = 0
+    roots = []
+    for tpl in [step["output"]] + [x["output"] for x in (step.get("extra") or [])]:
+        parts = []
+        for seg in tpl.split("/"):
+            if "{" in seg:
+                break
+            parts.append(seg)
+        head = "/".join(parts[:-1] if len(parts) > 1 and parts[-1].endswith(".md") else parts)
+        if head and (project / head).exists() and head not in roots:
+            roots.append(head)
+    for head in roots:
+        for f in (project / head).rglob("*.md"):
+            rel = str(f.relative_to(project))
+            v = _match(step, rel, scene, None, episode)
+            if v and v > best:
+                best = v
+    return best
+
+
+def _next_ver(project: Path, step, scene=None, episode=None, pattern=None):
+    """下一版：只按指定产出的 pattern 计算，避免被同卡的其它文件抬高（如 09 的 v017 提示词）。"""
+    pat = pattern or step["pattern"]
+    best = 0
+    for a in _all(project):
+        pth = a.get("path", "")
+        if re.search(pat, pth):
+            v = _match(step, pth, scene, None, episode)
+            best = max(best, v or 0)
+    roots = []
+    for tpl in [step["output"]] + [x["output"] for x in (step.get("extra") or [])]:
+        parts = []
+        for seg in tpl.split("/"):
+            if "{" in seg:
+                break
+            parts.append(seg)
+        head = "/".join(parts[:-1] if len(parts) > 1 and parts[-1].endswith(".md") else parts)
+        if head and (project / head).exists() and head not in roots:
+            roots.append(head)
+    for head in roots:
+        for f in (project / head).rglob("*.md"):
+            rel = str(f.relative_to(project))
+            if not re.search(pat, rel):
+                continue
+            v = _match(step, rel, scene, None, episode)
+            best = max(best, v or 0)
+    return best + 1
 
 
 def _inputs(project: Path, step, scene=None, episode=None):
@@ -432,7 +478,7 @@ def _render(step, project, scene, episode=None):
     else:
         scope = "全项目" if step["scope"] == "全项目" else step["scope"]
     latest = _latest(project, step, scene, episode=scope if step["scope"] == "{episode}" else None)
-    nv = (_ver(latest["path"]) + 1) if latest else 1
+    nv = _next_ver(project, step, scene, scope if step["scope"] == "{episode}" else None)
     out = step["output"].format(scene=scope, episode=scope, v=f"v{nv:03d}")
     inputs = _inputs(project, step, scene, episode=scope if step["scope"] == "{episode}" else None)
     prompt = step["prompt"]

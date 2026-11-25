@@ -2622,6 +2622,9 @@ function sFlow(onlyStage){
           </select>`:''}
           <span class="dim mono" style="font-size:10.5px">${esc(st.skill)}</span></span></div>
       <div class="pb">
+        ${(st.newFiles||[]).length?`<div style="margin-bottom:8px;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;
+            font-size:11px;color:var(--warn)">有 ${st.newFiles.length} 个未登记的新版本：${st.newFiles.map(f=>esc(f.split('/').pop())).join('、')}
+            · 先点「登记成果」，再点「确认」</div>`:''}
         <div class="dim" style="font-size:11.5px;line-height:1.8">
           当前：${st.path?`<span class="mono" style="cursor:pointer;text-decoration:underline dotted" onclick="viewInline('${esc(st.path)}')">${esc(st.path)}</span>`:'未登记'}
           · 下一版：<span class="mono">${esc(st.nextPath)}</span><br>
