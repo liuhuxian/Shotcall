@@ -1502,9 +1502,9 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"N\d{3}", scene):
                 self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
                 return
-            if episode and not re.fullmatch(r"E\d{3}", episode):
-                self._send(400, b'{"error":"episode must be Exxx"}', "application/json; charset=utf-8")
-                return
+            if episode:
+                m_ep = re.fullmatch(r"E?P?(\d{3})", episode)
+                episode = f"E{m_ep.group(1)}" if m_ep else ""   # EP002 → E002，其它忽略
             self._send(200, json.dumps(flow.steps_payload(PROJECT, scene, episode or None),
                                        ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")

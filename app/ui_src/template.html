@@ -2177,7 +2177,8 @@ function sImageGen(){
 }
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
-let FLOW = {data:null, scene:null, episode:null, sel:null, loading:false};
+let FLOW = {data:null, scene:null, episode:null, sel:null, loading:false, failAt:0};
+function normEp(v){ return /^E\d{3}$/.test(String(v||'')) ? String(v) : ''; }
 let AGCFG = null;
 let ART_PICK = {};      // 成果家族 -> 选中的版本路径（同族只显示一条，先选后确认）
 const FLOW_STATUS = {confirmed:['b-ok','已确认'], draft:['b-warn','草稿待确认'],
@@ -2228,7 +2229,7 @@ async function saveAgentCfg(){
 }
 
 async function loadFlow(scene, force, episode){
-  const ep = episode || FLOW.episode || state.ep || '';
+  const ep = normEp(episode) || normEp(FLOW.episode) || normEp(state.ep);
   if(!force && FLOW.data && FLOW.scene===scene && (FLOW.episode||'')===(ep||'')) return FLOW.data;
   FLOW.loading = true;
   try{
@@ -2238,9 +2239,14 @@ async function loadFlow(scene, force, episode){
     const r = await fetch(q, {signal: ctl.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error('HTTP '+r.status);
-    FLOW.data = await r.json(); FLOW.scene = scene; FLOW.episode = FLOW.data.episode || ep || null;
+    FLOW.data = await r.json(); FLOW.scene = scene; FLOW.episode = normEp(FLOW.data.episode) || ep || null;
+    FLOW.failAt = 0;
   }
-  catch(e){ FLOW.data={steps:[],error:String(e)}; }
+  catch(e){
+    FLOW.data={steps:[],episodes:[],error:String(e)};
+    FLOW.scene = scene; FLOW.episode = ep || null;
+    FLOW.failAt = Date.now();          // 失败也记住位置，避免每次 render 都重试
+  }
   FLOW.loading = false;
   return FLOW.data;
 }
@@ -2261,7 +2267,7 @@ function copyFlow(key, btn){
 async function registerFlow(key){
   const st=(FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key) || {};
   if(!(st.newFiles||[]).length) return toast('没有未登记的新文件：先让 Agent 写下一版');
-  const body={step:key, scene:FLOW.scene||'N001', episode:FLOW.episode||state.ep||''};
+  const body={step:key, scene:FLOW.scene||'N001', episode:normEp(FLOW.episode)||normEp(state.ep)};
   const fs=document.getElementById('flow-file-'+key);
   if(fs && fs.value) body.path=fs.value;
   const sel=document.getElementById('flow-outcome-'+key);
@@ -2282,7 +2288,7 @@ async function confirmFlow(key){
   const path=sel?sel.value:drafts[0].path;
   if(!window.confirm('确认 '+(st.name||key)+' 的 '+path+'？\n确认后它会成为当前版本，旧版保留，下游可能被标记待复核。')) return;
   const r=await fetch('/api/workflow/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path, episode:FLOW.episode||state.ep||''})});
+    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path, episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j=await r.json();
   if(!r.ok) return toast(j.error||'确认失败');
   toast('已确认：'+(j.path||key));
@@ -2292,7 +2298,7 @@ async function confirmFlow(key){
 
 async function dispatchFlow(key){
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:FLOW.episode||state.ep||''})});
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
   if(j.started) toast('已派给 Agent：'+j.task.id+'（'+(j.task.agent||'')+' / '+(j.task.model||'')+'）');
   else if(j.reason) toast('未启动：'+j.reason);
@@ -2304,7 +2310,7 @@ async function returnFlow(key){
   const note=prompt('退回修改的原因（会写进流程记录）：');
   if(note===null) return;
   const r=await fetch('/api/workflow/return',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',note,episode:FLOW.episode||state.ep||''})});
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',note,episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'退回失败');
   toast('已记录退回：'+(j.record?.note||''));
   FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
@@ -2360,7 +2366,7 @@ function sFlow(onlyStage){
     </div>`;
   }).join("");
   const epTabs = '';
-  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}',ep:state.ep||''})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
+  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}',ep:normEp(state.ep)})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=steps.map(st=>{
     const is06=st.key==='06';
@@ -2459,8 +2465,9 @@ function sStages(){
   if(!SCN.data){ loadScenes().then(()=>render()); }
   const sceneNow = (state.scene && (SCN.data?.scenes||[]).some(x=>x.id===state.scene)) ? state.scene : 'N001';
   state.scene = sceneNow;
-  const epNow = state.ep || (FLOW.data && FLOW.data.episode) || '';
-  if((!FLOW.data || FLOW.scene !== sceneNow || (epNow && FLOW.episode !== epNow)) && !FLOW.loading){
+  const epNow = normEp(state.ep) || normEp(FLOW.data && FLOW.data.episode);
+  const stale = !FLOW.data || FLOW.scene !== sceneNow || (epNow && FLOW.episode !== epNow);
+  if(stale && !FLOW.loading && Date.now() - (FLOW.failAt||0) > 3000){
     loadFlow(sceneNow, false, epNow).then(()=>render());
   }
   if(!AGCFG){ loadAgentConfig().then(()=>render()); }
@@ -2492,7 +2499,7 @@ function sStages(){
     </div>`;
   }).join("");
 
-  const curEp = state.ep || (FLOW.data && FLOW.data.episode) || '';
+  const curEp = normEp(state.ep) || normEp(FLOW.data && FLOW.data.episode);
   const epList = (FLOW.data && FLOW.data.episodes) || [];
   const epTabs = epList.length ? epList.map(e=>
     `<span onclick="go('stages',{scene:'${sceneNow}',ep:'${e}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
