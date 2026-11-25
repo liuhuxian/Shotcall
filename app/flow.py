@@ -125,6 +125,32 @@ STEPS = [
          kind="09 镜头规划", scope="{scene}",
          pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/shot-plan-v(\d{3})(?:-\d+)?\.md$",
          output="09-镜头与视频提示词/镜头规划/{scene}/shot-plan-{v}.md", deps=["05", "08", "07"],
+         extra=[
+             dict(label="场景登记", kind="09 场景登记",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-registry\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-registry.md"),
+             dict(label="时长表", kind="09 时长表",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-timing-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-timing-{v}.md"),
+             dict(label="空间图", kind="09 空间图",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-space-map-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-space-map-{v}.md"),
+             dict(label="导演方案", kind="09 导演方案",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/director-plan-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/director-plan-{v}.md"),
+             dict(label="参考图映射", kind="09 参考图映射",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/reference-map-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/reference-map-{v}.md"),
+             dict(label="连续性台账", kind="09 连续性台账",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/continuity-ledger-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/continuity-ledger-{v}.md"),
+             dict(label="视觉连贯审查", kind="09 视觉连贯审查",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/visual-continuity-audit-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/visual-continuity-audit-{v}.md"),
+             dict(label="生成单元规划", kind="09 generation-units-minimax-h3",
+                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md"),
+         ],
          prompt=_prompt_09a()),
     dict(key="09b", no="09b", stage="09", name="视频提示词", skill="film-cinedance",
          kind="09 视频提示词", scope="{scene}",
@@ -158,20 +184,23 @@ def _match(step, path: str, scene: str = None, which: list = None):
             break
     if not m:
         return None
+    has_ver = m.lastindex and m.lastindex >= 2
     if step["scope"] == "{scene}":
         if not scene or m.group(1) != scene:
             return None
-        return int(m.group(2))
-    return int(m.group(1))
+        return int(m.group(2)) if has_ver else 0
+    return int(m.group(1)) if has_ver else 0
 
 
 def _all(project: Path):
     return artifacts.build(project).get("artifacts") or []
 
 
-def _latest(project: Path, step, scene=None):
+def _latest(project: Path, step, scene=None, main_only: bool = True):
     rows = []
     for a in _all(project):
+        if main_only and not re.search(step["pattern"], a.get("path", "")):
+            continue
         ver = _match(step, a.get("path", ""), scene)
         if ver is not None:
             rows.append((ver, a.get("mtime") or 0, a))
@@ -202,21 +231,38 @@ def _new_file(project: Path, step, scene=None):
 def _new_files(project: Path, step, scene=None):
     rows_all = _all(project)
     known = {a.get("path") for a in rows_all}
-    known_versions = []
-    for a in rows_all:
-        v = _match(step, a.get("path", ""), scene)
-        if v is not None:
-            known_versions.append(v)
-    top = max(known_versions, default=0)
+    pats = [step["pattern"]] + [x["pattern"] for x in (step.get("extra") or [])]
+    tops = {}
+    def _mver(m, scene_scope):
+        if not m:
+            return None
+        if scene_scope:
+            if m.group(1) != scene:
+                return None
+            return int(m.group(2)) if (m.lastindex or 0) >= 2 else 0
+        return int(m.group(1)) if (m.lastindex or 0) >= 1 else 0
+
+    for pat in pats:                      # 每个产出各自已登记到第几版
+        vs = []
+        for a in rows_all:
+            v = _mver(re.search(pat, a.get("path", "")), step["scope"] == "{scene}")
+            if v is not None:
+                vs.append(v)
+        tops[pat] = max(vs, default=0)
     rows = []
     for p in project.glob("**/*"):
         if not p.is_file() or p.suffix != ".md":
             continue
         rel = str(p.relative_to(project))
-        ver = _match(step, rel, scene)
-        if ver is None or rel in known or ver <= top:
-            continue
-        rows.append((ver, p.stat().st_mtime, rel))
+        for pat in pats:
+            m = re.search(pat, rel)
+            ver = _mver(m, step["scope"] == "{scene}")
+            if ver is None:
+                continue
+            if rel in known or ver <= tops[pat]:
+                break
+            rows.append((ver, p.stat().st_mtime, rel))
+            break
     rows.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return [r[2] for r in rows]
 
@@ -308,11 +354,21 @@ def _outputs(project: Path, step, scene):
                 continue
             if latest is None or v > _ver(latest["path"]):
                 latest = a
-        nv = (_ver(latest["path"]) + 1) if latest else 1
+        disk = None
+        if latest is None:
+            for f in project.rglob("*"):
+                if f.is_file() and re.search((step["pattern"] if label == "main"
+                                              else next(x["pattern"] for x in (step.get("extra") or [])
+                                                        if x["label"] == label)),
+                                             str(f.relative_to(project))):
+                    disk = str(f.relative_to(project))
+                    break
+        nv = (_ver(latest["path"]) + 1) if latest else (_ver(disk) + 1 if disk and _ver(disk) else 1)
         rows.append({"label": ("主产出" if label == "main" else label),
-                     "path": latest["path"] if latest else None,
-                     "version": (f"v{_ver(latest['path']):03d}" if latest else None),
-                     "statusText": latest.get("statusText") if latest else None,
+                     "path": latest["path"] if latest else disk,
+                     "version": (f"v{_ver(latest['path']):03d}" if latest
+                                 else (f"v{_ver(disk):03d}" if disk and _ver(disk) else None)),
+                     "statusText": latest.get("statusText") if latest else ("文件已在磁盘，未登记" if disk else None),
                      "nextPath": tpl.format(scene=(scene if step["scope"] == "{scene}" else step["scope"]),
                                             v=f"v{nv:03d}")})
     return rows
