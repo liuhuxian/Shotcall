@@ -203,9 +203,6 @@ def _ver(path: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-_CUR = {"episode": None}
-
-
 def _match(step, path: str, scene: str = None, which: list = None, episode: str = None):
     """匹配主产出或附带产出；which 传入时把命中的类型名追加上去。"""
     pats = [(step["pattern"], "main")] + [(x["pattern"], x["label"]) for x in (step.get("extra") or [])]
@@ -224,7 +221,7 @@ def _match(step, path: str, scene: str = None, which: list = None, episode: str 
             return None
         return int(m.group(2)) if has_ver else 0
     if step["scope"] == "{episode}":
-        ep = episode or _CUR.get("episode")
+        ep = episode
         if not ep or m.group(1) != ep:
             return None
         return int(m.group(2)) if has_ver else 0
@@ -425,10 +422,9 @@ def _render(step, project, scene, episode=None):
     if step["scope"] == "{scene}":
         scope = scene
     elif step["scope"] == "{episode}":
-        scope = episode or _CUR.get("episode") or (scene_episode(project, scene) if scene else None) or "E001"
+        scope = episode or (scene_episode(project, scene) if scene else None) or "E001"
     else:
         scope = "全项目" if step["scope"] == "全项目" else step["scope"]
-    _CUR["episode"] = scope if step["scope"] == "{episode}" else _CUR.get("episode")
     latest = _latest(project, step, scene, episode=scope if step["scope"] == "{episode}" else None)
     nv = (_ver(latest["path"]) + 1) if latest else 1
     out = step["output"].format(scene=scope, episode=scope, v=f"v{nv:03d}")
@@ -481,7 +477,7 @@ def _outputs(project: Path, step, scene, episode=None):
                                  else (f"v{_ver(disk):03d}" if disk and _ver(disk) else None)),
                      "statusText": latest.get("statusText") if latest else ("文件已在磁盘，未登记" if disk else None),
                      "nextPath": tpl.format(scene=(scene if step["scope"] == "{scene}" else "全项目"),
-                                            episode=(episode or _CUR.get("episode") or "E001"),
+                                            episode=(episode or (scene_episode(project, scene) if scene else None) or "E001"),
                                             v=f"v{nv:03d}")})
     return rows
 
@@ -503,10 +499,10 @@ def steps_payload(project: Path, scene: str = "N001", episode: str = None):
             "inputs": r["inputs"], "prompt": r["prompt"],
             "newFiles": _new_files(project, s,
                                     scene if s["scope"] == "{scene}" else None,
-                                    (episode or _CUR.get("episode")) if s["scope"] == "{episode}" else None),
+                                    episode if s["scope"] == "{episode}" else None),
             "versions": _versions(project, s,
                                    scene if s["scope"] == "{scene}" else None,
-                                   (episode or _CUR.get("episode")) if s["scope"] == "{episode}" else None),
+                                   episode if s["scope"] == "{episode}" else None),
             "returned": _last_for(project, "flow-returns.jsonl", s["key"]),
             "skipped": _last_for(project, "flow-skips.jsonl", s["key"]),
             "canConfirm": bool(a and STATUS.get(a.get("statusText")) == "draft"),
@@ -514,7 +510,7 @@ def steps_payload(project: Path, scene: str = "N001", episode: str = None):
             "outputs": _outputs(project, step_obj, scene, episode),
         })
     eps = episodes_of(project)
-    cur_ep = episode or _CUR.get("episode") or (scene_episode(project, scene) if scene else None)
+    cur_ep = episode or (scene_episode(project, scene) if scene else None)
     return {"scene": scene, "episode": cur_ep, "episodes": eps, "steps": out}
 
 
@@ -651,7 +647,7 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     step = BY_KEY.get(step_key)
     if not step:
         raise ValueError("未知流程")
-    ep = episode or _CUR.get("episode")
+    ep = episode or (scene_episode(project, scene) if scene else None)
     rel = path or _new_file(project, step, scene if step["scope"] == "{scene}" else None, ep)
     if not rel:
         raise ValueError("没有发现新的 vNNN 文件；请先让 Agent 写盘")
@@ -716,7 +712,7 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None,
         return {"ok": True, "skipped": True,
                 "note": "结论类成果登记即生效（已完成-结论），不需要确认"}
     rel = path
-    ep = episode or _CUR.get("episode")
+    ep = episode or (scene_episode(project, scene) if scene else None)
     if not rel:
         a = _latest(project, step, scene if step["scope"] == "{scene}" else None,
                     episode=ep if step["scope"] == "{episode}" else None)

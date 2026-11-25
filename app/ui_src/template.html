@@ -2229,7 +2229,7 @@ async function saveAgentCfg(){
 }
 
 async function loadFlow(scene, force, episode){
-  const ep = normEp(episode) || normEp(FLOW.episode) || normEp(state.ep);
+  const ep = normEp(episode);   // 注意：不从上次结果继承，否则换场次后集号不更新
   if(!force && FLOW.data && FLOW.scene===scene && (FLOW.episode||'')===(ep||'')) return FLOW.data;
   FLOW.loading = true;
   try{
@@ -2372,6 +2372,10 @@ function sFlow(onlyStage){
     return `<div class="panel" id="flowcard-${st.key}" style="margin-bottom:0;display:${st.key===sel?'block':'none'}">
       <div class="ph"><span><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
         <span style="display:flex;gap:8px;align-items:center">${flowStatus(st)}
+          ${/^N\d{3}$/.test(String(st.scope||''))?`<select onchange="go('stages',{stage:state.stage,scene:this.value})"
+            style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:2px 6px;font-size:10.5px">
+            ${((SCN.data&&SCN.data.scenes)||[]).map(x=>`<option value="${x.id}" ${x.id===st.scope?'selected':''}>${x.id}</option>`).join('')}
+          </select>`:''}
           <span class="dim mono" style="font-size:10.5px">${esc(st.skill)}</span></span></div>
       <div class="pb">
         <div class="dim" style="font-size:11.5px;line-height:1.8">
@@ -2499,9 +2503,6 @@ function sStages(){
   }).join("");
 
   const curEp = normEp(FLOW.data && FLOW.data.episode);
-  const sceneTabs = ((SCN.data && SCN.data.scenes) || []).map(x=>
-    `<span onclick="go('stages',{scene:'${x.id}',ep:'${curEp}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
-      border:1px solid ${x.id===sceneNow?'var(--acc)':'var(--line)'};color:${x.id===sceneNow?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
 
   const flowCards = FLOW.data ? sFlow(sel) : '<div class="dim" style="font-size:12px">读取流程…</div>';
   const detail = sStageBody(sel);
@@ -2512,8 +2513,6 @@ function sStages(){
     </div>
     <div style="flex:1;min-width:0">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <span class="dim" style="font-size:10.5px;min-width:26px">场</span>${sceneTabs}
-        <span class="dim" style="font-size:10px;margin-left:6px">08 / 09 按场切换 · 05 / 06 跟随该场所属集（${curEp||'—'}）</span>
         <span style="flex:1"></span>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>
