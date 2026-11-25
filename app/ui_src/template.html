@@ -1855,7 +1855,7 @@ async function openAsset(id){
   if(!AST.data){ await loadAssets(); }
   const a=((AST.data&&AST.data.assets)||[]).find(x=>x.id===id) || null;
   AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true, channel:'local', extraRefs:[],
-        prompt:(a&&(a.prompt||a.descriptor))||'', n:1, size:'2656x1504', steps:8};
+        prompt:(a&&(a.prompt||a.descriptor))||'', n:1, size:lastSize(), steps:8};
   render();
   await loadAssetDetail();
 }
@@ -1897,7 +1897,7 @@ async function adGenerate(){
   const mode = AD.ref ? 'edit' : 't2i';
   const channel = AD.channel || 'local';
   const body={asset:a.id, mode, prompt:prompt.trim(), channel,
-    n:parseInt(AD.n||1), size:AD.size||'2656x1504', steps:parseInt(AD.steps||8)};
+    n:parseInt(AD.n||1), size:AD.size||lastSize(), steps:parseInt(AD.steps||8)};
   if(AD.ref) body.ref = AD.ref;
   const extra=(AD.extraRefs||[]).filter(Boolean);
   if(extra.length) body.refs=[AD.ref, ...extra].filter(Boolean);
@@ -2031,8 +2031,9 @@ function assetDetailHtml(){
     <textarea id="adPrompt" oninput="AD.prompt=this.value" style="width:100%;min-height:110px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(AD.prompt||'')}</textarea>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px">
       <span class="dim" style="font-size:11px">候选</span><input id="adN" type="number" min="1" max="4" value="${AD.n||1}" onchange="AD.n=this.value" style="width:45px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
-      <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" onchange="AD.size=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
-        ${['2656x1504','2048x1152','1536x864'].map(v=>`<option value="${v}" ${AD.size===v?'selected':''}>${v==='2656x1504'?'16:9 2656×1504':v==='2048x1152'?'16:9 2048×1152':'16:9 1536×864'}</option>`).join('')}</select>
+      <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" onchange="AD.size=this.value;rememberSize(this.value)" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
+        ${sizeOptions(AD.size||lastSize())}</select>
+      <span class="dim" style="font-size:10px" title="本地出图按这个尺寸；Codex 通道由服务端决定，通常 1672×941">${(AD.channel||'local')==='codex'?'Codex 自动定尺寸':'本地按此尺寸'}</span>
       <span class="dim" style="font-size:11px">步数</span><select id="adSteps" onchange="AD.steps=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8" ${String(AD.steps)==='8'?'selected':''}>8</option><option value="6" ${String(AD.steps)==='6'?'selected':''}>6</option></select>
       <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="adGenerate()">${AD.ref?'提交改图':'提交文生图'}</button>
       <span class="dim" style="font-size:10px">${AD.ref?'用引用的图作底图':'无参考图，按提示词直接出图'}</span>
@@ -2296,7 +2297,7 @@ function sImageGen(){
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
         <span class="dim">候选数</span><input id="imgN" type="number" min="1" max="4" value="1" style="width:48px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
         <span class="dim">尺寸</span><select id="imgSize" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
-          <option value="2656x1504">16:9 2656×1504</option><option value="2048x1152">16:9 2048×1152</option><option value="1536x864">16:9 1536×864</option></select>
+          ${sizeOptions('2656x1504')}</select>
         <span class="dim">步数</span><select id="imgSteps" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8">8</option><option value="6">6</option></select>
         <span class="dim">种子</span><input id="imgSeed" placeholder="随机" style="width:100px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
         <button class="btn acc" style="font-size:11px;padding:4px 14px" onclick="generateImg()">提交生成</button>
@@ -2311,6 +2312,21 @@ function sImageGen(){
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
 let FLOW = {data:null, scene:null, episode:null, sel:null, loading:false, failAt:0};
+
+/* 出图尺寸挡位：均为 32 的倍数，按长宽比分组 */
+const SIZES = [
+  {v:'2656x1504', label:'16:9 · 2656×1504（4.0MP 原生画质，最慢）'},
+  {v:'2048x1152', label:'16:9 · 2048×1152（2.4MP 均衡）'},
+  {v:'1536x864',  label:'16:9 · 1536×864（1.3MP 试稿，最快）'},
+  {v:'2048x2048', label:'1:1 · 2048×2048（4.2MP 方形，定妆/三视图）'},
+  {v:'1536x2048', label:'3:4 · 1536×2048（3.1MP 竖版，人物半身）'},
+  {v:'2048x1536', label:'4:3 · 2048×1536（3.1MP，宽松场景）'},
+];
+function sizeOptions(cur){
+  return SIZES.map(s=>`<option value="${s.v}" ${cur===s.v?'selected':''}>${s.label}</option>`).join('');
+}
+function rememberSize(v){ try{ localStorage.setItem('shotcall.size', v); }catch(e){} }
+function lastSize(){ try{ return localStorage.getItem('shotcall.size') || '2656x1504'; }catch(e){ return '2656x1504'; } }
 function normEp(v){ return /^E\d{3}$/.test(String(v||'')) ? String(v) : ''; }
 let AGCFG = null;
 let ART_PICK = {};      // 成果家族 -> 选中的版本路径（同族只显示一条，先选后确认）
