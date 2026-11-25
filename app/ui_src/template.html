@@ -2365,7 +2365,6 @@ function sFlow(onlyStage){
         ${news?` · <span style="color:var(--acc)">${news} 新文件</span>`:''}${drafts?` · <span style="color:var(--warn)">${drafts} 草稿</span>`:''}</div>
     </div>`;
   }).join("");
-  const epTabs = '';
   const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}',ep:normEp(state.ep)})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=steps.map(st=>{
@@ -2455,7 +2454,7 @@ function sFlow(onlyStage){
         <div class="ph"><span>阶段</span><span class="dim">01 → 09b</span></div>
         <div class="pb" style="padding:8px">${nav}</div>
       </div>
-      <div style="flex:1;min-width:0">${epTabs}${cards}${inlineViewer()}</div>
+      <div style="flex:1;min-width:0">${cards}${inlineViewer()}</div>
     </div>`;
 }
 
@@ -2465,7 +2464,7 @@ function sStages(){
   if(!SCN.data){ loadScenes().then(()=>render()); }
   const sceneNow = (state.scene && (SCN.data?.scenes||[]).some(x=>x.id===state.scene)) ? state.scene : 'N001';
   state.scene = sceneNow;
-  const epNow = normEp(state.ep) || normEp(FLOW.data && FLOW.data.episode);
+  const epNow = '';   // 不再提供手动选集，05/06 由场次推导
   const stale = !FLOW.data || FLOW.scene !== sceneNow || (epNow && FLOW.episode !== epNow);
   if(stale && !FLOW.loading && Date.now() - (FLOW.failAt||0) > 3000){
     loadFlow(sceneNow, false, epNow).then(()=>render());
@@ -2499,11 +2498,7 @@ function sStages(){
     </div>`;
   }).join("");
 
-  const curEp = normEp(state.ep) || normEp(FLOW.data && FLOW.data.episode);
-  const epList = (FLOW.data && FLOW.data.episodes) || [];
-  const epTabs = epList.length ? epList.map(e=>
-    `<span onclick="go('stages',{scene:'${sceneNow}',ep:'${e}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
-      border:1px solid ${e===curEp?'var(--acc)':'var(--line)'};color:${e===curEp?'var(--acc)':'#8b95a6'};font-weight:${e===curEp?'600':'400'}">${e}</span>`).join(" ") : '';
+  const curEp = normEp(FLOW.data && FLOW.data.episode);
   const sceneTabs = ((SCN.data && SCN.data.scenes) || []).map(x=>
     `<span onclick="go('stages',{scene:'${x.id}',ep:'${curEp}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
       border:1px solid ${x.id===sceneNow?'var(--acc)':'var(--line)'};color:${x.id===sceneNow?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
@@ -2516,13 +2511,9 @@ function sStages(){
       <div class="pb" style="padding:14px 14px 0">${rail}</div>
     </div>
     <div style="flex:1;min-width:0">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
-        <span class="dim" style="font-size:10.5px;min-width:26px">集</span>${epTabs||'<span class="dim" style="font-size:10.5px">—</span>'}
-        <span class="dim" style="font-size:10px;margin-left:6px">05 / 06 按集切换</span>
-      </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
         <span class="dim" style="font-size:10.5px;min-width:26px">场</span>${sceneTabs}
-        <span class="dim" style="font-size:10px;margin-left:6px">08 / 09 按场切换</span>
+        <span class="dim" style="font-size:10px;margin-left:6px">08 / 09 按场切换 · 05 / 06 跟随该场所属集（${curEp||'—'}）</span>
         <span style="flex:1"></span>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>
