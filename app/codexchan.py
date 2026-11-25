@@ -43,15 +43,22 @@ def status() -> dict:
 
 
 def generate(prompt: str, size: str = "1024x1024", quality: str = "high",
-             timeout: int = 420) -> tuple:
+             timeout: int = 420, images: list = None) -> tuple:
     """返回 (png 字节, 元信息)；失败抛异常。"""
     a = auth()
     if not a.get("token"):
         raise RuntimeError("Codex 未登录：找不到 ~/.codex/auth.json")
+    imgs = list(images or [])
+    text = prompt
+    if imgs:
+        text = ("参考图按顺序为 <Picture 1>…<Picture %d>，请按提示词中的编号对应。\n\n" % len(imgs)) + prompt
+    content = [{"type": "input_text", "text": text}]
+    for raw in imgs[:4]:
+        content.append({"type": "input_image",
+                        "image_url": "data:image/png;base64," + base64.b64encode(raw).decode()})
     body = {"model": MODEL, "store": False, "stream": True,
             "tools": [{"type": "image_generation", "size": size, "quality": quality}],
-            "input": [{"type": "message", "role": "user",
-                       "content": [{"type": "input_text", "text": prompt}]}]}
+            "input": [{"type": "message", "role": "user", "content": content}]}
     headers = {"Authorization": f"Bearer {a['token']}", "Content-Type": "application/json",
                "originator": "codex_cli_rs", "Accept": "text/event-stream"}
     if a.get("account"):

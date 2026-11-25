@@ -1854,7 +1854,7 @@ let AD = null;
 async function openAsset(id){
   if(!AST.data){ await loadAssets(); }
   const a=((AST.data&&AST.data.assets)||[]).find(x=>x.id===id) || null;
-  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true, channel:'local',
+  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true, channel:'local', extraRefs:[],
         prompt:(a&&(a.prompt||a.descriptor))||'', n:1, size:'2656x1504', steps:8};
   render();
   await loadAssetDetail();
@@ -1899,6 +1899,8 @@ async function adGenerate(){
   const body={asset:a.id, mode, prompt:prompt.trim(), channel,
     n:parseInt(AD.n||1), size:AD.size||'2656x1504', steps:parseInt(AD.steps||8)};
   if(AD.ref) body.ref = AD.ref;
+  const extra=(AD.extraRefs||[]).filter(Boolean);
+  if(extra.length) body.refs=[AD.ref, ...extra].filter(Boolean);
   const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
   const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
@@ -1919,7 +1921,17 @@ function adPickOther(){
   if(AD.refs===null) return adLoadRefs();
   AD.pickOpen=true; render();
 }
-function adChooseRef(file){ AD.ref=file; AD.pickOpen=false; render(); }
+function adChooseRef(file){
+  AD.extraRefs = AD.extraRefs || [];
+  const i = AD.extraRefs.indexOf(file);
+  if(i >= 0) AD.extraRefs.splice(i,1);
+  else if(AD.extraRefs.length < 3) AD.extraRefs.push(file);
+  else return toast('最多再引用 3 张');
+  render();
+}
+function adDropExtra(file){
+  AD.extraRefs = (AD.extraRefs||[]).filter(x=>x!==file); render();
+}
 function adUsePath(){
   const v=((document.getElementById('adPath')||{}).value||'').trim();
   if(!v) return toast('先输入图片路径');
@@ -1986,7 +1998,9 @@ function assetDetailHtml(){
       <span class="dim" style="font-size:11px">参考图</span>
       <button class="btn ${(AD.ref&&img&&AD.ref===img)?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
       <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()">引用其他</button>
-      <span class="dim" style="font-size:10px">${AD.ref?('已选：'+esc(AD.ref.split('/').pop())):'未选参考图 · 走文生图'}</span>
+      <span class="dim" style="font-size:10px">${AD.ref?('主图：'+esc(AD.ref.split('/').pop())):'未选参考图 · 走文生图'}</span>
+      ${(AD.extraRefs||[]).map(f=>`<span class="mono" style="font-size:9.5px;padding:1px 6px;border:1px solid var(--acc);border-radius:4px;color:var(--acc);cursor:pointer"
+        title="点击移除" onclick="adDropExtra('${esc(f)}')">+ ${esc(f.split('/').pop().slice(0,18))}</span>`).join('')}
       ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
@@ -2001,7 +2015,7 @@ function assetDetailHtml(){
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;max-height:260px;overflow:auto">
           ${(AD.refs||[]).slice(0,80).map(r=>`<div style="width:120px;cursor:pointer" onclick="adChooseRef('${esc(r.file)}')">
-            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" style="width:100%;height:78px;object-fit:cover;border-radius:5px;border:1px solid ${r.file===AD.ref?'var(--acc)':'var(--line)'};display:block">
+            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" style="width:100%;height:78px;object-fit:cover;border-radius:5px;border:1px solid ${(r.file===AD.ref||(AD.extraRefs||[]).includes(r.file))?'var(--acc)':'var(--line)'};display:block">
             <div class="dim mono" style="font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.kind||'')} · ${esc(r.name)}</div>
           </div>`).join('')||'<div class="dim" style="font-size:11px">读取中或没有图片…</div>'}
         </div>

@@ -2254,19 +2254,29 @@ class Handler(BaseHTTPRequestHandler):
                 if not prompt:
                     raise ValueError("缺提示词")
                 ref = body.get("ref") or None
+                _refs_in = [str(x) for x in (body.get("refs") or []) if str(x).strip()]
+                if not ref and _refs_in:
+                    ref = _refs_in[0]
                 if mode == "edit":
                     if not ref:
-                        raise ValueError("改图必须选择一张底图")
+                        raise ValueError("改图必须选择至少一张底图")
                     f = (PROJECT / ref).resolve()
                     if not _inside(PROJECT, f) or not f.is_file():
                         raise ValueError("底图不在项目内或不存在")
+                refs = [str(x) for x in (body.get("refs") or []) if str(x).strip()]
+                if ref and ref not in refs:
+                    refs.insert(0, ref)
+                for rp in refs:
+                    f0 = (PROJECT / rp).resolve()
+                    if not _inside(PROJECT, f0) or not f0.is_file():
+                        raise ValueError(f"参考图不在项目内或不存在：{rp}")
                 rec = imagegen.current_recipe()
                 width = int(body.get("width") or rec.get("width") or imagegen.DEFAULT_W)
                 height = int(body.get("height") or rec.get("height") or imagegen.DEFAULT_H)
                 steps = int(body.get("steps") or rec.get("steps") or imagegen.DEFAULT_STEPS)
                 n = max(1, min(4, int(body.get("n") or 1)))
                 it = {"id": asset_id, "name": asset.get("name") or asset_id,
-                      "prompt": prompt, "ref": ref, "n": n,
+                      "prompt": prompt, "ref": ref, "refs": refs, "n": n,
                       "channel": str(body.get("channel") or "local"),
                       "width": width, "height": height, "steps": steps,
                       "seed": body.get("seed") if str(body.get("seed") or "").strip().isdigit() else None}

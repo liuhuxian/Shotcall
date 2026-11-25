@@ -204,9 +204,15 @@ def _execute_codex(project: Path, ep: str, jid: str, out_root: str = None):
     job = dict(_jobs.get(jid) or {})
     try:
         t0 = time.time()
+        imgs = []
+        for rp in (job.get("refs") or []):
+            f = project / rp
+            if f.is_file():
+                imgs.append(f.read_bytes())
         data, meta = codexchan.generate(job["prompt"],
                                         size="1536x1024" if (job.get("width") or 0) > (job.get("height") or 0) else "1024x1024",
-                                        quality=os.environ.get("CODEX_IMG_QUALITY", "high"))
+                                        quality=os.environ.get("CODEX_IMG_QUALITY", "high"),
+                                        images=imgs)
         out_asset = job.get("asset")
         out = _job_dir(project, ep, out_asset, job.get("outRoot") or out_root) / f"{job['seed']}.png"
         out.write_bytes(data)
