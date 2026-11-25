@@ -41,7 +41,7 @@ def _prompt_05():
 输入：
 {{INPUTS}}
 
-这一阶段要产出两份文件：正式剧本，以及基于它的成稿时长复核。文件名、命名与验收按 film-screenplay 执行。
+本阶段要产出：正式剧本、成稿时长复核、小说改编对账，三者同一版本。文件名、命名与验收按 film-screenplay 执行。
 边界：只做本阶段，不改其他阶段与登记表，不自行确认，不调用生成接口。
 完成后只汇报：两份文件的版本与路径、时长偏差、需要导演拍板的点（≤3 条）。
 """
@@ -96,7 +96,10 @@ STEPS = [
          output="05-正式剧本/screenplay-{v}.md", deps=["04", "02", "03"],
          extra=[dict(label="时长复核", kind="05 成稿时长复核",
                      pattern=r"^05-正式剧本/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
-                     output="05-正式剧本/screenplay-timing-audit-{v}.md")],
+                     output="05-正式剧本/screenplay-timing-audit-{v}.md"),
+                dict(label="小说对账", kind="05 小说改编对账", deps=["primary"],
+                     pattern=r"^05-正式剧本/novel-adaptation-audit-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/novel-adaptation-audit-{v}.md")],
          prompt=_prompt_05()),
     dict(key="06", no="06", stage="06", name="剧本压力测试（可选）", skill="film-stress-test",
          kind="06 剧本压力测试", scope="全项目", register="conclusion",
@@ -107,6 +110,9 @@ STEPS = [
          kind="07 Lira 图像资产", scope="全项目",
          pattern=r"^07-图像资产/assets-v(\d{3})(?:-\d+)?\.md$",
          output="07-图像资产/assets-{v}.md", deps=["05"],
+         extra=[dict(label="生产拆解", kind="05 生产拆解（07入口派生）",
+                     pattern=r"^05-正式剧本/production-breakdown-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/production-breakdown-{v}.md")],
          prompt=_prompt("07", "Lira 图像资产", "film-lira-assets", ["05 已确认版；production-breakdown；02"], "07-图像资产/assets-vNNN.md", "全项目")),
     dict(key="08", no="08", stage="08", name="ACTING 表演", skill="film-acting",
          kind="08 ACTING 表演设计", scope="{scene}",
