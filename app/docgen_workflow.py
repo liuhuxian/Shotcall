@@ -4,7 +4,7 @@
 
 用法：
     python3 app/docgen_workflow.py                     # 输出到标准输出
-    python3 app/docgen_workflow.py -o ../devlog/workflow.md
+    python3 app/docgen_workflow.py -o ../docs/workflow.md
 """
 from __future__ import annotations
 
@@ -172,7 +172,7 @@ def build() -> str:
     out.append("## 七、如何保持这份文件是新的\n")
     out.append("```bash")
     out.append("cd ~/gen_v/Shotcall")
-    out.append("python3 app/docgen_workflow.py -o devlog/workflow.md")
+    out.append("python3 app/docgen_workflow.py -o docs/workflow.md")
     out.append("```\n")
     out.append("它只读登记表和工作台的流程定义，不写项目文件。改动流程或登记成果后重跑一次即可。")
     return "\n".join(out) + "\n"

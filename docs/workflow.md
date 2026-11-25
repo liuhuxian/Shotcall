@@ -1,6 +1,6 @@
 # 导演工作台 · 工作流程说明
 
-> 生成时间：2026-11-25 10:56　·　数据来源：`00-项目管理/artifact-state.json` + 工作台 `app/flow.py`
+> 生成时间：2026-11-25 10:59　·　数据来源：`00-项目管理/artifact-state.json` + 工作台 `app/flow.py`
 
 > **这份文件只供人阅读，不参与任何依赖判定与校验。**
 > 它不登记为成果、不被任何文件依赖；改了它不会触发任何下游失效。
@@ -63,8 +63,8 @@
 |---|---|---|---|
 | 已确认-当前 | `novel-adaptation-audit-v001.md` | 7 | 2 |
 | 已确认-当前 | `production-breakdown-v001.md` | 5 | 0 ⚠️ |
-| 已确认-当前 | `screenplay-timing-audit-v001.md` | 4 | 0 ⚠️ |
-| 已确认-当前 | `screenplay-v001.md` | 4 | 30 |
+| 已确认-当前 | `screenplay-timing-audit-v001.md` | 5 | 0 ⚠️ |
+| 已确认-当前 | `screenplay-v001.md` | 4 | 31 |
 
 ### 06 剧本压力测试（1 项）
 
@@ -108,7 +108,7 @@
 | 已确认-当前 | `minimax-h3-ref2va-v016.md` | 4 | 0 ⚠️ |
 | 已确认-当前 | `continuity-ledger-v001.md` | 3 | 0 ⚠️ |
 | 已确认-当前 | `director-plan-v001.md` | 3 | 0 ⚠️ |
-| 已确认-当前 | `generation-units-minimax-h3-v001.md` | 2 | 0 ⚠️ |
+| 历史已替代 | `generation-units-minimax-h3-v001.md` | 2 | 0 ⚠️ |
 | 已确认-当前 | `generation-units-minimax-h3-v002.md` | 3 | 1 |
 | 已确认-当前 | `reference-map-v001.md` | 3 | 0 ⚠️ |
 | 已确认-当前 | `scene-space-map-v001.md` | 3 | 0 ⚠️ |
@@ -156,6 +156,7 @@ screenplay-timing-audit-v001.md
     ← characters-v001.md
     ← worldbuilding-v001.md
     ← treatment-v006.md
+    ← screenplay-v001.md
 screenplay-v001.md
     ← synopsis-v001.md
     ← characters-v001.md
@@ -302,7 +303,7 @@ visual-continuity-audit-v001.md
 - `minimax-h3-ref2va-v015.md`
 - `minimax-h3-ref2va-v016.md`
 
-**断头路（已确认但没有下游，可能是缺陷）：17 项**
+**断头路（已确认但没有下游，可能是缺陷）：16 项**
 
 - `screenplay-timing-audit-v001.md`
 - `production-breakdown-v001.md`
@@ -319,14 +320,13 @@ visual-continuity-audit-v001.md
 - `scene-space-map-v001.md`
 - `scene-timing-v001.md`
 - `visual-continuity-audit-v001.md`
-- `generation-units-minimax-h3-v001.md`
 - `shot-table-from-yoko-shots-v001.md`
 
 **存在多版本的文件族（4 组）**
 
 - 04 `treatment`：3 个版本，当前 treatment-v006.md
 - 07 `assets`：4 个版本，当前 assets-v004.md
-- 09 `generation-units-minimax-h3`：2 个版本，当前 generation-units-minimax-h3-v…　⚠️ 2 个同时标为当前
+- 09 `generation-units-minimax-h3`：2 个版本，当前 generation-units-minimax-h3-v…
 - 09 `minimax-h3-ref2va`：7 个版本，当前 minimax-h3-ref2va-v012.md　⚠️ 5 个同时标为当前
 
 ## 四bis、流程定义与实际登记的差异
@@ -335,7 +335,6 @@ visual-continuity-audit-v001.md
 
 | 文件 | 流程卡要求 | 实际登记缺 |
 |---|---|---|
-| `screenplay-timing-audit-v001.md` | 05 | 05 |
 | `minimax-h3-ref2va-v010.md` | 07, 09 | 09 |
 | `minimax-h3-ref2va-v011.md` | 07, 09 | 09 |
 
@@ -343,7 +342,7 @@ visual-continuity-audit-v001.md
 
 | 文件 | 直接下游 | 说明 |
 |---|---|---|
-| `screenplay-v001.md` | 30 | 已确认-当前 |
+| `screenplay-v001.md` | 31 | 已确认-当前 |
 | `characters-v001.md` | 21 | 已确认-当前 |
 | `assets-v004.md` | 17 | 已确认-当前 |
 | `synopsis-v001.md` | 14 | 已确认-当前 |
@@ -373,7 +372,7 @@ visual-continuity-audit-v001.md
 
 ```bash
 cd ~/gen_v/Shotcall
-python3 app/docgen_workflow.py -o devlog/workflow.md
+python3 app/docgen_workflow.py -o docs/workflow.md
 ```
 
 它只读登记表和工作台的流程定义，不写项目文件。改动流程或登记成果后重跑一次即可。
