@@ -2108,7 +2108,11 @@ function assetDetailHtml(){
         <div><div class="mono dim" style="font-size:10.5px">${esc(a.id)} · ${esc(a.type)}</div>
           <div style="font-size:19px;font-weight:700">${esc(a.name)}</div>
           <div class="dim" style="font-size:11.5px">${esc(a.section||'')} · ${a.bound?'已绑定 '+(a.binding.version||''):'未绑定'} · ${esc(a.ignored?'已忽略':'')}</div></div>
-        <button class="btn ghost" style="font-size:12px" onclick="closeAsset()">关闭</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn acc" style="font-size:12px;padding:4px 14px" onclick="openCandGallery()"
+            title="网格查看该资产的全部候选图，可直接采用">候选图 ${(AD.cands||[]).length} 张 ▾</button>
+          <button class="btn ghost" style="font-size:12px" onclick="closeAsset()">关闭</button>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start">
         <div>${img?`<img src="/api/proj/file?p=${encodeURIComponent(img)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(img)}')"
