@@ -294,30 +294,34 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
     slot = next((s for s in proj.get("slots") or []
                  if s.get("stateId") == asset_id or s.get("id") == asset_id
                  or str(s.get("id", "")).endswith("--" + asset_id)), None)
-    if not slot:
-        raise ValueError(f"project.json 找不到槽位 {asset_id}")
-    cands = proj.setdefault("candidates", [])
-    cand = next((c for c in cands if c.get("sha256") == sha), None)
-    if not cand:
-        cand = {"id": "wb-" + sha[:16], "path": image_rel, "mimeType": "image/png",
-                "sha256": sha, "bytes": img.stat().st_size, "source": "workbench",
-                "suggestedSlotId": slot.get("id"),
-                "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
-        cands.append(cand)
-    ver = int(slot.get("bindingVersion") or 0) + 1
-    slot["bindingVersion"] = ver
-    slot["currentCandidateId"] = cand["id"]
-    slot["preferredCandidateId"] = cand["id"]
-    hist = slot.setdefault("history", [])
-    hist.append({"candidateId": cand["id"], "version": ver,
-                 "adoptedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
-    proj["revision"] = int(proj.get("revision") or 0) + 1
-    proj["bindingManifest"] = binding_rel
-    _write_project(project, proj)
+    # 洋子 project.json 里没有这个槽位（例如新拆分的资产）时，只写绑定与资产文档，
+    # 不再整条失败——否则这些资产永远无法直接指定图片。
+    ver = int((slot or {}).get("bindingVersion") or 0) + 1
+    cand = None
+    if slot:
+        cands = proj.setdefault("candidates", [])
+        cand = next((c for c in cands if c.get("sha256") == sha), None)
+        if not cand:
+            cand = {"id": "wb-" + sha[:16], "path": image_rel, "mimeType": "image/png",
+                    "sha256": sha, "bytes": img.stat().st_size, "source": "workbench",
+                    "suggestedSlotId": slot.get("id"),
+                    "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            cands.append(cand)
+        slot["bindingVersion"] = ver
+        slot["currentCandidateId"] = cand["id"]
+        slot["preferredCandidateId"] = cand["id"]
+        hist = slot.setdefault("history", [])
+        hist.append({"candidateId": cand["id"], "version": ver,
+                     "adoptedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")})
+        proj["revision"] = int(proj.get("revision") or 0) + 1
+        proj["bindingManifest"] = binding_rel
+        _write_project(project, proj)
     doc = _update_asset_doc(project, asset, image_rel, binding_rel, ver, sha)
-    return {"ok": True, "bindingFile": binding_rel, "projectRevision": proj["revision"],
-            "assetDoc": str(doc.relative_to(project)), "candidateId": cand["id"],
-            "version": ver, "sha256": sha}
+    return {"ok": True, "bindingFile": binding_rel,
+            "projectRevision": proj.get("revision"),
+            "assetDoc": str(doc.relative_to(project)),
+            "candidateId": (cand or {}).get("id"),
+            "slotFound": bool(slot), "version": ver, "sha256": sha}
 
 
 def slot_history(project: Path) -> dict:
