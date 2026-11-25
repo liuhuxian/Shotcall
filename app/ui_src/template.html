@@ -1841,6 +1841,10 @@ async function loadAssetDetail(){
 }
 
 let AD_POLL=null;
+function assetTyping(){
+  const el=document.activeElement, box=document.getElementById('assetDetail');
+  return !!(el && box && box.contains(el) && /^(TEXTAREA|INPUT)$/.test(el.tagName));
+}
 function clearAssetPoll(){ if(AD_POLL){ clearTimeout(AD_POLL); AD_POLL=null; } }
 function scheduleAssetPoll(){
   clearAssetPoll();
@@ -1849,6 +1853,7 @@ function scheduleAssetPoll(){
   if(!live.length) return;
   AD_POLL=setTimeout(async()=>{
     if(!AD) return;
+    if(assetTyping()){ scheduleAssetPoll(); return; }   // 正在输入：不重绘，稍后再试
     const before=(AD.cands||[]).length;
     await loadAssetDetail();
     if(AD && (AD.cands||[]).length>before) toast('有新候选：'+((AD.cands||[]).length-before)+' 张');
