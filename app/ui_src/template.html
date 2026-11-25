@@ -2092,6 +2092,7 @@ function assetDetailHtml(){
             style="position:absolute;right:-5px;top:-5px;width:15px;height:15px;border-radius:50%;background:#2a1212;color:#ff9a9a;
               font-size:11px;line-height:15px;text-align:center;cursor:pointer;border:1px solid #5a2020">×</span>
         </span>`).join('')}
+      ${AD.ref && AD.ref!==img ? `<button class="btn ok" style="font-size:10px;padding:2px 9px" title="把这张图设为该资产的当前绑定图" onclick="adAdopt('${esc(AD.ref)}')">设为当前图</button>`:''}
       ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
@@ -2105,9 +2106,12 @@ function assetDetailHtml(){
           <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="AD.pickOpen=false;render()">收起</button>
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;max-height:260px;overflow:auto">
-          ${(AD.refs||[]).slice(0,80).map(r=>`<div style="width:120px;cursor:pointer" onclick="adChooseRef('${esc(r.file)}')">
-            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" style="width:100%;height:78px;object-fit:cover;border-radius:5px;border:1px solid ${(r.file===AD.ref||(AD.extraRefs||[]).includes(r.file))?'var(--acc)':'var(--line)'};display:block">
+          ${(AD.refs||[]).slice(0,80).map(r=>`<div style="width:134px">
+            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" title="点击引用这张图"
+              onclick="adChooseRef('${esc(r.file)}')"
+              style="width:100%;height:82px;object-fit:cover;border-radius:5px;cursor:pointer;display:block;border:1px solid ${(r.file===AD.ref||(AD.extraRefs||[]).includes(r.file))?'var(--acc)':'var(--line)'}">
             <div class="dim mono" style="font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.kind||'')} · ${esc(r.name)}</div>
+            <button class="btn ok" style="font-size:9px;padding:1px 6px;margin-top:2px" onclick="adAdopt('${esc(r.file)}')">设为当前</button>
           </div>`).join('')||'<div class="dim" style="font-size:11px">读取中或没有图片…</div>'}
         </div>
       </div></div>`:''}
