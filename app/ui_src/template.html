@@ -2494,9 +2494,28 @@ function sStages(){
 }
 
 /* ---------- 成果版本分组 ---------- */
+/* 成果名称显示：去掉阶段号，长的收敛成短名（登记表里的 kind 不动，避免影响校验） */
+const ART_ALIAS = {
+  "剧本深度融合": "剧本",
+  "成稿时长复核": "时长复核",
+  "小说改编对账": "小说对账",
+  "生产拆解": "生产拆解",
+  "Lira 图像资产": "图像资产",
+  "ACTING 表演设计": "表演设计",
+  "镜头与视频提示词": "镜头与视频提示词",
+};
+function artName(kind){
+  let k = String(kind||"").trim();
+  k = k.replace(/^\d{2}[a-z]?\s+/, "");                 // 去掉 "05 " / "09a "
+  for (const [long, short] of Object.entries(ART_ALIAS)){
+    if (k.startsWith(long)) { k = short + k.slice(long.length); break; }
+  }
+  return k || String(kind||"");
+}
+
 function artFamily(p){ return String(p||'').replace(/-v\d{3}(?:-\d+)?\.md$/, ''); }
 function artVersion(a){ const m=/-v(\d{3})(?:-\d+)?\.md$/.exec(a.path||''); return m?parseInt(m[1],10):0; }
-function artVersionLabel(a){ return 'v'+String(artVersion(a)).padStart(3,'0')+' · '+(a.kind||'')+' · '+(ART_LABEL[a.status]||a.status); }
+function artVersionLabel(a){ return 'v'+String(artVersion(a)).padStart(3,'0')+' · '+artName(a.kind)+' · '+(ART_LABEL[a.status]||a.status); }
 function artPick(fam,path){ ART_PICK[fam]=path; render(); }
 function artGrouped(items){
   const g={};
@@ -2533,7 +2552,7 @@ function sStageBody(no){
       : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'';
     return `<tr>
       <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[a.status]||a.status}</span></td>
-      <td><div style="font-size:12.5px">${esc(a.kind||"")} ${localBadge}${artPicker(g)}</div>
+      <td><div style="font-size:12.5px">${esc(artName(a.kind))} ${localBadge}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
           ${g.versions.length>1?`<div class="dim" style="font-size:10px">同族 ${g.versions.length} 个版本；先在下拉选择，只确认选中的一版</div>`:''}</td>
@@ -2582,7 +2601,7 @@ function sPending(){
     const stale = (a.staleDeps||[]).length;
     return `<tr>
       <td class="mono dim" style="width:40px">${a.stage}</td>
-      <td><div style="font-size:12.5px">${esc(a.kind||"")}${artPicker(g)}</div>
+      <td><div style="font-size:12.5px">${esc(artName(a.kind))}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
           ${g.drafts.length>1?`<div class="dim" style="font-size:10px">同族 ${g.drafts.length} 个候选；先选一版再确认</div>`:''}</td>
@@ -2649,7 +2668,7 @@ function sArts(){
   if(!d){ if(!STG.loading) loadStages().then(()=>render()); return `<div class="dim">读取中…</div>`; }
   const rows = (d.artifacts||[]).map(a=>`<tr>
     <td class="mono dim" style="width:40px">${a.stage}</td>
-    <td style="font-size:12.5px">${esc(a.kind||"")}</td>
+    <td style="font-size:12.5px">${esc(artName(a.kind))}</td>
     <td class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
         onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</td>
     <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
