@@ -1690,6 +1690,17 @@ async function syncCanvas(dry){
   CANVAS.busy=false; render();
 }
 
+let CODEX = {data:null};
+async function loadCodexStatus(force){
+  if(CODEX.data && !force) return CODEX.data;
+  try{ CODEX.data = await (await fetch('/api/codex/status')).json(); }catch(e){ CODEX.data = {configured:false}; }
+  return CODEX.data;
+}
+function codexBadge(){
+  const c = CODEX.data;
+  if(!c){ loadCodexStatus().then(()=>render()); return ''; }
+  return `<span class="badge ${c.configured?'b-ok':'b-mut'}" style="font-size:10px" title="${esc(c.reason||('代理 '+c.proxy+' · 账号 '+c.account))}">Codex 订阅：${c.configured?'可用 '+esc(c.model||''):'未登录'}</span>`;
+}
 function cloudBar(){
   const c = CLOUD.data;
   if(!c){ loadCloud().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取出图渠道…</div>`; }
@@ -1701,7 +1712,8 @@ function cloudBar(){
     <div class="pb" style="display:flex;align-items:center;gap:10px;font-size:12px;flex-wrap:wrap">
       <b>出图渠道</b>
       <span class="badge b-ok" style="font-size:10px">本机 H3</span>
-      <span class="badge ${ok?'b-ok':'b-mut'}" style="font-size:10px">云端：${ok?'已配置 '+esc(c.model):'未配置'}</span>
+      <span class="badge ${ok?'b-ok':'b-mut'}" style="font-size:10px">API：${ok?'已配置 '+esc(c.model):'未配置'}</span>
+      ${codexBadge()}
       <span class="dim" style="flex:1;font-size:11px">${ok?esc(c.base)+' · key '+esc(c.keyMask||''):esc(c.reason||'')}</span>
       <button class="btn ${open?'acc':'ghost'}" style="font-size:11px;padding:2px 9px" onclick="toggleCloudEdit()">${open?'收起':'配置云端'}</button>
     </div>
@@ -1842,7 +1854,7 @@ let AD = null;
 async function openAsset(id){
   if(!AST.data){ await loadAssets(); }
   const a=((AST.data&&AST.data.assets)||[]).find(x=>x.id===id) || null;
-  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true,
+  AD = {id, ref:(a&&a.binding&&a.binding.image)||null, cands:[], jobs:[], refs:null, pickOpen:false, loading:true, channel:'local',
         prompt:(a&&(a.prompt||a.descriptor))||'', n:1, size:'2656x1504', steps:8};
   render();
   await loadAssetDetail();
@@ -1883,7 +1895,8 @@ async function adGenerate(){
   const prompt=(AD.prompt||'').trim();
   if(!prompt) return toast('提示词为空');
   const mode = AD.ref ? 'edit' : 't2i';
-  const body={asset:a.id, mode, prompt:prompt.trim(),
+  const channel = AD.channel || 'local';
+  const body={asset:a.id, mode, prompt:prompt.trim(), channel,
     n:parseInt(AD.n||1), size:AD.size||'2656x1504', steps:parseInt(AD.steps||8)};
   if(AD.ref) body.ref = AD.ref;
   const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
@@ -1993,6 +2006,14 @@ function assetDetailHtml(){
           </div>`).join('')||'<div class="dim" style="font-size:11px">读取中或没有图片…</div>'}
         </div>
       </div></div>`:''}
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
+      <span class="dim" style="font-size:11px">出图渠道</span>
+      <select id="adChannel" onchange="AD.channel=this.value;render()" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 6px;font-size:11px">
+        <option value="local" ${(AD.channel||'local')==='local'?'selected':''}>本机 H3（ComfyUI）</option>
+        <option value="codex" ${AD.channel==='codex'?'selected':''}>Codex 订阅（ChatGPT 账号）</option>
+      </select>
+      <span class="dim" style="font-size:10.5px">${AD.channel==='codex'?'用 Codex 登录态，不花 API 费用；输出约 1536×1024':'走本机显卡，可选 2656×1504'}</span>
+    </div>
     <textarea id="adPrompt" oninput="AD.prompt=this.value" style="width:100%;min-height:110px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:6px;padding:7px 9px;font-size:11.5px;line-height:1.6">${esc(AD.prompt||'')}</textarea>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px">
       <span class="dim" style="font-size:11px">候选</span><input id="adN" type="number" min="1" max="4" value="${AD.n||1}" onchange="AD.n=this.value" style="width:45px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">

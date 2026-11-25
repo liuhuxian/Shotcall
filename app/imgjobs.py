@@ -147,6 +147,7 @@ def submit_batch(project: Path, ep: str, items: list, out_root: str = None) -> d
     """
     batch = time.strftime("IMG-%Y%m%d-%H%M%S")
     tasks = []
+    all_ids = []
     for it in items:
         n = max(1, int(it.get("n") or 4))
         for k in range(n):
@@ -164,14 +165,23 @@ def submit_batch(project: Path, ep: str, items: list, out_root: str = None) -> d
                    "prompt": it["prompt"],
                    "ref": it.get("ref") or ((it.get("refs") or [None])[0]),
                    "refs": list(it.get("refs") or ([] if not it.get("ref") else [it.get("ref")])),
-                   "ep": ep, "outRoot": out_root}
+                   "ep": ep, "outRoot": out_root, "channel": it.get("channel") or "local"}
             with _lock:
                 _jobs[jid] = job
                 _order.append(jid)
-            tasks.append({"id": jid, "run": _make_runner(project, ep, jid, out_root)})
+            all_ids.append(jid)
+            if job.get("channel") == "codex":
+                with _lock:
+                    _jobs[jid]["status"] = "running"
+                    _jobs[jid]["startedAt"] = time.time()
+                threading.Thread(target=_execute_codex, args=(project, ep, jid, out_root),
+                                 daemon=True).start()
+            else:
+                tasks.append({"id": jid, "run": _make_runner(project, ep, jid, out_root)})
     _save()
-    sched.submit("image", tasks)
-    return {"batch": batch, "jobs": [t["id"] for t in tasks]}
+    if tasks:
+        sched.submit("image", tasks)
+    return {"batch": batch, "jobs": all_ids}
 
 
 def _make_runner(project: Path, ep: str, jid: str, out_root: str = None):
@@ -186,6 +196,29 @@ def _make_runner(project: Path, ep: str, jid: str, out_root: str = None):
             _jobs[jid]["card"] = port - 8188
         _execute(project, ep, jid, dict(_jobs[jid]), out_root)
     return run
+
+
+def _execute_codex(project: Path, ep: str, jid: str, out_root: str = None):
+    """用 Codex 订阅通道出图；失败写进任务错误。"""
+    import codexchan
+    job = dict(_jobs.get(jid) or {})
+    try:
+        t0 = time.time()
+        data, meta = codexchan.generate(job["prompt"],
+                                        size="1536x1024" if (job.get("width") or 0) > (job.get("height") or 0) else "1024x1024",
+                                        quality=os.environ.get("CODEX_IMG_QUALITY", "high"))
+        out_asset = job.get("asset")
+        out = _job_dir(project, ep, out_asset, job.get("outRoot") or out_root) / f"{job['seed']}.png"
+        out.write_bytes(data)
+        with _lock:
+            _jobs[jid].update({"status": "done", "file": _rel(project, out),
+                               "seconds": round(time.time() - t0, 1), "meta": meta})
+    except Exception as e:
+        with _lock:
+            if jid in _jobs:
+                _jobs[jid]["status"] = "failed"
+                _jobs[jid]["error"] = f"{type(e).__name__}: {e}"[:300]
+    _save()
 
 
 def _execute(project: Path, ep: str, jid: str, job: dict, out_root: str = None):

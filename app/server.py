@@ -1648,6 +1648,10 @@ class Handler(BaseHTTPRequestHandler):
                     tail = f"读取失败：{e}"
             self._send(200, json.dumps({"card": card, "tail": tail}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/codex/status":
+            import codexchan
+            self._send(200, json.dumps(codexchan.status(), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/canvas/status":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             fn = q.get("file", [canvasmod.CANVAS_FILE])[0]
@@ -2263,6 +2267,7 @@ class Handler(BaseHTTPRequestHandler):
                 n = max(1, min(4, int(body.get("n") or 1)))
                 it = {"id": asset_id, "name": asset.get("name") or asset_id,
                       "prompt": prompt, "ref": ref, "n": n,
+                      "channel": str(body.get("channel") or "local"),
                       "width": width, "height": height, "steps": steps,
                       "seed": body.get("seed") if str(body.get("seed") or "").strip().isdigit() else None}
                 pf = imagegen.preflight([it], PROJECT)
