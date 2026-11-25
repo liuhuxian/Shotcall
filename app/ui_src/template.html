@@ -2076,7 +2076,8 @@ function assetDetailHtml(){
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
       <span class="dim" style="font-size:11px">参考图</span>
       <button class="btn ${(AD.ref&&img&&AD.ref===img)?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
-      <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()">引用其他</button>
+      <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()"
+        title="从项目里选一张图：点图片=作为出图参考；点「设为当前」=替换资产图">选择图片…</button>
       ${AD.ref?`<span style="display:inline-flex;align-items:center;gap:5px">
           <img src="/api/proj/file?p=${encodeURIComponent(AD.ref)}" title="主图 · 点击放大"
             onclick="openZoom('/api/proj/file?p=${encodeURIComponent(AD.ref)}')"
@@ -2096,7 +2097,7 @@ function assetDetailHtml(){
       ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
-      <div class="ph"><span>引用其他图</span><span class="dim">项目内已有图，或从本机上传</span></div>
+      <div class="ph"><span>选择图片</span><span class="dim">点图片=作为出图参考 · 点「设为当前」=替换资产图 · 也可从本机上传</span></div>
       <div class="pb">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
           <input type="file" accept="image/*" onchange="adUpload(this.files[0])" style="font-size:10.5px;color:#9aa5b4">
