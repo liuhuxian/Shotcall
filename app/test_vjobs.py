@@ -258,11 +258,13 @@ def main():
     body = (
         "# t\n\n### U010-A｜6秒｜SH010\n\n```text\nsubject_definitions: a\n```\n\n"
         "### U010-B｜5秒｜SH011\n\n```text\nsubject_definitions: b\n```\n")
-    js = json.dumps([
-        {"id": "U010-A", "referenceImages": [], "referenceAudios": [],
+    js = json.dumps({"schemaVersion": 1, "units": [
+        {"id": "U010-A", "duration": 6, "shotIds": ["SH010"],
+         "referenceImages": [], "referenceAudios": [],
          "chainFrom": None, "continuation": None},
-        {"id": "U010-B", "referenceImages": [], "referenceAudios": [],
-         "chainFrom": "U010-A", "continuation": "same-shot"}])
+        {"id": "U010-B", "duration": 5, "shotIds": ["SH011"],
+         "referenceImages": [], "referenceAudios": [],
+         "chainFrom": "U010-A", "continuation": "same-shot"}]})
     (d3 / "minimax-h3-ref2va-v001.md").write_text(body + "\n```yoko-shots\n" + js + "\n```\n",
                                                  encoding="utf-8")
     us3 = {u["id"]: u for u in vjobs.parse_units(tmp, "N003")}

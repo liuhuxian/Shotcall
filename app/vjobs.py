@@ -265,6 +265,26 @@ def latest_prompt_file(d: Path):
     return max(files, key=ver)
 
 
+def shots_block(txt: str):
+    """解析 yoko-shots 块。只认新格式 {"schemaVersion":1,"units":[...]}。
+
+    返回 (units, error)；error 为 None 表示成功。
+    """
+    m = re.search(r"```yoko-shots\n(.*?)\n```", txt, re.S)
+    if not m:
+        return [], "缺少 yoko-shots 块"
+    try:
+        raw = json.loads(m.group(1))
+    except Exception as e:
+        return [], f"yoko-shots 块不是合法 JSON：{e}"
+    if isinstance(raw, list):
+        return [], "yoko-shots 是旧格式（裸数组），请改成 {schemaVersion, units}"
+    units = raw.get("units")
+    if not isinstance(units, list) or not units:
+        return [], "yoko-shots 块里没有 units 数组"
+    return units, None
+
+
 def parse_sync_refs(project: Path, scene: str) -> dict:
     """从视频提示词 md 的 yoko-shots 块里取每单元的参考图与资产 ID。"""
     d = project / VP_DIR / scene
@@ -274,12 +294,8 @@ def parse_sync_refs(project: Path, scene: str) -> dict:
     if not f:
         return {}
     txt = f.read_text(encoding="utf-8")
-    m = re.search(r"```yoko-shots\n(.*?)\n```", txt, re.S)
-    if not m:
-        return {}
-    try:
-        units = json.loads(m.group(1))
-    except Exception:
+    units, err = shots_block(txt)
+    if err:
         return {}
     out = {}
     for u in units:

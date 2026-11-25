@@ -432,6 +432,83 @@ def _run_guard(project: Path, args: list):
     return text.strip()
 
 
+PROMPT_KIND = "09 视频提示词"
+STATUS_ENUM = {"planning", "compiled"}
+FORMAT_ENUM = {"MiniMax H3", "Seedance 2.5", "Seedance 2.0"}
+
+
+def _headings(txt: str):
+    """正文里的单元标题：id -> (时长, 镜号)"""
+    out = {}
+    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+)秒｜([^\n]+)", txt, re.M):
+        out[m.group(1)] = (int(m.group(2)), m.group(3).strip())
+    return out
+
+
+def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
+    """登记视频提示词前的校验。返回问题清单，空表示通过。"""
+    import vjobs
+    f = project / rel
+    if not f.is_file():
+        return ["文件不存在"]
+    txt = f.read_text(encoding="utf-8")
+    units, err = vjobs.shots_block(txt)
+    if err:
+        return [err]
+    heads = _headings(txt)
+    problems = []
+    ids = [u.get("id") for u in units]
+    if sorted(ids) != sorted(heads.keys()):
+        problems.append(f"单元 id 与正文标题不一致：块 {ids} / 标题 {sorted(heads)}")
+    if len(set(ids)) != len(ids):
+        problems.append("单元 id 有重复")
+    for u in units:
+        uid = u.get("id")
+        h = heads.get(uid)
+        if h:
+            if u.get("duration") != h[0]:
+                problems.append(f"{uid}: duration={u.get('duration')} 与标题 {h[0]} 秒不一致")
+            if [str(x) for x in (u.get("shotIds") or [])] != [h[1]]:
+                problems.append(f"{uid}: shotIds={u.get('shotIds')} 与标题镜号 {h[1]} 不一致")
+        for key in ("referenceImages", "referenceAudios"):
+            for pth in u.get(key) or []:
+                if not (project / pth).exists():
+                    problems.append(f"{uid}: {key} 文件不存在 {pth}")
+        if u.get("promptStatus") not in STATUS_ENUM:
+            problems.append(f"{uid}: promptStatus 非法 {u.get('promptStatus')}")
+        if u.get("promptFormat") not in FORMAT_ENUM:
+            problems.append(f"{uid}: promptFormat 非法 {u.get('promptFormat')}")
+        if u.get("control") and u.get("promptStatus") == "compiled":
+            problems.append(f"{uid}: 实验单元不能是 compiled")
+        cf = u.get("chainFrom")
+        if cf and (cf not in heads or cf == uid):
+            problems.append(f"{uid}: chainFrom 指向不存在的单元 {cf}")
+    # 模型与来源一致
+    for key in ("modelId", "promptFormat"):
+        vals = {u.get(key) for u in units}
+        if len(vals) > 1:
+            problems.append(f"各单元 {key} 不一致：{vals}")
+    src = units[0].get("sourceShotPlan")
+    su = units[0].get("sourceGenerationUnits")
+    for label, path in (("sourceShotPlan", src), ("sourceGenerationUnits", su)):
+        if not path:
+            problems.append(f"缺少 {label}")
+            continue
+        full = project / path
+        if not full.exists():
+            problems.append(f"{label} 指向的文件不存在：{path}")
+            continue
+        from_ver = _ver(path)
+        if from_ver:
+            fam = re.sub(r"-v\d{3}(?:-\d+)?\.md$", "", path)
+            newer = [a["path"] for a in _all(project)
+                     if re.sub(r"-v\d{3}(?:-\d+)?\.md$", "", a.get("path", "")) == fam
+                     and _ver(a.get("path", "")) > from_ver]
+            if newer:
+                problems.append(f"{label} 指向旧版本 {path.split('/')[-1]}（存在更新版 {newer[0].split('/')[-1]}）")
+    return problems
+
+
 def _kind_for(step, rel: str) -> str:
     """同一张卡的多个产出共用 kind 会互相顶掉当前版，这里按路径取各自 kind。"""
     for x in (step.get("extra") or []):
@@ -475,6 +552,10 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     deps += _extra_deps(step, rel, project, scene)
     deps = list(dict.fromkeys(deps))
     kind = _kind_for(step, rel)
+    if kind == PROMPT_KIND:
+        problems = validate_prompt_file(project, rel, scene)
+        if problems:
+            raise ValueError("提示词文件校验未通过：" + "；".join(problems[:6]))
     if step.get("register") == "conclusion":
         args = ["register-conclusion", "--project", str(project), "--kind", kind,
                 "--scope", scope, "--path", rel, "--outcome", outcome]

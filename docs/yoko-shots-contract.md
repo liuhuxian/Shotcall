@@ -1,142 +1,104 @@
-# yoko-shots 字段契约 · v1 草案
+# yoko-shots 字段契约 · v1
 
-> 状态：**草案，未生效**。用于讨论，不改代码、不改数据。
-> 技能 `film-cinedance` 只规定意图（“要写明所依据的版本”“完整稿要能阅读”），
-> 没有定义字段名与必填项。这份文档补的就是那一层：机器可读的字段契约。
+> 状态：**已生效**（2026-11-25）。历史文件（v016 及更早）按旧格式保留，不再使用。
+> 技能 `film-cinedance` 规定意图，本文规定字段。两者冲突时以本文为准。
 
 ## 一、定位
 
 | 问题 | 答案 |
 |---|---|
-| 谁写它 | 写视频提示词的那次任务（09 卡片的“模型提示词”半段） |
-| 谁读它 | 工作台服务端：生成台读单元列表、参考图、音色、接续关系 |
-| 存在哪 | 提示词文件末尾的 ` ```yoko-shots ` 代码块，与正文同文件 |
-| 什么时候变 | 每次新增提示词版本时重写；同一文件内不得只改一半 |
+| 谁写 | 写视频提示词的那次任务（09 卡片的“模型提示词”部分） |
+| 谁读 | 工作台服务端：生成台读单元、参考图、音色、接续 |
+| 在哪 | 提示词文件末尾的 ` ```yoko-shots ` 块 |
+| 何时变 | 每次新增提示词版本时重写 |
 
-**一句话**：正文给人看和给模型读，yoko-shots 给程序读。两者必须描述同一批单元。
+正文给人看、给模型读；`yoko-shots` 给程序读。两者描述同一批单元。
 
-## 二、字段总表
+## 二、块格式
 
-三类归属：**[写]** 由作者写进文件；**[推]** 由工作台运行时推导，文件里不写；**[弃]** 已废弃，新版本不再写。
+```json
+{"schemaVersion": 1, "units": [ … ]}
+```
 
-### 2.1 单元标识
+`units` 非空；每个元素是一个生成单元。
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `id` | string | 是 | 写 | 单元编号 `U001`、`U001-B`；**必须**与正文 `### 标题` 里的编号一致 |
-| `shotIds` | string[] | 是 | 写 | 覆盖的镜号，如 `["SH001"]`；与标题第三个字段一致 |
-| `duration` | number | 是 | 写 | 秒；与标题里“N秒”一致 |
-| `label` | string | 否 | 写 | 人类可读名，如 `N001 U001｜SH001`；不参与逻辑 |
-| `sceneId` | string | 是 | 写 | 场次号 `N001`，用于跨场取单元 |
-| `unitId` | string | 否 | 弃 | 与 `id` 重复，新版本不再写 |
+## 三、单元字段
 
-### 2.2 时长与画幅
+### 3.1 标识与时长
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `duration` | number | 是 | 写 | 见上；实际帧数由 `17n+5` 规则从它推导，不写进文件 |
-| `aspectRatio` | string | 是 | 写 | `"16:9"`；分辨率由生成台选择，此字段只作意图声明 |
-| `resolution` | string\|null | 否 | 弃 | 文件里不写；实际分辨率见 [推] 部分 |
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | string | 是 | `U001`、`U001-B`；与正文 `### 标题` 编号一致 |
+| `shotIds` | string[] | 是 | 覆盖镜号；与标题第三个字段一致 |
+| `duration` | number | 是 | 秒；与标题“N秒”一致 |
 
-### 2.3 模型与状态
+### 3.2 模型
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `modelId` | string | 是 | 写 | `minimax-h3` 等；同一文件内所有单元必须一致 |
-| `promptFormat` | string | 是 | 写 | `MiniMax H3` / `Seedance 2.5` …；与 skill 列出的枚举一致 |
-| `promptStatus` | `planning`\|`compiled` | 是 | 写 | 只有编译完、可直接投产的才是 `compiled`；其余必须 `planning` |
-| `approvalStatus` | string | 否 | 弃 | 由工作台审批账本决定，文件里写死会与真实状态脱节 |
-| `inputMode` | string | 否 | 写 | `Ref2VA` / `I2V` / `T2V`；影响提交时走哪条建图路径 |
-| `control` | boolean | 否 | 写 | 标记 A/B 对照、实验单元；生成台默认不展示、不允许提交 |
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `modelId` | string | 是 | 如 `minimax-h3`；同文件内一致 |
+| `promptFormat` | string | 是 | `MiniMax H3` / `Seedance 2.5` / `Seedance 2.0` |
+| `promptStatus` | `planning` \| `compiled` | 是 | 只有可直接投产的才是 `compiled` |
 
-### 2.4 参考素材
+### 3.3 画幅
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `referenceImages` | string[] | 是 | 写 | 项目内相对路径，**顺序即 `<Picture n>`**；空数组表示无参考图 |
-| `referenceImageRoles` | object[] | 是（有图时） | 写 | `{index, label, assetId, role}`；`index` 从 1 开始，与数组顺序对应 |
-| `referenceAudios` | string[] | 否 | 写 | 项目内相对路径，顺序即 `<Audio n>` |
-| `referenceAudioRoles` | object[] | 否 | 写 | `{index, label, assetId, role}` |
-| `assetIds` | string[] | 否 | 写 | 参考图对应的资产 ID（`C01--C01-A`）；**不写资产内容** |
-| `assetBindings` | object[] | 否 | 弃 | 每条重复存资产详情，冗余且易过期；由工作台按 `assetIds` 查绑定 |
-| `referenceVideos` | string[] | 否 | 写 | 首帧/尾帧参考视频路径；没有就写空数组 |
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `aspectRatio` | string | 是 | `16:9` 等；分辨率在投产时确定 |
 
-### 2.5 接续
+### 3.4 素材
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `chainFrom` | string\|null | 是 | 写 | 用哪个单元的**末帧**作为本单元首帧；必须指向同文件内已存在的 `id` 或为 `null` |
-| `continuation` | `same-shot`\|`next-shot`\|null | 否 | 写 | `same-shot`＝同一镜头被拆开；`next-shot`＝真实切镜；`null`＝无接续 |
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `referenceImages` | string[] | 是 | 项目内相对路径，顺序即 `<Picture n>`；可为空数组 |
+| `referenceImageRoles` | object[] | 有图时必填 | `{index, label, assetId, role}`，`index` 从 1 起 |
+| `referenceAudios` | string[] | 否 | 顺序即 `<Audio n>` |
+| `referenceAudioRoles` | object[] | 否 | `{index, label, assetId, role}` |
 
-### 2.6 来源（治理关键）
+### 3.5 接续
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `sourceShotPlan` | string | 是 | 写 | 所依据的镜头表路径+版本，如 `09-…/shot-plan-v001.md` |
-| `sourceGenerationUnits` | string | 是 | 写 | 所依据的生成单元规划路径+版本 |
-| `sourcePromptVersion` | string\|null | 否 | 写 | 从哪一版提示词继承；全新写则为 `null` |
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `chainFrom` | string \| null | 是 | 用哪个单元的末帧作首帧；须是同文件内其他 `id` |
+| `continuation` | `same-shot` \| `next-shot` \| null | 否 | 同镜分段 / 真实切镜 / 无接续 |
 
-**这三项是判断“提示词是否过期”的唯一依据，写错等于写假账。**
+### 3.6 来源
 
-### 2.7 正文
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `sourceShotPlan` | string | 是 | 所依据镜头表路径；须是当前确认版 |
+| `sourceGenerationUnits` | string | 是 | 所依据生成单元规划路径；须是当前确认版 |
 
-| 字段 | 类型 | 必填 | 归属 | 说明 |
-|---|---|---|---|---|
-| `prompt` | string | 否 | 弃 | 正文只写在 ` ```text ` 块里；数据块不再重复存正文 |
+### 3.7 实验单元
 
-技能原话是“正式完整稿必须可在 09 成果文档中阅读，不能只把词藏在数据块里”。
-在数据块里复制一份正文，既违反这个本意，也让两处必然漂移（v016 里它占 58% 体积）。
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `control` | boolean | 否 | `true` 表示 A/B 对照等实验单元，状态只能是 `planning` |
 
-### 2.8 由工作台推导（文件里不写）
+## 四、由工作台推导（文件里不写）
 
 | 项 | 来源 |
 |---|---|
 | 实际分辨率、步数、工作流 | 提交时生成台的选择 |
-| 确认状态、确认时间 | 审批账本 `制作运行/approvals.jsonl` |
+| 确认状态与时间 | 审批账本 `制作运行/approvals.jsonl` |
 | 是否过期 | 与 `source*` 对应文件的 sha 比较 |
 | 帧数 | `duration` 按 `17n+5` 换算 |
-| 资产详情（图/绑定版本） | 按 `assetIds` 查 `资产绑定/` |
+| 资产细节 | 按 `referenceImageRoles.assetId` 查 `资产绑定/` |
 
-## 三、块级字段
+## 五、登记校验
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `schemaVersion` | number | 是 | 本契约的版本，当前 `1`；历史文件缺省按 1 宽松解析 |
+登记 09 视频提示词时逐条检查，任一不过即拒绝：
 
-> 建议格式从“裸数组”改为“对象包数组”：
-> ```json
-> {"schemaVersion": 1, "units": [ … ]}
-> ```
-> 这样以后加字段不必再改解析器。
-
-## 四、登记时的校验（建议）
-
-09 卡片登记视频提示词时，按顺序检查，任一不过就拒绝登记：
-
-1. 文件里有且只有一个 ` ```yoko-shots ` 块，能被 JSON 解析
-2. `id` 集合与正文 `### U…` 标题集合**完全相等**（不多不少）
+1. 有且只有一个 `yoko-shots` 块，且是 `{schemaVersion, units}` 格式
+2. `id` 集合与正文 `### U…` 标题集合完全相等
 3. 每个单元的 `duration`、`shotIds` 与标题一致
-4. `id` 唯一；`chainFrom` 引用的 id 存在且不是自己
-5. `referenceImages` / `referenceAudios` 里的文件在项目内**真实存在**
-6. 所有单元 `modelId`、`promptFormat` 一致；`promptStatus` 只能是两个枚举值
-7. `sourceShotPlan` / `sourceGenerationUnits` 指向的文件**存在且是当前确认版**
-8. 没有 `control: true` 的单元以 `compiled` 状态出现（实验单元不得投产）
+4. `id` 唯一；`chainFrom` 指向同文件内其他存在的 `id`
+5. `referenceImages`、`referenceAudios` 列出的文件在项目内存在
+6. 全文件 `modelId`、`promptFormat` 一致；`promptStatus` 在枚举内
+7. `sourceShotPlan`、`sourceGenerationUnits` 指向的文件存在且为当前确认版
+8. `control: true` 的单元状态为 `planning`
 
-## 五、兼容与迁移
+## 六、与旧格式的关系
 
-| 场景 | 处理 |
-|---|---|
-| 历史文件（v001–v016） | 不回改。解析器继续兼容：缺字段按默认值、`prompt` 字段忽略、`approvalStatus` 忽略 |
-| 新文件（v017 起） | 必须符合本契约；工作台在登记时校验 |
-| 旧字段何时删 | `unitId`、`assetBindings`、`resolution`、`approvalStatus`、`prompt` 先从“必填”降为“忽略”，下一个大版本再彻底移除 |
-
-## 六、需要你拍板的三点
-
-1. **正文是否允许在数据块里重复？**
-   我建议不允许（只留 `text` 块）。代价：要改解析器，让它从正文取文本（目前已是从正文取，所以影响很小）。
-
-2. **`promptStatus` 的判定谁负责？**
-   建议：写文件时由作者标；登记时工作台校验“标了 compiled 就必须有 yoko-shots 且来源齐全”，不满足则降级为 planning 并提示。
-
-3. **实验/对照单元怎么处理？**
-   建议：加 `control: true`，生成台默认隐藏；或者干脆不进生产文件，另存到 `视频提示词/N001/_experiments/`。
+v016 及更早的块是裸数组、含 `prompt` 副本与 `resolution` 等字段，工作台按新契约解析时不识别；
+这些版本保留在项目里作为历史记录，新生成一律使用本契约格式。
