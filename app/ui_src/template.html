@@ -1795,6 +1795,12 @@ function sAssetsPage(){
         ${(!aud && img)?`<img src="/api/proj/file?p=${encodeURIComponent(b.image)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(b.image)}')"
              style="width:100%;height:110px;object-fit:cover;display:block;cursor:zoom-in">
             <div class="dim" style="font-size:10px;padding:2px 6px">点击放大</div>`
+          :(!aud && a.preview)?`<div style="position:relative">
+              <img src="/api/proj/file?p=${encodeURIComponent(a.preview)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(a.preview)}')"
+                style="width:100%;height:110px;object-fit:cover;display:block;cursor:zoom-in;opacity:.92">
+              <span class="badge b-warn" style="position:absolute;left:6px;top:6px;font-size:9px">候选 ${a.candidates||1} 张 · 未采用</span>
+            </div>
+            <div class="dim" style="font-size:10px;padding:2px 6px">点开可放大 / 采用</div>`
           :`<div style="height:110px;display:flex;align-items:center;justify-content:center" class="dim">未绑定</div>`}
         <div style="padding:7px 9px">
           <div class="mono dim" style="font-size:10px">${esc(a.id)}</div>
@@ -1804,6 +1810,7 @@ function sAssetsPage(){
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
               ${a.bound?`<span class="badge b-ok" style="font-size:9.5px">${esc(b.version)}</span>`
               :a.ignored?`<span class="badge b-mut" style="font-size:9.5px">已忽略</span>`
+              :a.preview?`<span class="badge b-warn" style="font-size:9.5px">有候选待采用</span>`
               :`<span class="badge b-warn" style="font-size:9.5px">待补</span>`}
               ${assetReviewBadge(a.approval)}
             </div>

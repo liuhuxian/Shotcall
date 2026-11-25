@@ -442,6 +442,22 @@ def build(project: Path) -> dict:
                            "bound": bool(it.get("bound"))})
     except Exception:
         pass
+    # 未绑定的资产：用最近生成的一张候选当缩略图，方便看进度
+    cand_root = project / "07-图像资产/候选图片"
+    for a in assets:
+        if a.get("type") == "voice" or a.get("bound"):
+            continue
+        d = cand_root / a["id"]
+        if not d.is_dir():
+            continue
+        imgs = [f for f in d.iterdir()
+                if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        if not imgs:
+            continue
+        newest = max(imgs, key=lambda f: f.stat().st_mtime)
+        a["preview"] = str(newest.relative_to(project))
+        a["candidates"] = len(imgs)
+
     prompts = parse_prompts(project)
     descriptors = parse_descriptors(project)
     histories = slot_history(project)
