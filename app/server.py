@@ -3139,6 +3139,12 @@ def start_background():
     except Exception as e:
         print("[resume] 出错：", e, flush=True)
     try:
+        rec = imgjobs.reconcile(PROJECT)
+        if rec.get("healed") or rec.get("failed"):
+            print(f"[reconcile] 补回 {len(rec['healed'])} 个，中断 {len(rec['failed'])} 个", flush=True)
+    except Exception as e:
+        print("[reconcile] 出错：", e, flush=True)
+    try:
         ri = imgjobs.resume(PROJECT)
         if ri:
             print("[resume] 图片重新排队：", ri, flush=True)

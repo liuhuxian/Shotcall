@@ -17,6 +17,7 @@ import sched
 import store
 
 _lock = threading.Lock()
+_LIVE = set()       # 本进程里确实有线程在执行的任务
 _jobs = {}          # job_id -> dict
 _order = []
 JOBS_FILE = Path(os.environ.get("SHOTCALL_IMGJOBS_FILE")
@@ -47,6 +48,22 @@ def _load():
     with _lock:
         _jobs.update({k: v for k, v in (data.get("jobs") or {}).items()})
         _order.extend(x for x in (data.get("order") or []) if x in _jobs)
+
+
+
+def reap_orphans() -> int:
+    """再兜一次：把没有线程在跑却仍标 running 的任务收掉。"""
+    n = 0
+    with _lock:
+        for jid, j in _jobs.items():
+            if j.get("status") in ("running", "queued", "dispatched") and jid not in _LIVE:
+                j["status"] = "failed"
+                j["error"] = "没有执行线程，任务中断"
+                j["finishedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                n += 1
+    if n:
+        _save()
+    return n
 
 
 def _safe_name(name: str) -> str:
@@ -199,6 +216,7 @@ def _make_runner(project: Path, ep: str, jid: str, out_root: str = None):
 
 
 def _execute_codex(project: Path, ep: str, jid: str, out_root: str = None):
+    _LIVE.add(jid)
     """用 Codex 订阅通道出图；失败写进任务错误。"""
     import codexchan
     job = dict(_jobs.get(jid) or {})
@@ -224,10 +242,13 @@ def _execute_codex(project: Path, ep: str, jid: str, out_root: str = None):
             if jid in _jobs:
                 _jobs[jid]["status"] = "failed"
                 _jobs[jid]["error"] = f"{type(e).__name__}: {e}"[:300]
+    finally:
+        _LIVE.discard(jid)
     _save()
 
 
 def _execute(project: Path, ep: str, jid: str, job: dict, out_root: str = None):
+    _LIVE.add(jid)
     try:
         ref_files = []
         ref_paths = job.get("refs") or ([job["ref"]] if job.get("ref") else [])
@@ -264,7 +285,9 @@ def _execute(project: Path, ep: str, jid: str, job: dict, out_root: str = None):
             if jid in _jobs:
                 _jobs[jid]["status"] = "failed"
                 _jobs[jid]["error"] = f"{e}"
-        _save()
+    finally:
+        _LIVE.discard(jid)
+    _save()
 
 
 def _rel(project: Path, out: Path) -> str:
@@ -295,6 +318,55 @@ def _stage_ref(port: int, path: Path):
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read().decode())
     return d.get("name") or name
+
+
+def reconcile(project: Path) -> dict:
+    """进程重启后处理遗留任务：
+    - running 且有 promptId：去 ComfyUI history 找结果，找到就补落盘；找不到标失败
+    - running 的 codex 任务：没有线程了，标失败
+    """
+    healed, failed = [], []
+    with _lock:
+        todo = [dict(_jobs[j]) for j in _order
+                if (_jobs.get(j) or {}).get("status") in ("running", "dispatched")
+                and j not in _LIVE]
+    for job in todo:
+        jid = job["id"]
+        if job.get("channel") == "codex":
+            with _lock:
+                _jobs[jid].update({"status": "failed", "error": "进程重启，Codex 任务中断",
+                                   "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+            failed.append(jid)
+            continue
+        pid = job.get("promptId")
+        port = job.get("port")
+        got = None
+        if pid and port:
+            try:
+                h = imagegen.history(port, pid)
+                entry = h.get(pid) or {}
+                if entry.get("status", {}).get("completed"):
+                    imgs = [i for v in entry.get("outputs", {}).values() for i in v.get("images", [])]
+                    if imgs:
+                        data = imagegen.download(port, imgs[0])
+                        out = _job_dir(project, job.get("ep") or "EP002", job.get("asset"),
+                                       job.get("outRoot")) / f"{job.get('seed')}.png"
+                        out.write_bytes(data)
+                        got = _rel(project, out)
+            except Exception:
+                got = None
+        with _lock:
+            if got:
+                _jobs[jid].update({"status": "done", "file": got, "error": None,
+                                   "seconds": _jobs[jid].get("seconds") or 0})
+                healed.append(jid)
+            else:
+                _jobs[jid].update({"status": "failed", "error": "进程重启，任务中断（ComfyUI 里没有结果）",
+                                   "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+                failed.append(jid)
+    if healed or failed:
+        _save()
+    return {"healed": healed, "failed": failed}
 
 
 def resume(project: Path) -> list:

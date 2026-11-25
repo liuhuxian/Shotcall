@@ -716,6 +716,7 @@ function queueHtml(d){
   const now = Date.now()/1000;
   const rows = jobs.map((j,i)=>{
     const LABEL = {running:'生成中', waiting:'ComfyUI 排队', dispatched:'已派发', queued:'待派卡', aborted:'已中断'};
+    const isCloud = String(j.channel||'').toLowerCase()==='codex';
     const running = j.status === 'running';
     const wait = j.startedAt ? Math.round(now - j.startedAt) : (j.queuedAt ? Math.round(now - j.queuedAt) : 0);
     const color = running ? 'var(--acc)' : (j.status === 'waiting' ? 'var(--warn)' : 'var(--dim)');
@@ -724,7 +725,7 @@ function queueHtml(d){
       <td style="width:78px"><span class="badge ${running?'b-acc':(j.status==='waiting'?'b-warn':'b-mut')}" style="font-size:10px">${LABEL[j.status]||j.status}</span></td>
       <td class="mono" style="width:74px">${j.unit||'—'}${j.seq?` #${j.seq}`:''}</td>
       <td class="dim" style="width:56px">${j.kind==='video'?'视频':'图片'}</td>
-      <td class="dim mono" style="width:70px">${j.card!=null?('卡'+j.card):'待分配'}</td>
+      <td class="dim mono" style="width:70px">${isCloud?'<span class="badge b-acc" style="font-size:9.5px">Codex 云端</span>':(j.card!=null?('卡'+j.card):'待分配')}</td>
       <td class="dim mono" style="width:80px">${j.seconds?j.seconds+'秒/'+j.frames+'帧':''}</td>
       <td class="dim" style="width:70px">${j.kind==='video'?(j.refs?('参考图 '+j.refs+' 张'):'无参考图'):'—'}</td>
       <td class="dim mono" style="width:92px">${running
