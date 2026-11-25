@@ -225,7 +225,7 @@ def _match(step, path: str, scene: str = None, which: list = None, episode: str 
         if not ep or m.group(1) != ep:
             return None
         return int(m.group(2)) if has_ver else 0
-    return int(m.group(1)) if has_ver else 0
+    return int(m.group(1)) if (m.lastindex or 0) >= 1 else 0   # 全项目阶段：版本号就在第 1 组
 
 
 _ALL_MEMO = {"key": None, "rows": None}
