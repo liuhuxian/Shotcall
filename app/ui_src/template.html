@@ -2177,7 +2177,7 @@ function sImageGen(){
 }
 
 /* ---------- 流程 · 提示词 / 登记 ---------- */
-let FLOW = {data:null, scene:null, sel:null, loading:false};
+let FLOW = {data:null, scene:null, episode:null, sel:null, loading:false};
 let AGCFG = null;
 let ART_PICK = {};      // 成果家族 -> 选中的版本路径（同族只显示一条，先选后确认）
 const FLOW_STATUS = {confirmed:['b-ok','已确认'], draft:['b-warn','草稿待确认'],
@@ -2227,16 +2227,18 @@ async function saveAgentCfg(){
   AGCFG=j; toast('已保存 Agent：'+agent+' / '+model); render();
 }
 
-async function loadFlow(scene, force){
-  if(!force && FLOW.data && FLOW.scene===scene) return FLOW.data;
+async function loadFlow(scene, force, episode){
+  const ep = episode || FLOW.episode || state.ep || '';
+  if(!force && FLOW.data && FLOW.scene===scene && (FLOW.episode||'')===(ep||'')) return FLOW.data;
   FLOW.loading = true;
   try{
     const ctl = new AbortController();
     const timer = setTimeout(()=>ctl.abort(), 20000);
-    const r = await fetch('/api/workflow/steps?scene='+encodeURIComponent(scene), {signal: ctl.signal});
+    const q = '/api/workflow/steps?scene='+encodeURIComponent(scene)+(ep?'&episode='+encodeURIComponent(ep):'');
+    const r = await fetch(q, {signal: ctl.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error('HTTP '+r.status);
-    FLOW.data = await r.json(); FLOW.scene = scene;
+    FLOW.data = await r.json(); FLOW.scene = scene; FLOW.episode = FLOW.data.episode || ep || null;
   }
   catch(e){ FLOW.data={steps:[],error:String(e)}; }
   FLOW.loading = false;
@@ -2259,7 +2261,7 @@ function copyFlow(key, btn){
 async function registerFlow(key){
   const st=(FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key) || {};
   if(!(st.newFiles||[]).length) return toast('没有未登记的新文件：先让 Agent 写下一版');
-  const body={step:key, scene:FLOW.scene||'N001'};
+  const body={step:key, scene:FLOW.scene||'N001', episode:FLOW.episode||state.ep||''};
   const fs=document.getElementById('flow-file-'+key);
   if(fs && fs.value) body.path=fs.value;
   const sel=document.getElementById('flow-outcome-'+key);
@@ -2280,7 +2282,7 @@ async function confirmFlow(key){
   const path=sel?sel.value:drafts[0].path;
   if(!window.confirm('确认 '+(st.name||key)+' 的 '+path+'？\n确认后它会成为当前版本，旧版保留，下游可能被标记待复核。')) return;
   const r=await fetch('/api/workflow/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path})});
+    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path, episode:FLOW.episode||state.ep||''})});
   const j=await r.json();
   if(!r.ok) return toast(j.error||'确认失败');
   toast('已确认：'+(j.path||key));
@@ -2290,7 +2292,7 @@ async function confirmFlow(key){
 
 async function dispatchFlow(key){
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key,scene:FLOW.scene||'N001'})});
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:FLOW.episode||state.ep||''})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
   if(j.started) toast('已派给 Agent：'+j.task.id+'（'+(j.task.agent||'')+' / '+(j.task.model||'')+'）');
   else if(j.reason) toast('未启动：'+j.reason);
@@ -2302,7 +2304,7 @@ async function returnFlow(key){
   const note=prompt('退回修改的原因（会写进流程记录）：');
   if(note===null) return;
   const r=await fetch('/api/workflow/return',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',note})});
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',note,episode:FLOW.episode||state.ep||''})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'退回失败');
   toast('已记录退回：'+(j.record?.note||''));
   FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
@@ -2357,7 +2359,14 @@ function sFlow(onlyStage){
         ${news?` · <span style="color:var(--acc)">${news} 新文件</span>`:''}${drafts?` · <span style="color:var(--warn)">${drafts} 草稿</span>`:''}</div>
     </div>`;
   }).join("");
-  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}'})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
+  const curEp = FLOW.episode || (FLOW.data&&FLOW.data.episode) || '';
+  const epList = (FLOW.data&&FLOW.data.episodes) || [];
+  const epTabs = epList.length?`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <span class="dim" style="font-size:11px">集</span>
+    ${epList.map(e=>`<span onclick="go('stages',{wf:'flow',scene:'${scene}',ep:'${e}'})" style="cursor:pointer;padding:3px 8px;border-radius:6px;font-size:11px;
+      border:1px solid ${e===curEp?'var(--acc)':'var(--line)'};color:${e===curEp?'var(--acc)':'#8b95a6'}">${e}</span>`).join("")}
+  </div>`:'';
+  const tabs=(d.scenes||[]).map(x=>`<span onclick="go('stages',{wf:'flow',scene:'${x.id}',ep:state.ep||''})" style="cursor:pointer;padding:4px 9px;border-radius:6px;font-size:11px;
     border:1px solid ${x.id===scene?'var(--acc)':'var(--line)'};color:${x.id===scene?'var(--acc)':'#8b95a6'}">${x.id}</span>`).join(" ");
   const cards=steps.map(st=>{
     const is06=st.key==='06';
@@ -2446,7 +2455,7 @@ function sFlow(onlyStage){
         <div class="ph"><span>阶段</span><span class="dim">01 → 09b</span></div>
         <div class="pb" style="padding:8px">${nav}</div>
       </div>
-      <div style="flex:1;min-width:0">${cards}${inlineViewer()}</div>
+      <div style="flex:1;min-width:0">${epTabs}${cards}${inlineViewer()}</div>
     </div>`;
 }
 

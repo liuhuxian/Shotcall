@@ -91,23 +91,23 @@ STEPS = [
          output="04-分场大纲/treatment-{v}.md", deps=["01", "02", "03"],
          prompt=_prompt("04", "分场大纲", "film-treatment", ["01/02/03 已确认版；原著章节范围"], "04-分场大纲/treatment-vNNN.md", "全项目")),
     dict(key="05", no="05", stage="05", name="正式剧本", skill="film-screenplay",
-         kind="05 剧本深度融合", scope="全项目",
-         pattern=r"^05-正式剧本/screenplay-v(\d{3})(?:-\d+)?\.md$",
-         output="05-正式剧本/screenplay-{v}.md", deps=["04", "02", "03"],
+         kind="05 剧本深度融合", scope="{episode}",
+         pattern=r"^05-正式剧本/(E\d{3})/screenplay-v(\d{3})(?:-\d+)?\.md$",
+         output="05-正式剧本/{episode}/screenplay-{v}.md", deps=["04", "02", "03"],
          extra=[dict(label="时长复核", kind="05 成稿时长复核",
-                     pattern=r"^05-正式剧本/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
-                     output="05-正式剧本/screenplay-timing-audit-{v}.md"),
+                     pattern=r"^05-正式剧本/(E\d{3})/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/{episode}/screenplay-timing-audit-{v}.md"),
                 dict(label="小说对账", kind="05 小说改编对账", deps=["primary"],
-                     pattern=r"^05-正式剧本/novel-adaptation-audit-v(\d{3})(?:-\d+)?\.md$",
-                     output="05-正式剧本/novel-adaptation-audit-{v}.md"),
+                     pattern=r"^05-正式剧本/(E\d{3})/novel-adaptation-audit-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/{episode}/novel-adaptation-audit-{v}.md"),
                 dict(label="生产拆解", kind="05 生产拆解（07入口派生）", deps=["primary"],
-                     pattern=r"^05-正式剧本/production-breakdown-v(\d{3})(?:-\d+)?\.md$",
-                     output="05-正式剧本/production-breakdown-{v}.md")],
+                     pattern=r"^05-正式剧本/(E\d{3})/production-breakdown-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/{episode}/production-breakdown-{v}.md")],
          prompt=_prompt_05()),
     dict(key="06", no="06", stage="06", name="剧本压力测试（可选）", skill="film-stress-test",
-         kind="06 剧本压力测试", scope="全项目", register="conclusion",
-         pattern=r"^06-剧本压力测试/stress-test-report-v(\d{3})(?:-\d+)?\.md$",
-         output="06-剧本压力测试/stress-test-report-{v}.md", deps=["05"],
+         kind="06 剧本压力测试", scope="{episode}", register="conclusion",
+         pattern=r"^06-剧本压力测试/(E\d{3})/stress-test-report-v(\d{3})(?:-\d+)?\.md$",
+         output="06-剧本压力测试/{episode}/stress-test-report-{v}.md", deps=["05"],
          prompt=_prompt("06", "剧本压力测试", "film-stress-test", ["05 已确认版"], "06-剧本压力测试/stress-test-report-vNNN.md", "全项目")),
     dict(key="07", no="07", stage="07", name="Lira 图像资产", skill="film-lira-assets",
          kind="07 Lira 图像资产", scope="全项目",
@@ -163,12 +163,50 @@ STATUS = {"已确认-当前": "confirmed", "外部提供-已确认": "confirmed"
           "缺文件-阻断": "missing"}
 
 
+def episodes_of(project: Path) -> list:
+    """从 04 分场大纲的「分集目录」表解析集号列表。"""
+    latest = None
+    for a in _all(project):
+        m = re.search(r"^04-分场大纲/treatment-v(\d{3})", a.get("path", ""))
+        if m and (latest is None or int(m.group(1)) > _ver(latest)):
+            latest = a["path"]
+    if not latest:
+        return []
+    f = project / latest
+    if not f.is_file():
+        return []
+    out = []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\|\s*(E\d{3})\s*\|", line)
+        if m and m.group(1) not in out:
+            out.append(m.group(1))
+    return out
+
+
+def scene_episode(project: Path, scene: str) -> str | None:
+    """场次 N001 属于哪一集。优先读 04 大纲的逐场标题，其次读剧本。"""
+    for a in _all(project):
+        path = a.get("path", "")
+        if not re.search(r"^(04|05)-", path):
+            continue
+        f = project / path
+        if not f.is_file():
+            continue
+        m = re.search(rf"{re.escape(scene)}\s*[／/]\s*(E\d{{3}})", f.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1)
+    return None
+
+
 def _ver(path: str) -> int:
     m = VER.search(path or "")
     return int(m.group(1)) if m else 0
 
 
-def _match(step, path: str, scene: str = None, which: list = None):
+_CUR = {"episode": None}
+
+
+def _match(step, path: str, scene: str = None, which: list = None, episode: str = None):
     """匹配主产出或附带产出；which 传入时把命中的类型名追加上去。"""
     pats = [(step["pattern"], "main")] + [(x["pattern"], x["label"]) for x in (step.get("extra") or [])]
     m = None
@@ -185,6 +223,11 @@ def _match(step, path: str, scene: str = None, which: list = None):
         if not scene or m.group(1) != scene:
             return None
         return int(m.group(2)) if has_ver else 0
+    if step["scope"] == "{episode}":
+        ep = episode or _CUR.get("episode")
+        if not ep or m.group(1) != ep:
+            return None
+        return int(m.group(2)) if has_ver else 0
     return int(m.group(1)) if has_ver else 0
 
 
@@ -192,12 +235,12 @@ def _all(project: Path):
     return artifacts.build(project).get("artifacts") or []
 
 
-def _latest(project: Path, step, scene=None, main_only: bool = True):
+def _latest(project: Path, step, scene=None, main_only: bool = True, episode=None):
     rows = []
     for a in _all(project):
         if main_only and not re.search(step["pattern"], a.get("path", "")):
             continue
-        ver = _match(step, a.get("path", ""), scene)
+        ver = _match(step, a.get("path", ""), scene, None, episode)
         if ver is not None:
             rows.append((ver, a.get("mtime") or 0, a))
     if not rows:
@@ -206,7 +249,7 @@ def _latest(project: Path, step, scene=None, main_only: bool = True):
     return rows[-1][2]
 
 
-def _new_file(project: Path, step, scene=None):
+def _new_file(project: Path, step, scene=None, episode=None):
     """目录里存在、但登记表里还没有的 vNNN 文件。"""
     known = {a.get("path") for a in _all(project)}
     best = None
@@ -216,7 +259,7 @@ def _new_file(project: Path, step, scene=None):
         if not p.is_file() or p.suffix != ".md":
             continue
         rel = str(p.relative_to(project))
-        ver = _match(step, rel, scene)
+        ver = _match(step, rel, scene, None, episode)
         if ver is None or rel in known:
             continue
         if best is None or (ver, p.stat().st_mtime) > best[0]:
@@ -224,16 +267,20 @@ def _new_file(project: Path, step, scene=None):
     return best[1] if best else None
 
 
-def _new_files(project: Path, step, scene=None):
+def _new_files(project: Path, step, scene=None, episode=None):
     rows_all = _all(project)
     known = {a.get("path") for a in rows_all}
     pats = [step["pattern"]] + [x["pattern"] for x in (step.get("extra") or [])]
     tops = {}
-    def _mver(m, scene_scope):
+    def _mver(m, scene_scope, ep=None):
         if not m:
             return None
         if scene_scope:
             if m.group(1) != scene:
+                return None
+            return int(m.group(2)) if (m.lastindex or 0) >= 2 else 0
+        if step["scope"] == "{episode}":
+            if not ep or m.group(1) != ep:
                 return None
             return int(m.group(2)) if (m.lastindex or 0) >= 2 else 0
         return int(m.group(1)) if (m.lastindex or 0) >= 1 else 0
@@ -241,7 +288,8 @@ def _new_files(project: Path, step, scene=None):
     for pat in pats:                      # 每个产出各自已登记到第几版
         vs = []
         for a in rows_all:
-            v = _mver(re.search(pat, a.get("path", "")), step["scope"] == "{scene}")
+            mm = re.search(pat, a.get("path", ""))
+            v = _mver(mm, step["scope"] == "{scene}", episode)
             if v is not None:
                 vs.append(v)
         tops[pat] = max(vs, default=0)
@@ -252,7 +300,7 @@ def _new_files(project: Path, step, scene=None):
         rel = str(p.relative_to(project))
         for pat in pats:
             m = re.search(pat, rel)
-            ver = _mver(m, step["scope"] == "{scene}")
+            ver = _mver(m, step["scope"] == "{scene}", episode)
             if ver is None:
                 continue
             if rel in known or ver <= tops[pat]:
@@ -263,11 +311,11 @@ def _new_files(project: Path, step, scene=None):
     return [r[2] for r in rows]
 
 
-def _versions(project: Path, step, scene=None):
+def _versions(project: Path, step, scene=None, episode=None):
     rows = []
     for a in _all(project):
         which = []
-        ver = _match(step, a.get("path", ""), scene, which)
+        ver = _match(step, a.get("path", ""), scene, which, episode)
         if ver is None:
             continue
         rows.append({"path": a["path"], "version": f"v{ver:03d}", "label": which[0] if which else "主产出",
@@ -301,12 +349,15 @@ def _next_ver(project: Path, step, scene=None):
     return (_ver(a["path"]) + 1) if a else 1
 
 
-def _inputs(project: Path, step, scene=None):
+def _inputs(project: Path, step, scene=None, episode=None):
     out = []
     for key in step.get("deps") or []:
         dep = BY_KEY.get(key)
         if dep:
-            a = _latest(project, dep, scene if dep["scope"] == "{scene}" else None)
+            dep_ep = None
+            if dep["scope"] == "{episode}":
+                dep_ep = episode or (scene_episode(project, scene) if scene else None)
+            a = _latest(project, dep, scene if dep["scope"] == "{scene}" else None, episode=dep_ep)
             if a:
                 out.append(a["path"])
     # 额外输入：同场某类文件的最新一版（如 09b 要读生成单元规划）
@@ -330,12 +381,18 @@ def _inputs(project: Path, step, scene=None):
     return out
 
 
-def _render(step, project, scene):
-    scope = scene if step["scope"] == "{scene}" else ("全项目" if step["scope"] == "全项目" else step["scope"])
-    latest = _latest(project, step, scene)
+def _render(step, project, scene, episode=None):
+    if step["scope"] == "{scene}":
+        scope = scene
+    elif step["scope"] == "{episode}":
+        scope = episode or _CUR.get("episode") or (scene_episode(project, scene) if scene else None) or "E001"
+    else:
+        scope = "全项目" if step["scope"] == "全项目" else step["scope"]
+    _CUR["episode"] = scope if step["scope"] == "{episode}" else _CUR.get("episode")
+    latest = _latest(project, step, scene, episode=scope if step["scope"] == "{episode}" else None)
     nv = (_ver(latest["path"]) + 1) if latest else 1
-    out = step["output"].format(scene=scope, v=f"v{nv:03d}")
-    inputs = _inputs(project, step, scene)
+    out = step["output"].format(scene=scope, episode=scope, v=f"v{nv:03d}")
+    inputs = _inputs(project, step, scene, episode=scope if step["scope"] == "{episode}" else None)
     prompt = step["prompt"]
     prompt = prompt.replace("{{PROJECT}}", str(project))
     prompt = prompt.replace("{{SCOPE}}", scope)
@@ -355,7 +412,7 @@ def artifact_step(project: Path, path: str):
     return None, None
 
 
-def _outputs(project: Path, step, scene):
+def _outputs(project: Path, step, scene, episode=None):
     """这一阶段的全部产出：主产出 + 附带产出，各自当前版本与下一版。"""
     rows = []
     items = [("main", step["output"])] + [(x["label"], x["output"]) for x in (step.get("extra") or [])]
@@ -363,7 +420,7 @@ def _outputs(project: Path, step, scene):
         latest = None
         for a in _all(project):
             which = []
-            v = _match(step, a.get("path", ""), scene, which)
+            v = _match(step, a.get("path", ""), scene, which, episode)
             if v is None or (which and which[0] != ("main" if label == "main" else label)):
                 continue
             if latest is None or v > _ver(latest["path"]):
@@ -383,16 +440,17 @@ def _outputs(project: Path, step, scene):
                      "version": (f"v{_ver(latest['path']):03d}" if latest
                                  else (f"v{_ver(disk):03d}" if disk and _ver(disk) else None)),
                      "statusText": latest.get("statusText") if latest else ("文件已在磁盘，未登记" if disk else None),
-                     "nextPath": tpl.format(scene=(scene if step["scope"] == "{scene}" else step["scope"]),
+                     "nextPath": tpl.format(scene=(scene if step["scope"] == "{scene}" else "全项目"),
+                                            episode=(episode or _CUR.get("episode") or "E001"),
                                             v=f"v{nv:03d}")})
     return rows
 
 
-def steps_payload(project: Path, scene: str = "N001"):
+def steps_payload(project: Path, scene: str = "N001", episode: str = None):
     out = []
     for step_obj in STEPS:
         s = step_obj
-        r = _render(s, project, scene)
+        r = _render(s, project, scene, episode)
         a = r["latest"]
         out.append({
             "key": s["key"], "no": s["no"], "name": s["name"], "skill": s["skill"],
@@ -403,15 +461,21 @@ def steps_payload(project: Path, scene: str = "N001"):
             "version": (f"v{_ver(a['path']):03d}" if a else None),
             "nextVersion": r["nextVersion"], "nextPath": r["nextPath"],
             "inputs": r["inputs"], "prompt": r["prompt"],
-            "newFiles": _new_files(project, s, scene if s["scope"] == "{scene}" else None),
-            "versions": _versions(project, s, scene if s["scope"] == "{scene}" else None),
+            "newFiles": _new_files(project, s,
+                                    scene if s["scope"] == "{scene}" else None,
+                                    (episode or _CUR.get("episode")) if s["scope"] == "{episode}" else None),
+            "versions": _versions(project, s,
+                                   scene if s["scope"] == "{scene}" else None,
+                                   (episode or _CUR.get("episode")) if s["scope"] == "{episode}" else None),
             "returned": _last_for(project, "flow-returns.jsonl", s["key"]),
             "skipped": _last_for(project, "flow-skips.jsonl", s["key"]),
             "canConfirm": bool(a and STATUS.get(a.get("statusText")) == "draft"),
             "canRegister": True,
-            "outputs": _outputs(project, step_obj, scene),
+            "outputs": _outputs(project, step_obj, scene, episode),
         })
-    return {"scene": scene, "steps": out}
+    eps = episodes_of(project)
+    cur_ep = episode or _CUR.get("episode") or (scene_episode(project, scene) if scene else None)
+    return {"scene": scene, "episode": cur_ep, "episodes": eps, "steps": out}
 
 
 def guard_script(project: Path):
@@ -543,18 +607,25 @@ def _extra_deps(step, rel: str, project: Path, scene: str) -> list:
     return []
 
 
-def register(project: Path, step_key: str, scene: str = "N001", path: str = None, outcome: str = "passed"):
+def register(project: Path, step_key: str, scene: str = "N001", path: str = None, outcome: str = "passed", episode: str = None):
     step = BY_KEY.get(step_key)
     if not step:
         raise ValueError("未知流程")
-    rel = path or _new_file(project, step, scene if step["scope"] == "{scene}" else None)
+    ep = episode or _CUR.get("episode")
+    rel = path or _new_file(project, step, scene if step["scope"] == "{scene}" else None, ep)
     if not rel:
         raise ValueError("没有发现新的 vNNN 文件；请先让 Agent 写盘")
     p = (project / rel).resolve()
     if not str(p).startswith(str(project.resolve()) + "/") or not p.is_file():
         raise ValueError("文件不在项目内或不存在")
-    scope = scene if step["scope"] == "{scene}" else step["scope"]
-    deps = _inputs(project, step, scene if step["scope"] == "{scene}" else None)
+    if step["scope"] == "{scene}":
+        scope = scene
+    elif step["scope"] == "{episode}":
+        scope = ep or scene_episode(project, scene) or "E001"
+    else:
+        scope = step["scope"]
+    deps = _inputs(project, step, scene if step["scope"] == "{scene}" else None,
+                   episode=scope if step["scope"] == "{episode}" else None)
     deps += _extra_deps(step, rel, project, scene)
     deps = list(dict.fromkeys(deps))
     kind = _kind_for(step, rel)
@@ -596,7 +667,7 @@ def confirm_path(project: Path, path: str):
             "kind": rec.get("kind"), "scope": rec.get("scope")}
 
 
-def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None):
+def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None, episode: str = None):
     step = BY_KEY.get(step_key)
     if not step:
         raise ValueError("未知流程")
@@ -604,15 +675,22 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
         return {"ok": True, "skipped": True,
                 "note": "结论类成果登记即生效（已完成-结论），不需要确认"}
     rel = path
+    ep = episode or _CUR.get("episode")
     if not rel:
-        a = _latest(project, step, scene if step["scope"] == "{scene}" else None)
+        a = _latest(project, step, scene if step["scope"] == "{scene}" else None,
+                    episode=ep if step["scope"] == "{episode}" else None)
         if not a:
             raise ValueError("没有可确认的成果")
         rel = a["path"]
     rec = next((a for a in _all(project) if a.get("path") == rel), None)
     if rec:
         return confirm_path(project, rel)
-    scope = scene if step["scope"] == "{scene}" else step["scope"]
+    if step["scope"] == "{scene}":
+        scope = scene
+    elif step["scope"] == "{episode}":
+        scope = ep or scene_episode(project, scene) or "E001"
+    else:
+        scope = step["scope"]
     out = _run_guard(project, ["confirm", "--project", str(project), "--kind", _kind_for(step, rel),
                                "--scope", scope, "--path", rel])
     return {"ok": True, "path": rel, "output": out}

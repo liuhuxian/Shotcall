@@ -1498,10 +1498,15 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/workflow/steps":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             scene = q.get("scene", ["N001"])[0]
+            episode = q.get("episode", [""])[0]
             if not re.fullmatch(r"N\d{3}", scene):
                 self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
                 return
-            self._send(200, json.dumps(flow.steps_payload(PROJECT, scene), ensure_ascii=False).encode("utf-8"),
+            if episode and not re.fullmatch(r"E\d{3}", episode):
+                self._send(400, b'{"error":"episode must be Exxx"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps(flow.steps_payload(PROJECT, scene, episode or None),
+                                       ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/approvals":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
@@ -2373,9 +2378,10 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 action = str(body.get("action") or "")
                 scene = str(body.get("scene") or "N001")
+                episode = str(body.get("episode") or "") or None
                 if action not in ("register", "confirm"):
                     raise ValueError("action 必须是 register/confirm")
-                data = flow.steps_payload(PROJECT, scene)
+                data = flow.steps_payload(PROJECT, scene, episode)
                 results = []
                 for st in data.get("steps") or []:
                     if st.get("skipped"):
@@ -2386,7 +2392,7 @@ class Handler(BaseHTTPRequestHandler):
                             continue
                         try:
                             r = flow.register(PROJECT, st["key"], scene, path=files[0],
-                                              outcome="passed")
+                                              outcome="passed", episode=episode)
                             results.append({"step": st["key"], "ok": True, "path": r.get("path")})
                         except Exception as e:
                             results.append({"step": st["key"], "ok": False, "error": str(e)})
@@ -2396,7 +2402,8 @@ class Handler(BaseHTTPRequestHandler):
                         if not drafts:
                             continue
                         try:
-                            r = flow.confirm(PROJECT, st["key"], scene, path=drafts[0]["path"])
+                            r = flow.confirm(PROJECT, st["key"], scene, path=drafts[0]["path"],
+                                             episode=episode)
                             if r.get("path"):
                                 _record_file_pass(r["path"])
                             results.append({"step": st["key"], "ok": True, "path": r.get("path")})
@@ -2447,7 +2454,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 out = flow.register(PROJECT, str(body.get("step") or ""),
                                     str(body.get("scene") or "N001"),
-                                    body.get("path"), str(body.get("outcome") or "passed"))
+                                    body.get("path"), str(body.get("outcome") or "passed"),
+                                    episode=str(body.get("episode") or "") or None)
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:
@@ -2458,7 +2466,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body = self._json_body()
                 out = flow.confirm(PROJECT, str(body.get("step") or ""),
-                                   str(body.get("scene") or "N001"), body.get("path"))
+                                   str(body.get("scene") or "N001"), body.get("path"),
+                                   episode=str(body.get("episode") or "") or None)
                 if out.get("path"):
                     _record_file_pass(out["path"])
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
