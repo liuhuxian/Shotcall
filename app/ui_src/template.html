@@ -979,6 +979,10 @@ function histPanel(){
     <div class="ph"><span>生成历史</span>
       <span class="dim" style="display:flex;gap:10px;align-items:center">
         ${items.length} 条 · 实测 ${d.ratePerFrame||'—'} 秒/帧
+        <button class="btn ghost" style="font-size:10.5px;padding:1px 8px"
+          onclick="HIST.data=null;loadHistory(true).then(()=>render())">刷新</button>
+        <button class="btn ghost" style="font-size:10.5px;padding:1px 8px"
+          onclick="GEN.showHistory=false;render()">收起历史</button>
         <label style="cursor:pointer;user-select:none">
           <input type="checkbox" ${HIST.showDeleted?'checked':''}
             onchange="HIST.showDeleted=this.checked;HIST.data=null;loadHistory(true).then(()=>render())"
@@ -1164,9 +1168,9 @@ function sGen(){
         </select>
         <button class="btn ghost" style="font-size:11px;padding:2px 10px"
           onclick="translateAll(this)">翻译全部</button>
-        <button class="btn ghost" style="font-size:11px;padding:2px 10px"
-          onclick="GEN.showHistory=!GEN.showHistory; if(GEN.showHistory){HIST.data=null;loadHistory(true).then(()=>render());} render()">
-          ${GEN.showHistory?'收起历史':'生成历史'}</button>
+        ${GEN.showHistory?'':`<button class="btn ghost" style="font-size:11px;padding:2px 10px"
+          onclick="GEN.showHistory=true;HIST.data=null;loadHistory(true).then(()=>render())">生成历史</button>`}
+
       </span></div>
     <div class="pb">
       ${units.length?units.map(genUnitRow).join(""):'<div class="dim" style="font-size:12.5px">该场还没有视频提示词（需要 09 阶段先编译）。</div>'}
