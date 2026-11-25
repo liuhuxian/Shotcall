@@ -1787,7 +1787,10 @@ function sAssetsPage(){
       const b = a.binding;
       const img = a.bound && b && b.image;
       const aud = (a.type === "voice" && b && b.audio) ? b.audio : null;
-      return `<div style="border:1px solid ${a.bound?'var(--ok)':'var(--line)'};border-radius:8px;overflow:hidden;background:var(--panel)">
+      const rv = (a.approval||{}).record;
+      const passed = rv && rv.verdict==='pass' && !(a.approval||{}).stale;
+      const edge = a.ignored ? '#4a5464' : (passed ? 'var(--ok)' : 'var(--warn)');
+      return `<div style="border:1px solid ${edge};border-radius:8px;overflow:hidden;background:var(--panel)">
         ${aud?`<div style="padding:8px">
             <audio controls preload="none" src="/api/proj/audio?p=${encodeURIComponent(aud)}" style="width:100%;height:30px"></audio>
             <div class="dim mono" style="font-size:9.5px;margin-top:3px">${esc(b.duration||'')}</div>
