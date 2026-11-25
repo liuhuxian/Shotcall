@@ -231,8 +231,31 @@ def _match(step, path: str, scene: str = None, which: list = None, episode: str 
     return int(m.group(1)) if has_ver else 0
 
 
+_ALL_MEMO = {"key": None, "rows": None}
+
+
+def _all_key(project: Path):
+    f = store.state_dir(project) / "artifact-state.json"
+    try:
+        st = f.stat()
+        return (str(project), st.st_mtime_ns, st.st_size)
+    except FileNotFoundError:
+        return (str(project), 0, 0)
+
+
 def _all(project: Path):
-    return artifacts.build(project).get("artifacts") or []
+    key = _all_key(project)
+    if _ALL_MEMO["key"] == key and _ALL_MEMO["rows"] is not None:
+        return _ALL_MEMO["rows"]
+    rows = artifacts.build(project).get("artifacts") or []
+    _ALL_MEMO["key"] = key
+    _ALL_MEMO["rows"] = rows
+    return rows
+
+
+def _all_drop():
+    _ALL_MEMO["key"] = None
+    _ALL_MEMO["rows"] = None
 
 
 def _latest(project: Path, step, scene=None, main_only: bool = True, episode=None):
@@ -293,9 +316,26 @@ def _new_files(project: Path, step, scene=None, episode=None):
             if v is not None:
                 vs.append(v)
         tops[pat] = max(vs, default=0)
+    # 只扫这个阶段自己的目录，避免每次遍历整个项目
+    roots = []
+    for tpl in [step["output"]] + [x["output"] for x in (step.get("extra") or [])]:
+        parts = []
+        for seg in tpl.split("/"):
+            if "{" in seg:
+                break
+            parts.append(seg)
+        head = "/".join(parts[:-1] if len(parts) > 1 and parts[-1].endswith(".md") else parts)
+        if head and (project / head).exists() and head not in roots:
+            roots.append(head)
+    seen = set()
+    files = []
+    for head in roots:
+        for p in (project / head).rglob("*.md"):
+            if p.is_file() and p not in seen:
+                seen.add(p); files.append(p)
     rows = []
-    for p in project.glob("**/*"):
-        if not p.is_file() or p.suffix != ".md":
+    for p in files:
+        if p.suffix != ".md":
             continue
         rel = str(p.relative_to(project))
         for pat in pats:
@@ -642,6 +682,7 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     for d in deps:
         args += ["--depends-on", d]
     out = _run_guard(project, args)
+    _all_drop()
     return {"ok": True, "path": rel, "output": out}
 
 
@@ -693,6 +734,7 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None,
         scope = step["scope"]
     out = _run_guard(project, ["confirm", "--project", str(project), "--kind", _kind_for(step, rel),
                                "--scope", scope, "--path", rel])
+    _all_drop()
     return {"ok": True, "path": rel, "output": out}
 
 def return_step(project: Path, step_key: str, note: str = "", scene: str = "N001"):
