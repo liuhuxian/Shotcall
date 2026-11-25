@@ -732,7 +732,7 @@ function queueHtml(d){
       <td style="width:78px"><span class="badge ${running?'b-acc':(j.status==='waiting'?'b-warn':'b-mut')}" style="font-size:10px">${LABEL[j.status]||j.status}</span></td>
       <td class="mono" style="width:74px">${j.unit||'—'}${j.seq?` #${j.seq}`:''}</td>
       <td class="dim" style="width:56px">${j.kind==='video'?'视频':'图片'}</td>
-      <td class="dim mono" style="width:70px">${isCloud?'<span class="badge b-acc" style="font-size:9.5px">Codex 云端</span>':(j.card!=null?('卡'+j.card):'待分配')}</td>
+      <td class="mono" style="width:74px">${isCloud?'<span class="badge b-acc" style="font-size:9.5px">codex</span>':`<span class="dim">${j.card!=null?('卡'+j.card):'待分配'}</span>`}</td>
       <td class="dim mono" style="width:80px">${j.seconds?j.seconds+'秒/'+j.frames+'帧':''}</td>
       <td class="dim" style="width:70px">${j.kind==='video'?(j.refs?('参考图 '+j.refs+' 张'):'无参考图'):'—'}</td>
       <td class="dim mono" style="width:92px">${running
@@ -749,7 +749,7 @@ function queueHtml(d){
   const run = jobs.filter(j=>j.status==='running').length;
   return `<div class="panel" style="margin-top:6px">
     <div class="ph"><span>生成队列</span><span class="dim">${jobs.length} 项 · 生成中 ${run} · 排队 ${jobs.length-run} · 预估按 ${d.ratePerFrame||6.8} 秒/帧（本机实测）</span></div>
-    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>卡</th><th>规格</th><th>参考</th><th>时间</th><th>预计</th><th>任务号</th><th style="text-align:right">操作</th></tr></thead>
+    <div class="pb"><table><thead><tr><th>#</th><th>状态</th><th>单元</th><th>类型</th><th>渠道</th><th>规格</th><th>参考</th><th>时间</th><th>预计</th><th>任务号</th><th style="text-align:right">操作</th></tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
 }
 
