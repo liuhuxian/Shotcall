@@ -1650,6 +1650,46 @@ async function loadCloud(){
   return CLOUD.data;
 }
 
+let CANVAS = {data:null, busy:false};
+async function loadCanvasStatus(force){
+  if(CANVAS.data && !force) return CANVAS.data;
+  try{ CANVAS.data = await (await fetch('/api/canvas/status')).json(); }catch(e){ CANVAS.data = {exists:false}; }
+  return CANVAS.data;
+}
+function canvasBar(){
+  const c = CANVAS.data;
+  if(!c){ loadCanvasStatus().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取画布…</div>`; }
+  if(!c.exists) return `<div class="panel" style="margin-bottom:12px"><div class="pb" style="font-size:11.5px">
+    没有找到 <span class="mono">${esc(c.file||'画布1.json')}</span>，跳过画布同步。</div></div>`;
+  return `<div class="panel" style="margin-bottom:12px">
+    <div class="pb" style="display:flex;align-items:center;gap:10px;font-size:12px;flex-wrap:wrap">
+      <b>洋子画布</b>
+      <span class="badge b-ok" style="font-size:10px">${esc(c.file)}</span>
+      <span class="dim" style="font-size:11px">${c.nodes||0} 个节点${c.editable?'':' · 可能不是洋子画布'}</span>
+      <span class="dim" style="flex:1;font-size:11px">按 07 资产文档更新画布：改提示词、按新资产增删节点</span>
+      <button class="btn acc" style="font-size:11px;padding:3px 12px" ${CANVAS.busy?'disabled':''} onclick="syncCanvas(false)">同步到画布</button>
+      <button class="btn ghost" style="font-size:11px;padding:3px 10px" ${CANVAS.busy?'disabled':''} onclick="syncCanvas(true)">只看差异</button>
+    </div>
+    <div class="dim" style="padding:0 13px 10px;font-size:10.5px">${esc(CANVAS.msg||'同步会先备份原文件为 画布1.json.bak-HHMM')}</div>
+  </div>`;
+}
+async function syncCanvas(dry){
+  CANVAS.busy=true; CANVAS.msg=dry?'正在比对…':'正在同步…'; render();
+  try{
+    const r=await fetch('/api/canvas/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dry})});
+    const j=await r.json();
+    if(!r.ok){ CANVAS.msg='失败：'+(j.error||'未知'); }
+    else{
+      const s=`更新 ${(j.updated||[]).length} · 新增 ${(j.added||[]).length} · 删除 ${(j.removed||[]).length} · 未变 ${j.unchanged||0}${j.backup?' · 备份 '+j.backup:''}`;
+      CANVAS.msg=(dry?'差异：':'已同步：')+s;
+      if(!dry) toast('画布已同步：'+s);
+    }
+    await loadCanvasStatus(true);
+  }catch(e){ CANVAS.msg='失败：'+e; }
+  CANVAS.busy=false; render();
+}
+
 function cloudBar(){
   const c = CLOUD.data;
   if(!c){ loadCloud().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取出图渠道…</div>`; }
@@ -1780,6 +1820,7 @@ function sAssetsPage(){
       <div class="dim" style="font-size:11px;margin-top:3px">作者明确不生成${s.unbound?` · 待补 ${s.unbound}`:''}</div></div>
   </div>
   ${cloudBar()}
+  ${canvasBar()}
   ${storyboardAssetsPanel()}
   <div class="panel" style="margin-bottom:14px">
     <div class="ph"><span>审核二 · 资产</span><span class="dim">逐项通过 / 待定 · 「修改」直接进资产详情改图 · 依据 ${esc(d.doc||"")}</span>

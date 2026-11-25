@@ -29,6 +29,7 @@ import agentrunner
 import approvals
 import artifacts
 import assetsdb
+import canvas as canvasmod
 import cloudimg
 import comfyctl
 import confirms
@@ -1647,6 +1648,20 @@ class Handler(BaseHTTPRequestHandler):
                     tail = f"读取失败：{e}"
             self._send(200, json.dumps({"card": card, "tail": tail}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/canvas/status":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            fn = q.get("file", [canvasmod.CANVAS_FILE])[0]
+            f = PROJECT / fn
+            doc = {"file": fn, "exists": f.is_file()}
+            if f.is_file():
+                try:
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                    doc["nodes"] = len(d.get("nodes") or [])
+                    doc["editable"] = "toonflowCanvas" in d
+                except Exception as e:
+                    doc["error"] = str(e)
+            self._send(200, json.dumps(doc, ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/cloud/status":
             self._send(200, json.dumps(cloudimg.status(), ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
@@ -2111,6 +2126,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.query_path = self.path
         path = self.path.split("?")[0]
+        if path == "/api/canvas/sync":
+            try:
+                body = self._json_body()
+                fn = str(body.get("file") or canvasmod.CANVAS_FILE)
+                if "/" in fn or "\\" in fn or not fn.endswith(".json"):
+                    raise ValueError("只能同步项目根目录下的 json 画布文件")
+                out = canvasmod.sync(PROJECT, PROJECT / fn, dry=bool(body.get("dry")))
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/cloud/config":
             try:
                 body = self._json_body()
