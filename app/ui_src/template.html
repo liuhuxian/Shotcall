@@ -2008,9 +2008,21 @@ function assetDetailHtml(){
       <span class="dim" style="font-size:11px">参考图</span>
       <button class="btn ${(AD.ref&&img&&AD.ref===img)?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
       <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()">引用其他</button>
-      <span class="dim" style="font-size:10px">${AD.ref?('主图：'+esc(AD.ref.split('/').pop())):'未选参考图 · 走文生图'}</span>
-      ${(AD.extraRefs||[]).map(f=>`<span class="mono" style="font-size:9.5px;padding:1px 6px;border:1px solid var(--acc);border-radius:4px;color:var(--acc);cursor:pointer"
-        title="点击移除" onclick="adDropExtra('${esc(f)}')">+ ${esc(f.split('/').pop().slice(0,18))}</span>`).join('')}
+      ${AD.ref?`<span style="display:inline-flex;align-items:center;gap:5px">
+          <img src="/api/proj/file?p=${encodeURIComponent(AD.ref)}" title="主图 · 点击放大"
+            onclick="openZoom('/api/proj/file?p=${encodeURIComponent(AD.ref)}')"
+            style="width:66px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--acc);cursor:zoom-in;display:block">
+          <span class="dim" style="font-size:9.5px">主图</span>
+        </span>`
+        :`<span class="dim" style="font-size:10px">未选参考图 · 走文生图</span>`}
+      ${(AD.extraRefs||[]).map(f=>`<span style="position:relative;display:inline-block">
+          <img src="/api/proj/file?p=${encodeURIComponent(f)}" title="附加参考图 · 点击放大"
+            onclick="openZoom('/api/proj/file?p=${encodeURIComponent(f)}')"
+            style="width:54px;height:36px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:zoom-in;display:block">
+          <span onclick="adDropExtra('${esc(f)}')" title="移除这张参考图"
+            style="position:absolute;right:-5px;top:-5px;width:15px;height:15px;border-radius:50%;background:#2a1212;color:#ff9a9a;
+              font-size:11px;line-height:15px;text-align:center;cursor:pointer;border:1px solid #5a2020">×</span>
+        </span>`).join('')}
       ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
