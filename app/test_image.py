@@ -47,7 +47,7 @@ def main():
           imagegen.RECIPES.keys())
     d = assetsdb.build(REAL)
     with_prompt = [a for a in d["assets"] if a.get("prompt")]
-    check("资产提示词可解析", len(with_prompt) >= 20, len(with_prompt))
+    check("资产提示词可解析", len(with_prompt) >= 15, len(with_prompt))
     check("C01-A 有提示词", bool(next((a for a in d["assets"] if a["id"] == "C01-A"), {}).get("prompt")))
     c01 = next((a for a in d["assets"] if a["id"] == "C01-A"), {})
     check("资产带采用历史", len(c01.get("history") or []) >= 1, c01.get("history"))

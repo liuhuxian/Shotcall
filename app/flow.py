@@ -6,6 +6,7 @@ ai-film-router + film-*；提示词里的 {{...}} 由 render_prompt 替换。
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -232,12 +233,17 @@ _ALL_MEMO = {"key": None, "rows": None}
 
 
 def _all_key(project: Path):
-    f = store.state_dir(project) / "artifact-state.json"
+    """以登记表内容为准：mtime/size 变了，或内容哈希变了，都要重新读。
+
+    注意路径是 00-项目管理/artifact-state.json（store.state_dir 是运行状态目录，
+    不是成果登记表），早先这里取错路径导致缓存永远不失效。
+    """
+    f = project / artifacts.STATE_FILE
     try:
-        st = f.stat()
-        return (str(project), st.st_mtime_ns, st.st_size)
+        raw = f.read_bytes()
+        return (str(project), len(raw), hashlib.sha1(raw).hexdigest())
     except FileNotFoundError:
-        return (str(project), 0, 0)
+        return (str(project), 0, "")
 
 
 def _all(project: Path):

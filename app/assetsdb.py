@@ -25,7 +25,11 @@ def latest_asset_doc(project: Path) -> Path:
     return docs[-1] if docs else None
 
 
+TEXT_PROPS = []
+
+
 def parse_assets(project: Path) -> list:
+    TEXT_PROPS.clear()
     f = latest_asset_doc(project)
     if not f:
         return []
@@ -34,6 +38,13 @@ def parse_assets(project: Path) -> list:
     out = []
     for i, h in enumerate(heads):
         title = h.group(1)
+        # 附录/不生产段：只留文字依据，不进入出图名单
+        if ("附" in title and ("不生产" in title or "仅文字" in title)) or "不生产的道具" in title:
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(txt)
+            for m in ENTRY.finditer(txt[h.end():end]):
+                TEXT_PROPS.append({"id": m.group(1), "name": m.group(2).strip(),
+                                   "section": title.strip()})
+            continue
         kind = None
         # 先按标题判断；"辅助"类必须显式命中，避免把"道具"段误归
         for key, val in SECTION_TYPE:
@@ -476,5 +487,7 @@ def build(project: Path) -> dict:
             "voiceBound": sum(1 for a in vos if a["bound"]),
             "scene": sum(1 for a in assets if a["type"] == "scene"),
             "prop": sum(1 for a in assets if a["type"] == "prop"),
+            "extra": sum(1 for a in assets if a["type"] == "extra"),
+            "textProps": len(TEXT_PROPS),
         },
     }

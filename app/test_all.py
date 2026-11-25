@@ -161,7 +161,12 @@ def main():
         ov = json.load(urllib.request.urlopen(f"{API}/api/overview", timeout=30))
         check("页头 8 场 / 6 镜", ov.get("scenes", {}).get("count") == 8 and ov.get("shots") == 6,
               (ov.get("scenes"), ov.get("shots")))
-        check("页头资产 36 项", (ov.get("assets") or {}).get("total") == 36, (ov.get("assets") or {}).get("total"))
+        _ast = ov.get("assets") or {}
+        _list = json.load(urllib.request.urlopen(f"{API}/api/assets", timeout=30))
+        _img = [a for a in (_list.get("assets") or []) if a.get("type") != "voice"]
+        check("页头资产数＝出图清单条数", _ast.get("total") == len(_img),
+              (_ast.get("total"), len(_img)))
+        check("道具不出图", _ast.get("prop", 0) == 0, _ast)
         sg = json.load(urllib.request.urlopen(f"{API}/api/stages", timeout=30))
         check("/api/stages 返回 10 阶段", len(sg.get("stages", [])) == 10, len(sg.get("stages", [])))
         check("/api/stages 含成果", "artifacts" in sg and "summary" in sg)

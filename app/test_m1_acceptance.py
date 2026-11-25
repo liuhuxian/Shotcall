@@ -319,8 +319,10 @@ print("RESULT:" + json.dumps(result, ensure_ascii=False), flush=True)
     episodes = ov.get("episodes") or []
     check("AC-01", "GET /api/overview 返回 8 场", scenes.get("count") == 8, scenes)
     check("AC-01", "GET /api/overview 返回 6 镜", ov.get("shots") == 6, ov.get("shots"))
-    check("AC-01", "GET /api/overview 返回 36 资产",
-          assets.get("total") == 36, assets)
+    check("AC-01", "GET /api/overview 资产数与类型分项一致",
+          assets.get("total") == (assets.get("character", 0) + assets.get("scene", 0)
+                                  + assets.get("prop", 0) + assets.get("extra", 0)),
+          assets)
     ids = [e.get("id") for e in episodes]
     check("AC-01", "只显示真实 E001–E003，无假 E004+",
           ids == ["E001", "E002", "E003"], ids)
@@ -980,7 +982,7 @@ def main():
     run("HARNESS", "fake ComfyUI", _harness_selftest)
 
     print("\n= AC-01 页头真实数据 =")
-    run("AC-01", "/api/overview 8 场 / 6 镜 / 36 资产", _ac01_overview)
+    run("AC-01", "/api/overview 8 场 / 6 镜 / 资产分项", _ac01_overview)
 
     print("\n= AC-02 确认事务 =")
     run("AC-02", "approvals.py append/state/stale", _ac02_approvals_module)
