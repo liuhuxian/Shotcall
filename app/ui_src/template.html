@@ -1894,6 +1894,38 @@ function scheduleAssetPoll(){
     if(AD && (AD.cands||[]).length>before) toast('有新候选：'+((AD.cands||[]).length-before)+' 张');
   }, 6000);
 }
+function openCandGallery(){
+  state.candGallery = {id: (AD&&AD.id)||'', files: (AD&&AD.cands||[]).map(c=>c.file), names:{}};
+  (AD&&AD.cands||[]).forEach(c=>{ state.candGallery.names[c.file]=c.name; });
+  render();
+}
+function closeCandGallery(){ state.candGallery=null; render(); }
+function candGalleryHtml(){
+  const g = state.candGallery;
+  if(!g) return '';
+  const files = g.files || [];
+  return `<div style="position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:2600;overflow:auto;padding:22px"
+    onclick="if(event.target===this)closeCandGallery()">
+    <div style="max-width:1500px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <b style="font-size:15px">${esc(g.id)} · 全部候选</b>
+        <span class="dim" style="font-size:12px">${files.length} 张 · 点图放大 · 采用后成为当前绑定</span>
+        <span style="flex:1"></span>
+        <button class="btn ghost" style="font-size:11px" onclick="closeCandGallery()">关闭</button>
+      </div>
+      ${files.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
+        ${files.map(f=>`<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)">
+          <img src="/api/proj/file?p=${encodeURIComponent(f)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(f)}')"
+            style="width:100%;height:150px;object-fit:cover;display:block;cursor:zoom-in">
+          <div style="padding:6px 8px">
+            <div class="mono dim" style="font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((g.names||{})[f]||f.split('/').pop())}</div>
+            <button class="btn ok" style="font-size:10px;padding:1px 8px;margin-top:4px" onclick="adAdopt('${esc(f)}');closeCandGallery()">采用</button>
+          </div>
+        </div>`).join('')}
+      </div>`:'<div class="dim">这个资产还没有候选图。</div>'}
+    </div></div>`;
+}
+
 function adRefs(a){
   const out=[];
   if(a && a.binding && a.binding.image) out.push({v:a.binding.image,label:'当前绑定 '+a.binding.version});
@@ -1978,7 +2010,7 @@ function assetDetailHtml(){
     <div class="badge b-ok" style="font-size:9px">历史采用 ${esc(h.version||'')}</div>
   </div>`).join("");
   const seenFiles=new Set(hist.map(h=>h.file));
-  const cands=(AD.cands||[]).filter(c=>!seenFiles.has(c.file)).map(c=>`<div style="width:176px">
+  const cands=(AD.cands||[]).filter(c=>!seenFiles.has(c.file)).slice(0,6).map(c=>`<div style="width:176px">
     <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
       style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
     <div class="mono dim" style="font-size:9px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
@@ -1995,7 +2027,13 @@ function assetDetailHtml(){
     <div class="pb">
       ${histCards?`<div class="dim" style="font-size:11px;margin-bottom:5px">历史采用（按时间倒序）</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${histCards}</div>`:''}
-      <div class="dim" style="font-size:11px;margin:9px 0 5px">生成候选</div>
+      <div style="display:flex;align-items:center;gap:8px;margin:9px 0 5px">
+        <span class="dim" style="font-size:11px">生成候选</span>
+        <button class="btn ghost" style="font-size:10px;padding:1px 8px" onclick="openCandGallery()">
+          查看全部 ${(AD.cands||[]).length} 张
+        </button>
+        ${(AD.cands||[]).length>6?'<span class="dim" style="font-size:10px">下面只显前 6 张</span>':''}
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${cands||'<div class="dim" style="font-size:11.5px">还没有候选图。</div>'}</div>
       ${(AD.jobs||[]).some(x=>x.status==='running'||x.status==='queued')
         ? `<div style="margin:8px 0;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)">
@@ -4614,7 +4652,10 @@ function render(){
   { const host=document.getElementById("viewerhost");
     if(host){ const vh = viewerLayer(); if(host.__html !== vh){ host.__html = vh; host.innerHTML = vh; } } }
   { const old=document.getElementById("assetDetail"); if(old) old.remove();
-    if(AD) document.body.insertAdjacentHTML("beforeend", assetDetailHtml()); }
+    if(AD) document.body.insertAdjacentHTML("beforeend", assetDetailHtml());
+    const cg = document.getElementById('candGallery');
+    if(cg) cg.remove();
+    if(state.candGallery) document.body.insertAdjacentHTML("beforeend", candGalleryHtml()); }
   if(keepY && scroller){
     scroller.scrollTop = keepY;
     requestAnimationFrame(()=>{ if(scroller.scrollTop !== keepY) scroller.scrollTop = keepY; });
