@@ -19,7 +19,9 @@ def check(name, ok, detail=""):
 
 def main():
     data = flow.steps_payload(REAL, 'N001')
-    check("11 个流程卡", len(data['steps']) == 11, len(data['steps']))
+    check("10 个流程卡", len(data['steps']) == 10, len(data['steps']))
+    s05 = next(x for x in data['steps'] if x['key'] == '05')
+    check("05 一次产出剧本与时长复核", len(s05.get("outputs") or []) == 2, s05.get("outputs"))
     s01 = data['steps'][0]
     check("01 已确认", s01['status'] == 'confirmed', s01['status'])
     check("提示词含项目根", str(REAL) in s01['prompt'], s01['prompt'][:80])

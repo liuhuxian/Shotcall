@@ -2364,6 +2364,15 @@ function sFlow(onlyStage){
         ${(st.returned||st.skipped)?`<div class="dim" style="font-size:11px;margin-top:4px;color:var(--warn)">
           ${st.returned?'上次退回：'+esc(st.returned.note||'（无说明）')+' · '+esc(st.returned.at):''}
           ${st.skipped?'已跳过：'+esc(st.skipped.note||'')+' · '+esc(st.skipped.at):''}</div>`:''}
+        ${(st.outputs||[]).length>1?`<div style="margin-top:8px;border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:#0e1218">
+          <div class="dim" style="font-size:10.5px;margin-bottom:4px">这一阶段的产出（${st.outputs.length} 个文件，各自独立登记与确认）</div>
+          ${(st.outputs||[]).map(o=>`<div style="display:flex;gap:8px;align-items:baseline;padding:2px 0">
+            <span class="badge b-mut" style="font-size:9.5px">${esc(o.label)}</span>
+            <span class="mono" style="font-size:10.5px;color:#9fb0c6">${o.path?esc(o.path.split('/').pop()):'未产出'}</span>
+            ${o.version?`<span class="dim mono" style="font-size:10px">${esc(o.version)} · ${esc(o.statusText||'')}</span>`:''}
+            <span class="dim mono" style="font-size:10px;margin-left:auto">下一版 ${esc(o.nextPath.split('/').pop())}</span>
+          </div>`).join('')}
+        </div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="copyFlow('${st.key}',this)">复制提示词</button>
           <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="dispatchFlow('${st.key}')">派给 Agent</button>

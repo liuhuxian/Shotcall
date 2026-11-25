@@ -33,6 +33,20 @@ def _prompt(no, name, skill, inputs, output, scope):
 """
 
 
+def _prompt_05():
+    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 05 正式剧本；加载 film-screenplay。
+
+项目根：{{PROJECT}}
+范围：当前批次
+输入：
+{{INPUTS}}
+
+这一阶段要产出两份文件：正式剧本，以及基于它的成稿时长复核。文件名、命名与验收按 film-screenplay 执行。
+边界：只做本阶段，不改其他阶段与登记表，不自行确认，不调用生成接口。
+完成后只汇报：两份文件的版本与路径、时长偏差、需要导演拍板的点（≤3 条）。
+"""
+
+
 def _prompt_09a():
     return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09a 镜头规划；加载 film-cinedance。
 
@@ -88,12 +102,10 @@ STEPS = [
          kind="05 剧本深度融合", scope="全项目",
          pattern=r"^05-正式剧本/screenplay-v(\d{3})(?:-\d+)?\.md$",
          output="05-正式剧本/screenplay-{v}.md", deps=["04", "02", "03"],
-         prompt=_prompt("05", "正式剧本", "film-screenplay", ["04/02/03 已确认版；原著"], "05-正式剧本/screenplay-vNNN.md（时长复核由 05b 卡单独登记）", "当前批次")),
-    dict(key="05b", no="05b", stage="05", name="时长复核", skill="film-screenplay",
-         kind="05 成稿时长复核", scope="全项目",
-         pattern=r"^05-正式剧本/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
-         output="05-正式剧本/screenplay-timing-audit-{v}.md", deps=["05"],
-         prompt=_prompt("05b", "时长复核", "film-screenplay", ["05 已确认正式剧本"], "05-正式剧本/screenplay-timing-audit-vNNN.md", "当前批次")),
+         extra=[dict(label="时长复核", kind="05 成稿时长复核",
+                     pattern=r"^05-正式剧本/screenplay-timing-audit-v(\d{3})(?:-\d+)?\.md$",
+                     output="05-正式剧本/screenplay-timing-audit-{v}.md")],
+         prompt=_prompt_05()),
     dict(key="06", no="06", stage="06", name="剧本压力测试（可选）", skill="film-stress-test",
          kind="06 剧本压力测试", scope="全项目", register="conclusion",
          pattern=r"^06-剧本压力测试/stress-test-report-v(\d{3})(?:-\d+)?\.md$",
@@ -134,8 +146,16 @@ def _ver(path: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def _match(step, path: str, scene: str = None):
-    m = re.search(step["pattern"], path)
+def _match(step, path: str, scene: str = None, which: list = None):
+    """匹配主产出或附带产出；which 传入时把命中的类型名追加上去。"""
+    pats = [(step["pattern"], "main")] + [(x["pattern"], x["label"]) for x in (step.get("extra") or [])]
+    m = None
+    for pat, label in pats:
+        m = re.search(pat, path)
+        if m:
+            if which is not None:
+                which.append(label)
+            break
     if not m:
         return None
     if step["scope"] == "{scene}":
@@ -204,10 +224,12 @@ def _new_files(project: Path, step, scene=None):
 def _versions(project: Path, step, scene=None):
     rows = []
     for a in _all(project):
-        ver = _match(step, a.get("path", ""), scene)
+        which = []
+        ver = _match(step, a.get("path", ""), scene, which)
         if ver is None:
             continue
-        rows.append({"path": a["path"], "version": f"v{ver:03d}", "statusText": a.get("statusText"),
+        rows.append({"path": a["path"], "version": f"v{ver:03d}", "label": which[0] if which else "主产出",
+                     "statusText": a.get("statusText"),
                      "sha256": a.get("sha256"), "dependsOn": a.get("dependsOn") or [],
                      "confirmedAt": a.get("confirmedAt") or a.get("createdAt")})
     rows.sort(key=lambda x: x["version"], reverse=True)
@@ -273,9 +295,33 @@ def artifact_step(project: Path, path: str):
     return None, None
 
 
+def _outputs(project: Path, step, scene):
+    """这一阶段的全部产出：主产出 + 附带产出，各自当前版本与下一版。"""
+    rows = []
+    items = [("main", step["output"])] + [(x["label"], x["output"]) for x in (step.get("extra") or [])]
+    for label, tpl in items:
+        latest = None
+        for a in _all(project):
+            which = []
+            v = _match(step, a.get("path", ""), scene, which)
+            if v is None or (which and which[0] != ("main" if label == "main" else label)):
+                continue
+            if latest is None or v > _ver(latest["path"]):
+                latest = a
+        nv = (_ver(latest["path"]) + 1) if latest else 1
+        rows.append({"label": ("主产出" if label == "main" else label),
+                     "path": latest["path"] if latest else None,
+                     "version": (f"v{_ver(latest['path']):03d}" if latest else None),
+                     "statusText": latest.get("statusText") if latest else None,
+                     "nextPath": tpl.format(scene=(scene if step["scope"] == "{scene}" else step["scope"]),
+                                            v=f"v{nv:03d}")})
+    return rows
+
+
 def steps_payload(project: Path, scene: str = "N001"):
     out = []
-    for s in STEPS:
+    for step_obj in STEPS:
+        s = step_obj
         r = _render(s, project, scene)
         a = r["latest"]
         out.append({
@@ -293,6 +339,7 @@ def steps_payload(project: Path, scene: str = "N001"):
             "skipped": _last_for(project, "flow-skips.jsonl", s["key"]),
             "canConfirm": bool(a and STATUS.get(a.get("statusText")) == "draft"),
             "canRegister": True,
+            "outputs": _outputs(project, step_obj, scene),
         })
     return {"scene": scene, "steps": out}
 

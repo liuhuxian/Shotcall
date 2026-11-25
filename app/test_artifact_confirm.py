@@ -36,7 +36,7 @@ def main():
     dst.mkdir(parents=True)
     for f in src.glob("*.py"):
         shutil.copy(f, dst / f.name)
-    r = flow.confirm(p, "05b", "N001", path=rel)
+    r = flow.confirm(p, "05", "N001", path=rel)
     check("确认返回 scope", r.get("scope") == "E001—E003／N001—N008", r)
     d = json.loads((p / "00-项目管理/artifact-state.json").read_text(encoding="utf-8"))
     check("确认后状态为当前", d["artifacts"][0]["status"] == "已确认-当前", d["artifacts"][0]["status"])
