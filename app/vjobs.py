@@ -277,8 +277,8 @@ def shots_block(txt: str):
         raw = json.loads(m.group(1))
     except Exception as e:
         return [], f"yoko-shots 块不是合法 JSON：{e}"
-    if isinstance(raw, list):
-        return [], "yoko-shots 是旧格式（裸数组），请改成 {schemaVersion, units}"
+    if isinstance(raw, list):          # 旧格式：裸数组，继续读
+        return (raw, None) if raw else ([], "yoko-shots 块是空数组")
     units = raw.get("units")
     if not isinstance(units, list) or not units:
         return [], "yoko-shots 块里没有 units 数组"

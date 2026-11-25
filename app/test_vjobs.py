@@ -292,6 +292,16 @@ def main():
           shift[0]["inputs"] if shift else None)
     check("采样器为 euler", g6["6"]["inputs"]["sampler_name"] == "euler", g6["6"]["inputs"])
 
+    print("\n= 块格式兼容 =")
+    new_style = '```yoko-shots\n{"schemaVersion":1,"units":[{"id":"U001","duration":6}]}\n```'
+    old_style = '```yoko-shots\n[{"id":"U001","duration":6}]\n```'
+    n1, e1 = vjobs.shots_block(new_style)
+    n2, e2 = vjobs.shots_block(old_style)
+    check("新格式块可解析", e1 is None and len(n1) == 1, e1)
+    check("旧格式块仍可解析", e2 is None and len(n2) == 1, e2)
+    n3, e3 = vjobs.shots_block('```yoko-shots\n[]\n```')
+    check("空数组报错", e3 is not None, e3)
+
     print("\n= 参考音频接线 =")
     g2 = vjobs.build_graph("p", 1344, 768, 158, 7, 20, ref_images=["a.png"], ref_audios=["v.wav"])
     loads_a = [v for v in g2.values() if v["class_type"] == "LoadAudio"]
