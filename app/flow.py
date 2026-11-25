@@ -483,6 +483,7 @@ def _outputs(project: Path, step, scene, episode=None):
 
 
 def steps_payload(project: Path, scene: str = "N001", episode: str = None):
+    episode = episode or (scene_episode(project, scene) if scene else None)
     out = []
     for step_obj in STEPS:
         s = step_obj
