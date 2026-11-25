@@ -47,35 +47,25 @@ def _prompt_05():
 """
 
 
-def _prompt_09a():
-    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09a 镜头规划；加载 film-cinedance。
+def _prompt_09():
+    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09 镜头与视频提示词；加载 film-cinedance。
 
 项目根：{{PROJECT}}
 场次：{{SCOPE}}
 输入：
 {{INPUTS}}
 
-产出清单（镜头表、时长表、空间图、连续性、生成单元等）、命名与验收，全按 film-cinedance 的「拍法、镜头与生成单元确认门」执行；台词逐字取自 05 剧本。
-边界：只做本阶段，不写视频提示词正文，不自行确认，不调用生成接口。
-完成后只汇报：版本、路径、产出的文件清单、需要导演拍板的点（≤3 条）。
-"""
+按 film-cinedance 的做法，一次走完这个阶段的两个内部门禁：
+1. 拍法与镜头：场景登记、镜头表、时长表、空间图、导演方案、连续性台账、参考图映射、视觉连贯审查、生成单元规划；
+2. 模型提示词：基于已确认的镜头表与生成单元，写 MiniMax H3 视频提示词。
+文件名、命名、顺序与验收按 film-cinedance 执行。
 
-
-def _prompt_09b():
-    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09b 视频提示词。
-加载：film-cinedance、minimax-h3-video-prompts、performance-direction、lighting-direction。
-
-项目根：{{PROJECT}}
-场次：{{SCOPE}}
-输入：
-{{INPUTS}}
-
-六段式、帧数与时长规则按 minimax-h3-video-prompts；表演按 performance-direction；光线按 lighting-direction；文件命名与验收按 film-cinedance。
 本项目追加两条：
-- 单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
-- 文件末尾必须有 ```yoko-shots JSON 块（单元 id、时长、镜号、参考图、音色、接续），否则生成台读不到单元。
+- 提示词里的单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
+- 提示词文件末尾必须有 ```yoko-shots JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
+
 边界：只做本阶段，不自行确认，不调用生成接口。
-完成后只汇报：版本、路径、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。
+完成后只汇报：产出的文件清单（含版本）、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。
 """
 
 
@@ -123,7 +113,7 @@ STEPS = [
          pattern=r"^08-表演设计/(N\d{3})-acting-v(\d{3})(?:-\d+)?\.md$",
          output="08-表演设计/{scene}-acting-{v}.md", deps=["05", "07"],
          prompt=_prompt("08", "ACTING 表演", "film-acting", ["当前场 05；07 资产"], "08-表演设计/{scene}-acting-vNNN.md", "{scene}")),
-    dict(key="09a", no="09a", stage="09", name="镜头规划", skill="film-cinedance",
+    dict(key="09", no="09", stage="09", name="镜头与视频提示词", skill="film-cinedance",
          kind="09 镜头规划", scope="{scene}",
          pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/shot-plan-v(\d{3})(?:-\d+)?\.md$",
          output="09-镜头与视频提示词/镜头规划/{scene}/shot-plan-{v}.md", deps=["05", "08", "07"],
@@ -152,15 +142,11 @@ STEPS = [
              dict(label="生成单元规划", kind="09 generation-units-minimax-h3", deps=["primary"],
                   pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$",
                   output="09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md"),
+             dict(label="视频提示词", kind="09 视频提示词", deps=["primary"],
+                  pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3(?:-ref2va)?-v(\d{3})(?:-\d+)?\.md$",
+                  output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md"),
          ],
-         prompt=_prompt_09a()),
-    dict(key="09b", no="09b", stage="09", name="视频提示词", skill="film-cinedance",
-         kind="09 视频提示词", scope="{scene}",
-         pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3-ref2va-v(\d{3})(?:-\d+)?\.md$",
-         output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-ref2va-{v}.md", deps=["09a", "07"],
-         extra_inputs=[dict(scope="{scene}",
-                            pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$")],
-         prompt=_prompt_09b()),
+         prompt=_prompt_09()),
 ]
 
 BY_KEY = {s["key"]: s for s in STEPS}

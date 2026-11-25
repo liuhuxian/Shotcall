@@ -19,18 +19,19 @@ def check(name, ok, detail=""):
 
 def main():
     data = flow.steps_payload(REAL, 'N001')
-    check("10 个流程卡", len(data['steps']) == 10, len(data['steps']))
+    check("9 个流程卡", len(data['steps']) == 9, len(data['steps']))
     s05 = next(x for x in data['steps'] if x['key'] == '05')
     check("05 一次产出剧本与时长复核", len(s05.get("outputs") or []) == 2, s05.get("outputs"))
     s01 = data['steps'][0]
     check("01 已确认", s01['status'] == 'confirmed', s01['status'])
     check("提示词含项目根", str(REAL) in s01['prompt'], s01['prompt'][:80])
-    s09b = data['steps'][-1]
-    cur_v = int(str(s09b.get('version') or 'v000')[1:])
-    nxt_v = int(str(s09b.get('nextVersion') or 'v000')[1:])
-    check("09b 下一版已递增", nxt_v == cur_v + 1, (s09b.get('version'), s09b.get('nextVersion')))
-    check("09b 依赖包含镜头规划", any("镜头规划" in x for x in data['steps'][-1].get('inputs') or []),
-          data['steps'][-1].get('inputs'))
+    s09 = data['steps'][-1]
+    cur_v = int(str(s09.get('version') or 'v000')[1:])
+    nxt_v = int(str(s09.get('nextVersion') or 'v000')[1:])
+    check("09 下一版已递增", nxt_v == cur_v + 1, (s09.get('version'), s09.get('nextVersion')))
+    check("09 依赖包含表演与资产", any("表演设计" in x or "图像资产" in x
+          for x in (s09.get('inputs') or [])), s09.get('inputs'))
+    check("09 一次产出 10 个文件", len(s09.get("outputs") or []) == 10, len(s09.get("outputs") or []))
 
     src = next(REAL.glob('.agents/skills/*/ai-film-router/scripts/artifact_guard.py')).parent
     p = Path(tempfile.mkdtemp(prefix="flow-test-"))
