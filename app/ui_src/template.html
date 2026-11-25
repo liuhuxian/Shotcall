@@ -1853,12 +1853,38 @@ function scheduleAssetPoll(){
   if(!live.length) return;
   AD_POLL=setTimeout(async()=>{
     if(!AD) return;
-    if(assetTyping()){ scheduleAssetPoll(); return; }   // 正在输入：不重绘，稍后再试
+    if(assetTyping()){                                   // 正在输入：只局部更新候选与进度，不动输入框
+      const before=(AD.cands||[]).length;
+      await refreshAssetParts();
+      if(AD && (AD.cands||[]).length>before) toast('有新候选：'+((AD.cands||[]).length-before)+' 张');
+      scheduleAssetPoll(); return;
+    }
     const before=(AD.cands||[]).length;
     await loadAssetDetail();
     if(AD && (AD.cands||[]).length>before) toast('有新候选：'+((AD.cands||[]).length-before)+' 张');
   }, 6000);
 }
+async function refreshAssetParts(){
+  if(!AD) return;
+  const id=AD.id;
+  try{ const r=await (await fetch('/api/img/candidates?asset='+encodeURIComponent(id))).json(); AD.cands=r.items||[]; }catch(e){}
+  try{ const j=await (await fetch('/api/img/jobs')).json(); AD.jobs=(j.jobs||[]).filter(x=>x.asset===id); }catch(e){}
+  const strip=document.getElementById('assetCandStrip');
+  if(strip && AD.cands){
+    strip.innerHTML = AD.cands.slice(0,6).map(c=>`<div style="width:176px">
+      <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"
+        style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+      <div class="mono dim" style="font-size:9px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
+      <button class="btn ok" style="font-size:9.5px;padding:1px 7px;margin-top:3px" onclick="adAdopt('${esc(c.file)}')">采用</button>
+    </div>`).join("") || '<div class="dim" style="font-size:11.5px">还没有候选图。</div>';
+  }
+  const run=document.getElementById('assetRun');
+  if(run){
+    const live=(AD.jobs||[]).filter(x=>x.status==='running'||x.status==='queued').length;
+    run.innerHTML = live?`<div style="margin:8px 0;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)">正在生成 ${live} 张 · 自动刷新</div>`:'';
+  }
+}
+
 function openCandGallery(){
   state.candGallery = {id: (AD&&AD.id)||'', files: (AD&&AD.cands||[]).map(c=>c.file), names:{}};
   (AD&&AD.cands||[]).forEach(c=>{ state.candGallery.names[c.file]=c.name; });
@@ -1981,17 +2007,29 @@ function assetDetailHtml(){
     <div class="mono dim" style="font-size:9px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
     <button class="btn ok" style="font-size:9.5px;padding:1px 7px;margin-top:3px" onclick="adAdopt('${esc(c.file)}')">采用</button>
   </div>`).join("");
-  const jobs=(AD.jobs||[]).slice(-12).reverse().map(j=>`<tr>
-    <td class="mono dim" style="font-size:9.5px">${esc(j.id.slice(-20))}</td>
-    <td><span class="badge ${j.status==='done'?'b-ok':j.status==='failed'?'b-bad':'b-warn'}" style="font-size:9px">${esc(j.status)}</span></td>
-    <td class="dim mono" style="font-size:9.5px">${j.card!=null?'卡'+j.card:'—'}</td>
-    <td class="dim mono" style="font-size:9.5px">${j.seconds?j.seconds+'s':'—'}</td>
-    <td class="dim mono" style="font-size:9px">${esc((j.error||'').slice(0,70))}</td></tr>`).join("");
+  const jobs=(AD.jobs||[]).slice(-12).reverse().map(j=>{
+    const th = j.file
+      ? `<img src="/api/proj/file?p=${encodeURIComponent(j.file)}" title="${esc(j.file.split('/').pop())}"
+           onclick="openZoom('/api/proj/file?p=${encodeURIComponent(j.file)}')"
+           style="width:56px;height:34px;object-fit:cover;border-radius:4px;border:1px solid var(--line);cursor:zoom-in;display:block">`
+      : `<span class="dim" style="font-size:9px">—</span>`;
+    return `<tr>
+      <td>${th}</td>
+      <td class="mono dim" style="font-size:9.5px">${esc(j.id.slice(-20))}</td>
+      <td><span class="badge ${j.channel==='codex'?'b-acc':'b-mut'}" style="font-size:9px">${esc(j.channel||'local')}</span></td>
+      <td><span class="badge ${j.status==='done'?'b-ok':j.status==='failed'?'b-bad':'b-warn'}" style="font-size:9px">${esc(j.status)}</span></td>
+      <td class="dim mono" style="font-size:9.5px">${j.card!=null?'卡'+j.card:'—'}</td>
+      <td class="dim mono" style="font-size:9.5px">${j.seconds?j.seconds+'s':'—'}</td>
+      <td class="dim mono" style="font-size:9px">${esc((j.error||'').slice(0,70))}</td></tr>`;
+  }).join("");
   const history=`<div class="panel" style="margin-top:12px"><div class="ph"><span>生成历史</span>
     <span class="dim">${hist.length} 条采用历史 · ${(AD.cands||[]).length} 张候选 · ${(AD.jobs||[]).length} 个任务</span></div>
     <div class="pb">
       ${histCards?`<div class="dim" style="font-size:11px;margin-bottom:5px">历史采用（按时间倒序）</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${histCards}</div>`:''}
+      <div id="assetRun">${(AD.jobs||[]).some(x=>x.status==='running'||x.status==='queued')
+        ? `<div style="margin:8px 0;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)">
+            正在生成 ${(AD.jobs||[]).filter(x=>x.status==='running'||x.status==='queued').length} 张 · 自动刷新</div>`:''}</div>
       <div style="display:flex;align-items:center;gap:8px;margin:9px 0 5px">
         <span class="dim" style="font-size:11px">生成候选</span>
         <button class="btn ghost" style="font-size:10px;padding:1px 8px" onclick="openCandGallery()">
@@ -1999,12 +2037,11 @@ function assetDetailHtml(){
         </button>
         ${(AD.cands||[]).length>6?'<span class="dim" style="font-size:10px">下面只显前 6 张</span>':''}
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">${cands||'<div class="dim" style="font-size:11.5px">还没有候选图。</div>'}</div>
-      ${(AD.jobs||[]).some(x=>x.status==='running'||x.status==='queued')
-        ? `<div style="margin:8px 0;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)">
-            正在生成 ${(AD.jobs||[]).filter(x=>x.status==='running'||x.status==='queued').length} 张 · 每 6 秒自动刷新，不用手动点</div>`:''}
+      <div id="assetCandStrip" style="display:flex;gap:8px;flex-wrap:wrap">${cands||'<div class="dim" style="font-size:11.5px">还没有候选图。</div>'}</div>
+
       ${jobs?`<div style="margin-top:10px"><div class="dim" style="font-size:11px;margin-bottom:4px">任务记录</div>
-        <table><thead><tr><th>任务</th><th>状态</th><th>卡</th><th>耗时</th><th>错误</th></tr></thead><tbody>${jobs}</tbody></table></div>`:''}
+        <table><thead><tr><th>结果</th><th>任务</th><th>渠道</th><th>状态</th><th>卡</th><th>耗时</th><th>错误</th></tr></thead>
+        <tbody id="assetJobRows">${jobs}</tbody></table></div>`:''}
     </div></div>`;
   const form=isVoice?`<div class="dim" style="font-size:11.5px">音色资产不走出图；历史音色在绑定里。</div>`:`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
