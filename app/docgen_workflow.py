@@ -27,6 +27,7 @@ STAGE_DESC = {
 }
 
 EXTRA_09 = [
+    ("09-…/镜头规划/<场次>/scene-registry.md", "场次登记（每场一份，不升版本）"),
     ("09-…/镜头规划/<场次>/scene-timing-vNNN.md", "逐镜时长表"),
     ("09-…/镜头规划/<场次>/scene-space-map-vNNN.md", "空间关系与走位"),
     ("09-…/镜头规划/<场次>/director-plan-vNNN.md", "导演意图与取舍"),
@@ -49,7 +50,13 @@ def build() -> str:
     out.append("# 导演工作台 · 工作流程说明\n")
     out.append(f"> 生成时间：{now}　·　数据来源：工作台流程定义 `app/flow.py`\n")
     out.append("> 本文只说明**流程本身**：有哪些阶段、每步用什么技能、产出什么文件、谁依赖谁。")
+    out.append("> 流程卡只负责给输入；产物清单、命名与验收标准由对应 skill 决定。")
     out.append("> 它不记录任何具体项目的进度、状态或版本，也不参与依赖判定与校验。\n")
+
+    out.append("## 〇、卡片与技能的分工\n")
+    out.append("流程卡里写的是**只有这个项目知道的事**：项目根、场次、要读哪些上游文件、边界（只做本阶段、不自行确认、不调生成接口）。")
+    out.append("至于“这一步产出哪些文件、怎么命名、版本怎么递增、验收看什么”，全部以对应 skill 为准，卡片不复述。")
+    out.append("这样技能更新时流程自动跟上，不会出现卡片和技能各说一套。\n")
 
     out.append("## 一、阶段总览\n")
     out.append("| 阶段 | 卡片 | skill | 范围 | 这一阶段决定什么 |")
@@ -68,7 +75,8 @@ def build() -> str:
     out.append("")
 
     out.append("### 09 镜头规划下的配套文件\n")
-    out.append("同一场次可以同时存在这些分析文件，它们都依赖剧本、资产与表演设计：\n")
+    out.append("这些文件由 `film-cinedance` 技能定义（“拍法、镜头与生成单元确认门”三个内部门禁），")
+    out.append("流程卡不逐一列举，只保证它们能进入登记与确认流程。\n")
     out.append("| 文件 | 作用 |")
     out.append("|---|---|")
     for path, why in EXTRA_09:
