@@ -1,167 +1,123 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成「工作流程说明」文档（给人读，不参与流程与校验）。
+"""生成「工作流程说明」文档：只讲流程，不涉及任何具体项目的进度。
 
 用法：
-    python3 app/docgen_workflow.py                     # 输出到标准输出
-    python3 app/docgen_workflow.py -o ../docs/workflow.md
+    python3 app/docgen_workflow.py -o docs/workflow.md
 """
 from __future__ import annotations
 
 import argparse
-import json
+import sys
 import time
-from collections import defaultdict
 from pathlib import Path
 
-PROJECT = Path("/users/huxian/short_v/有谁共鸣2")
-STATE = PROJECT / "00-项目管理" / "artifact-state.json"
-
-STAGE_NAMES = {
-    "00": "原始资料", "01": "概念锚定", "02": "角色圣经", "03": "世界观",
-    "04": "分场大纲", "05": "正式剧本", "06": "剧本压力测试",
-    "07": "图像资产", "08": "表演设计", "09": "镜头与视频提示词",
+STAGE_DESC = {
+    "01": ("全项目", "主题、类型、基调、篇幅、核心冲突"),
+    "02": ("全项目", "人物身份、年龄、体态、关系、说话方式"),
+    "03": ("全项目", "时代、地域、制度、行业口径（可跳过）"),
+    "04": ("全项目", "分场表：场号、地点、时间、事件、预算"),
+    "05": ("全项目", "可拍摄剧本：场次、动作、对白"),
+    "05b": ("全项目", "逐场时长核算，供剪辑与生成预算"),
+    "06": ("全项目", "结构、节奏、逻辑压力测试（可跳过）"),
+    "07": ("全项目", "角色/场景/道具的资产清单与图片提示词"),
+    "08": ("单场", "逐场表演设计：目标、障碍、节拍、视线"),
+    "09a": ("单场", "镜头表：景别、机位、动作、台词、时长"),
+    "09b": ("单场", "视频提示词：可直接投给生成模型的正文"),
 }
 
-
-def load_registry():
-    return json.loads(STATE.read_text(encoding="utf-8"))
+EXTRA_09 = [
+    ("09-…/镜头规划/<场次>/scene-timing-vNNN.md", "逐镜时长表"),
+    ("09-…/镜头规划/<场次>/scene-space-map-vNNN.md", "空间关系与走位"),
+    ("09-…/镜头规划/<场次>/director-plan-vNNN.md", "导演意图与取舍"),
+    ("09-…/镜头规划/<场次>/reference-map-vNNN.md", "哪张参考图对应哪一镜"),
+    ("09-…/镜头规划/<场次>/continuity-ledger-vNNN.md", "连续性台账：服装、光向、持物"),
+    ("09-…/镜头规划/<场次>/visual-continuity-audit-vNNN.md", "视觉连贯自查"),
+    ("09-…/镜头规划/<场次>/generation-units-minimax-h3-vNNN.md", "生成单元规划：哪几镜合成一次生成"),
+]
 
 
 def steps():
-    import sys
     sys.path.insert(0, str(Path(__file__).parent))
     import flow
     return flow.STEPS
 
 
-def stage_of(path: str) -> str:
-    return path.split("/")[0][:2]
-
-
-def short(p: str, n: int = 42) -> str:
-    name = p.split("/")[-1]
-    return name if len(name) <= n else name[: n - 1] + "…"
-
-
 def build() -> str:
-    reg = load_registry()
-    arts = reg["artifacts"]
-    by_path = {a["path"]: a for a in arts}
-
-    # 反向依赖：谁引用了它
-    users = defaultdict(list)
-    for a in arts:
-        for dep in a.get("depends_on") or []:
-            users[dep].append(a["path"])
-
-    out = []
     now = time.strftime("%Y-%m-%d %H:%M")
+    out = []
     out.append("# 导演工作台 · 工作流程说明\n")
-    out.append(f"> 生成时间：{now}　·　数据来源：`00-项目管理/artifact-state.json` + 工作台 `app/flow.py`\n")
-    out.append("> **这份文件只供人阅读，不参与任何依赖判定与校验。**")
-    out.append("> 它不登记为成果、不被任何文件依赖；改了它不会触发任何下游失效。")
-    out.append("> 内容随时可从登记表重新生成，命令见文末。\n")
+    out.append(f"> 生成时间：{now}　·　数据来源：工作台流程定义 `app/flow.py`\n")
+    out.append("> 本文只说明**流程本身**：有哪些阶段、每步用什么技能、产出什么文件、谁依赖谁。")
+    out.append("> 它不记录任何具体项目的进度、状态或版本，也不参与依赖判定与校验。\n")
 
-    out.append("## 一、全流程与技能\n")
-    out.append("| 阶段 | 卡片 | skill | 产出文件 | 上游依赖 |")
+    out.append("## 一、阶段总览\n")
+    out.append("| 阶段 | 卡片 | skill | 范围 | 这一阶段决定什么 |")
     out.append("|---|---|---|---|---|")
     for s in steps():
-        out.append(f"| {s['no']} | {s['name']} | `{s['skill']}` | `{s['output']}` | {', '.join(s['deps']) or '—'} |")
+        scope, desc = STAGE_DESC.get(s["key"], (s["scope"], ""))
+        out.append(f"| {s['no']} | {s['name']} | `{s['skill']}` | {scope} | {desc} |")
     out.append("")
 
-    out.append("## 二、实际登记的成果\n")
-    grouped = defaultdict(list)
-    for a in arts:
-        grouped[stage_of(a["path"])].append(a)
-    for st in sorted(grouped):
-        out.append(f"### {st} {STAGE_NAMES.get(st, '')}（{len(grouped[st])} 项）\n")
-        out.append("| 状态 | 文件 | 依赖数 | 下游数 |")
-        out.append("|---|---|---|---|")
-        for a in sorted(grouped[st], key=lambda x: x["path"]):
-            deps = len(a.get("depends_on") or [])
-            down = len(users.get(a["path"], []))
-            mark = "" if down else " ⚠️"
-            out.append(f"| {a['status']} | `{short(a['path'])}` | {deps} | {down}{mark} |")
-        out.append("")
+    out.append("## 二、每步产出什么文件\n")
+    out.append("| 阶段 | 产出路径（`{v}` 为三位版本号） | 上游 |")
+    out.append("|---|---|---|")
+    for s in steps():
+        deps = "、".join(s["deps"]) or "—"
+        out.append(f"| {s['no']} | `{s['output']}` | {deps} |")
+    out.append("")
 
-    out.append("## 三、依赖链（按实际登记）\n")
+    out.append("### 09 镜头规划下的配套文件\n")
+    out.append("同一场次可以同时存在这些分析文件，它们都依赖剧本、资产与表演设计：\n")
+    out.append("| 文件 | 作用 |")
+    out.append("|---|---|")
+    for path, why in EXTRA_09:
+        out.append(f"| `{path}` | {why} |")
+    out.append("")
+
+    out.append("## 三、依赖规则\n")
     out.append("```text")
-    for a in sorted(arts, key=lambda x: x["path"]):
-        deps = a.get("depends_on") or []
-        if deps:
-            out.append(f"{short(a['path'])}")
-            for d in deps:
-                out.append(f"    ← {short(d)}")
+    out.append("00 原始资料（小说/原稿，外部提供）")
+    out.append("  ↓")
+    out.append("01 概念锚定 → 02 角色圣经 → 03 世界观（可选）→ 04 分场大纲")
+    out.append("  ↓")
+    out.append("05 正式剧本 ──┬→ 05b 时长复核")
+    out.append("              ├→ 06 压力测试（可选）")
+    out.append("              ├→ 07 图像资产（含音色参考）")
+    out.append("              └→ 08 表演设计（逐场）")
+    out.append("                       ↓")
+    out.append("                  09a 镜头规划（含生成单元规划）")
+    out.append("                       ↓")
+    out.append("                  09b 视频提示词")
+    out.append("                       ↓")
+    out.append("                  生成台 → ComfyUI → 成片")
     out.append("```\n")
 
-    out.append("## 四、需要注意的结构问题\n")
-    def is_terminal(a):
-        # 视频提示词是生成台的输入，不被其他成果引用；它是链路终点
-        return "视频提示词" in (a.get("kind") or "") or "ref2va" in a["path"]
-    terminal = [a for a in arts if not users.get(a["path"]) and a["status"] == "已确认-当前" and is_terminal(a)]
-    dead = [a for a in arts if not users.get(a["path"]) and a["status"] == "已确认-当前" and not is_terminal(a)]
-    out.append(f"**终点产物（正常，本来就没有下游）：{len(terminal)} 项**\n")
-    for a in terminal:
-        out.append(f"- `{short(a['path'], 60)}`")
-    out.append("")
-    out.append(f"**断头路（已确认但没有下游，可能是缺陷）：{len(dead)} 项**\n")
-    for a in dead:
-        out.append(f"- `{short(a['path'], 60)}`")
-    out.append("")
-    fam = defaultdict(list)
-    for a in arts:
-        key = Path(a["path"]).name.split("-v")[0]
-        fam[(stage_of(a["path"]), key)].append(a)
-    multi = {k: v for k, v in fam.items() if len(v) > 1}
-    if multi:
-        out.append(f"**存在多版本的文件族（{len(multi)} 组）**\n")
-        for (st, key), items in sorted(multi.items()):
-            cur = [a for a in items if a["status"] == "已确认-当前"]
-            note = ""
-            if len(cur) > 1:
-                note = f"　⚠️ {len(cur)} 个同时标为当前"
-            cur_name = short(cur[0]["path"], 30) if cur else "无"
-            out.append(f"- {st} `{key}`：{len(items)} 个版本，当前 {cur_name}{note}")
-        out.append("")
+    out.append("三条硬规则（由项目校验脚本执行）：\n")
+    out.append("1. **生成单元**必须直接依赖同场镜头清单。")
+    out.append("2. **视频提示词**必须依赖同场、同模型的生成单元；ref2va 类允许直接依赖镜头表。")
+    out.append("3. **镜头表、导演方案、时长表**必须有已登记的权威剧本或作者原稿作为依据。\n")
 
-    out.append("## 四bis、流程定义与实际登记的差异\n")
-    out.append("流程卡要求的上游阶段，与登记表里实际写的依赖不一致时列在这里。\n")
-    out.append("| 文件 | 流程卡要求 | 实际登记缺 |")
+    out.append("## 四、版本与登记\n")
+    out.append("- 每次改动都**新增版本**（`-v001`、`-v002`…），不覆盖旧版。")
+    out.append("- 一个文件被登记后才有 sha256；文件内容一变，哈希就对不上，系统会标它“已改动”。")
+    out.append("- 上游文件被替换或改动，下游会标“依赖失效”，需要重新确认。")
+    out.append("- 同一族文件（同一个文件名前缀）在同一时间只应有一个「当前版」。\n")
+
+    out.append("## 五、确认与生成门禁\n")
+    out.append("| 环节 | 谁把关 | 结果 |")
     out.append("|---|---|---|")
-    mism = 0
-    for s in steps():
-        want = {d[:2] for d in s["deps"]}          # 步骤 key（09a/05b）归到阶段号
-        pat = s["pattern"]
-        import re as _re
-        for a in arts:
-            if not _re.search(pat, a["path"]):
-                continue
-            have = {stage_of(d) for d in (a.get("depends_on") or [])}
-            missing = {d for d in want if d not in have}
-            if missing:
-                mism += 1
-                out.append(f"| `{short(a['path'], 44)}` | {', '.join(sorted(want))} | {', '.join(sorted(missing))} |")
-    if not mism:
-        out.append("| 无 | — | — |")
+    out.append("| 文件确认 | 导演在工作台点「确认」 | 写入审批账本，绑定文件 sha |")
+    out.append("| 提交生成 | 生成台检查提示词是否已确认 | 未确认或 sha 已变 → 拒绝提交 |")
+    out.append("| 出片入库 | 任务完成后落到成片目录 | 记录耗时、排队、工作流、参考图 |")
     out.append("")
 
-    out.append("## 五、改一个文件会连带失效多少\n")
-    out.append("| 文件 | 直接下游 | 说明 |")
-    out.append("|---|---|---|")
-    for a in sorted(arts, key=lambda x: -len(users.get(x["path"], []))):
-        n = len(users.get(a["path"], []))
-        if n >= 2:
-            out.append(f"| `{short(a['path'], 46)}` | {n} | {a['status']} |")
-    out.append("")
-
-    out.append("## 六、运行期产物（不属于创作成果）\n")
+    out.append("## 六、运行期产物（不是创作成果）\n")
     out.append("```text")
     out.append("制作运行/")
     out.append("  ├─ approvals.jsonl          审批账本（工作台「确认」写这里）")
-    out.append("  ├─ decisions.jsonl          旧版审核决策（EP001-SCxxx 编号）")
-    out.append("  ├─ 确认状态.json             本地确认（生成门禁用）")
-    out.append("  ├─ generation-batches/      每次提交的批次记录")
+    out.append("  ├─ 确认状态.json             本地确认状态（生成门禁用）")
+    out.append("  ├─ generation-batches/      每次提交的批次记录（参数/参考图 sha/任务 id）")
     out.append("  ├─ 接续帧/                   接上镜时抽取的上一镜末帧")
     out.append("  ├─ 首帧候选/                 首帧生成结果")
     out.append("  └─ agent-tasks/             派给 Agent 的任务单")
@@ -169,12 +125,13 @@ def build() -> str:
     out.append("09-镜头与视频提示词/生成结果/<场次>/<单元>/*.mp4   成片")
     out.append("```\n")
 
-    out.append("## 七、如何保持这份文件是新的\n")
+    out.append("## 七、如何更新本文\n")
     out.append("```bash")
     out.append("cd ~/gen_v/Shotcall")
     out.append("python3 app/docgen_workflow.py -o docs/workflow.md")
     out.append("```\n")
-    out.append("它只读登记表和工作台的流程定义，不写项目文件。改动流程或登记成果后重跑一次即可。")
+    out.append("流程卡（阶段、技能、产出路径、上游依赖）改了就重跑一次；")
+    out.append("它只读 `app/flow.py`，不读任何项目数据。")
     return "\n".join(out) + "\n"
 
 
