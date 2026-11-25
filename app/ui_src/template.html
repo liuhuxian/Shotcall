@@ -1654,15 +1654,51 @@ function cloudBar(){
   const c = CLOUD.data;
   if(!c){ loadCloud().then(()=>render()); return `<div class="dim" style="font-size:11.5px;margin-bottom:10px">读取出图渠道…</div>`; }
   const ok = c.configured;
+  const open = state.cloudEdit;
+  const inp = (id, val, ph, type) => `<input id="${id}" type="${type||'text'}" value="${esc(val||'')}" placeholder="${esc(ph)}"
+    style="flex:1;min-width:160px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:11.5px">`;
   return `<div class="panel" style="margin-bottom:12px;border-color:${ok?'var(--ok)':'var(--line)'}">
-    <div class="pb" style="display:flex;align-items:center;gap:10px;font-size:12px">
+    <div class="pb" style="display:flex;align-items:center;gap:10px;font-size:12px;flex-wrap:wrap">
       <b>出图渠道</b>
-      <span class="badge ${ok?'b-ok':'b-mut'}" style="font-size:10px">本机 H3</span>
-      <span class="badge ${ok?'b-ok':'b-warn'}" style="font-size:10px">云端：${ok?'已配置 '+esc(c.model):'未配置'}</span>
-      <span class="dim" style="flex:1;font-size:11px">${ok?esc(c.base):esc(c.reason||'')}</span>
+      <span class="badge b-ok" style="font-size:10px">本机 H3</span>
+      <span class="badge ${ok?'b-ok':'b-mut'}" style="font-size:10px">云端：${ok?'已配置 '+esc(c.model):'未配置'}</span>
+      <span class="dim" style="flex:1;font-size:11px">${ok?esc(c.base)+' · key '+esc(c.keyMask||''):esc(c.reason||'')}</span>
+      <button class="btn ${open?'acc':'ghost'}" style="font-size:11px;padding:2px 9px" onclick="toggleCloudEdit()">${open?'收起':'配置云端'}</button>
     </div>
-    <div class="dim" style="padding:0 13px 10px;font-size:11px;line-height:1.7">${ok?'':'填 <span class="mono">app/cloud-image.json</span>：{"base":"https://api.openai.com/v1","key":"…","model":"gpt-image-1"} 后重启即可。<br>Codex 本身没有出图 API（只有 ChatGPT 登录态）。'}</div>
+    ${open?`<div class="pb" style="border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px">
+      <div style="display:flex;gap:8px;align-items:center"><span class="dim" style="width:52px;font-size:11px">BASE</span>${inp('cloudBase', c.base||'', 'https://api.openai.com/v1')}</div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="dim" style="width:52px;font-size:11px">KEY</span>${inp('cloudKey', '', c.keyMask?('已设置 '+c.keyMask+'，留空则不改'):'sk-...')}</div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="dim" style="width:52px;font-size:11px">MODEL</span>${inp('cloudModel', c.model||'', 'gpt-image-1 / dall-e-3')}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="saveCloudCfg()">保存</button>
+        <button class="btn ghost" style="font-size:11px;padding:3px 12px" onclick="checkCloudCfg()">校验连接</button>
+        <span id="cloudMsg" class="dim" style="font-size:11px">${esc(state.cloudMsg||'')}</span>
+      </div>
+      <div class="dim" style="font-size:10.5px;line-height:1.6">写入 <span class="mono">app/cloud-image.json</span>（已 gitignore，权限 600）。协议按 OpenAI 兼容的 <span class="mono">/images/generations</span>；中转站把 BASE 改成它给的 <span class="mono">/v1</span> 地址。校验只读 <span class="mono">/models</span>，不产生出图费用。</div>
+    </div>`:''}
   </div>`;
+}
+
+function toggleCloudEdit(){ state.cloudEdit = !state.cloudEdit; render(); }
+
+async function saveCloudCfg(){
+  const base=(document.getElementById('cloudBase')||{}).value||'';
+  const key=(document.getElementById('cloudKey')||{}).value||'';
+  const model=(document.getElementById('cloudModel')||{}).value||'';
+  const r=await fetch('/api/cloud/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({base,key,model})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'保存失败');
+  CLOUD.data=j; state.cloudMsg=j.configured?'已保存':'已保存，但仍缺少字段：'+(j.reason||''); toast('云端出图配置已保存'); render();
+}
+
+async function checkCloudCfg(){
+  state.cloudMsg='校验中…'; render();
+  const r=await fetch('/api/cloud/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'check'})});
+  const j=await r.json();
+  state.cloudMsg = j.ok ? ('连接正常' + (j.modelFound===false?'（但模型不在列表里，检查 MODEL 名）':'') + (j.models&&j.models.length?(' · 可用模型：'+j.models.slice(0,6).join(', ')):''))
+                        : ('校验失败：'+(j.error||'未知'));
+  render();
 }
 async function approveAsset(assetId, verdict){
   let note = '';

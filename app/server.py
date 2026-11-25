@@ -2111,6 +2111,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.query_path = self.path
         path = self.path.split("?")[0]
+        if path == "/api/cloud/config":
+            try:
+                body = self._json_body()
+                if str(body.get("action") or "") == "check":
+                    out = cloudimg.check()
+                else:
+                    out = cloudimg.save_config(str(body.get("base") or ""),
+                                               str(body.get("key") or ""),
+                                               str(body.get("model") or ""))
+                    out["saved"] = True
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/preflight":
             try:
                 body = self._json_body()
