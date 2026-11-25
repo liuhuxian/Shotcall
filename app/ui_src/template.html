@@ -1432,28 +1432,38 @@ async function loadShots(scene, force){
   return SHOTS[scene];
 }
 
-let SB = {};
-async function loadStoryboards(scene){
-  if(SB[scene]) return SB[scene];
-  try{ SB[scene] = (await (await fetch('/api/storyboards?scene='+encodeURIComponent(scene))).json()).items || []; }
-  catch(e){ SB[scene] = []; }
-  return SB[scene];
+let SBALL = null;   // 全项目分镜图（资产页管理用）
+async function loadStoryboardsAll(force){
+  if(SBALL && !force) return SBALL;
+  try{ SBALL = (await (await fetch('/api/storyboards?scene=all')).json()).items || []; }
+  catch(e){ SBALL = []; }
+  return SBALL;
 }
 
-function storyboardStrip(scene){
-  const items = SB[scene];
-  if(items === undefined){ loadStoryboards(scene).then(()=>render()); return ''; }
-  if(!items.length) return '';
+function storyboardAssetsPanel(){
+  if(SBALL === null){ loadStoryboardsAll().then(()=>{ FLOW.data=FLOW.data; render(); }); return ''; }
+  const byScene = {};
+  for(const it of SBALL){ (byScene[it.scene] = byScene[it.scene] || []).push(it); }
+  const scenes = Object.keys(byScene).sort();
   return `<div class="panel" style="margin-bottom:14px">
-    <div class="ph"><span>分镜图</span><span class="dim">${items.length} 张 · 点开可放大</span></div>
-    <div class="pb" style="display:flex;gap:10px;flex-wrap:wrap">
-      ${items.map(it=>`<div style="width:240px">
-        <img src="/api/proj/file?p=${encodeURIComponent(it.file)}"
-          onclick="openZoom('/api/proj/file?p=${encodeURIComponent(it.file)}')"
-          style="width:100%;height:135px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
-        <div class="mono dim" style="font-size:10px;margin-top:3px">${esc(it.name)}</div>
-        <div class="dim" style="font-size:10px">${esc(it.time)} · ${it.sizeMB} MB</div>
-      </div>`).join("")}
+    <div class="ph"><span>分镜图</span>
+      <span class="dim">${SBALL.length} 张 · ${scenes.length} 个场次 · 点开可放大</span>
+      <button class="btn ghost" style="font-size:10.5px;padding:1px 8px" onclick="SBALL=null;render()">刷新</button></div>
+    <div class="pb">
+      ${SBALL.length?scenes.map(sc=>`
+        <div style="margin-bottom:10px">
+          <div class="dim" style="font-size:11px;margin-bottom:5px">${esc(sc)} · ${byScene[sc].length} 张</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            ${byScene[sc].map(it=>`<div style="width:210px">
+              <img src="/api/proj/file?p=${encodeURIComponent(it.file)}"
+                onclick="openZoom('/api/proj/file?p=${encodeURIComponent(it.file)}')"
+                style="width:100%;height:118px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;display:block">
+              <div class="mono dim" style="font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(it.name)}">${esc(it.name)}</div>
+              <div class="dim" style="font-size:10px">${esc(it.time)} · ${it.sizeMB} MB</div>
+            </div>`).join("")}
+          </div>
+        </div>`).join("")
+      :'<div class="dim" style="font-size:12px">还没有分镜图。分镜图由 09 镜头规划产出，放在镜头规划目录下的「分镜图」文件夹。</div>'}
     </div></div>`;
 }
 
@@ -1621,7 +1631,6 @@ function sShots(){
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
   ${shotApprovalBar(scene)}
   ${candidateWall(scene)}
-  ${storyboardStrip(scene)}
   <div class="panel">
     <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
       <span class="dim">${esc(info.episode||"")} · ${esc(info.interior||"")} · ${esc(info.time||"")} · ${sh.length} 镜 · ${info.duration||0}s</span></div>
@@ -1735,6 +1744,7 @@ function sAssetsPage(){
       <div class="dim" style="font-size:11px;margin-top:3px">作者明确不生成${s.unbound?` · 待补 ${s.unbound}`:''}</div></div>
   </div>
   ${cloudBar()}
+  ${storyboardAssetsPanel()}
   <div class="panel" style="margin-bottom:14px">
     <div class="ph"><span>审核二 · 资产</span><span class="dim">逐项通过 / 待定 · 「修改」直接进资产详情改图 · 依据 ${esc(d.doc||"")}</span>
       <a class="btn ghost" style="font-size:11px;padding:2px 9px;text-decoration:none" href="/api/reviews/export" download>导出审核单</a></div>

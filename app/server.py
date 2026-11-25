@@ -1661,16 +1661,20 @@ class Handler(BaseHTTPRequestHandler):
                        "application/json; charset=utf-8")
         elif path == "/api/storyboards":
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
-            sc = qs.get("scene", ["N001"])[0]
-            if not re.fullmatch(r"N\d{3}", sc):
-                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+            sc = qs.get("scene", ["all"])[0]
+            if sc != "all" and not re.fullmatch(r"N\d{3}", sc):
+                self._send(400, b'{"error":"scene must be Nxxx or all"}', "application/json; charset=utf-8")
                 return
-            d = PROJECT / "09-镜头与视频提示词/镜头规划" / sc / "分镜图"
+            base = PROJECT / "09-镜头与视频提示词/镜头规划"
+            dirs = [base / sc / "分镜图"] if sc != "all" else sorted(base.glob("*/分镜图"))
             items = []
-            if d.is_dir():
+            for d in dirs:
+                if not d.is_dir():
+                    continue
+                scene = d.parent.name
                 for f in sorted(d.glob("*.png")):
                     st = f.stat()
-                    items.append({"file": str(f.relative_to(PROJECT)), "name": f.name,
+                    items.append({"file": str(f.relative_to(PROJECT)), "name": f.name, "scene": scene,
                                   "sizeMB": round(st.st_size / 2 ** 20, 2),
                                   "time": time.strftime("%m-%d %H:%M", time.localtime(st.st_mtime))})
             self._send(200, json.dumps({"scene": sc, "items": items}, ensure_ascii=False).encode("utf-8"),
