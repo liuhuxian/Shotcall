@@ -442,6 +442,13 @@ def build(project: Path) -> dict:
                            "bound": bool(it.get("bound"))})
     except Exception:
         pass
+    # 候选图总数（供资产页 KPI 显示）
+    cand_total = 0
+    cand_root0 = project / "07-图像资产/候选图片"
+    if cand_root0.is_dir():
+        cand_total = sum(1 for f in cand_root0.rglob("*")
+                         if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"))
+
     # 未绑定的资产：用最近生成的一张候选当缩略图，方便看进度
     cand_root = project / "07-图像资产/候选图片"
     for a in assets:
@@ -505,5 +512,6 @@ def build(project: Path) -> dict:
             "prop": sum(1 for a in assets if a["type"] == "prop"),
             "extra": sum(1 for a in assets if a["type"] == "extra"),
             "textProps": len(TEXT_PROPS),
+            "candidates": cand_total,
         },
     }

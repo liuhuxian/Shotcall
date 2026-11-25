@@ -1799,6 +1799,10 @@ function sAssetsPage(){
     <div class="card"><div class="muted" style="font-size:12px">已绑定</div><div class="kpi" style="color:var(--ok)">${s.bound||0}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">角色 / 场景 / 道具</div>
       <div class="kpi" style="font-size:20px">${s.character||0} / ${s.scene||0} / ${s.prop||0}</div></div>
+    <div class="card" style="cursor:pointer" onclick="openAllCands()" title="查看全部候选图">
+      <div class="muted" style="font-size:12px">候选图</div>
+      <div class="kpi" style="color:var(--acc)">${s.candidates||0}<small>张</small></div>
+      <div class="dim" style="font-size:11px;margin-top:3px">点开看全部候选</div></div>
     <div class="card"><div class="muted" style="font-size:12px">已忽略</div>
       <div class="kpi" style="color:#5c6474">${s.ignored||0}</div>
       <div class="dim" style="font-size:11px;margin-top:3px">作者明确不生成${s.unbound?` · 待补 ${s.unbound}`:''}</div></div>
@@ -1886,12 +1890,28 @@ async function refreshAssetParts(){
   }
 }
 
+async function openAllCands(){
+  let items=[];
+  try{ items=(await (await fetch('/api/img/candidates')).json()).items||[]; }catch(e){}
+  state.candGallery={ id:'全部资产', files:items.map(x=>x.file), names:{}, assets:{} };
+  items.forEach(x=>{ state.candGallery.names[x.file]=x.name; state.candGallery.assets[x.file]=x.asset; });
+  render();
+}
 function openCandGallery(){
   state.candGallery = {id: (AD&&AD.id)||'', files: (AD&&AD.cands||[]).map(c=>c.file), names:{}};
   (AD&&AD.cands||[]).forEach(c=>{ state.candGallery.names[c.file]=c.name; });
   render();
 }
 function closeCandGallery(){ state.candGallery=null; render(); }
+async function adoptFromGallery(file, asset){
+  const aid = asset || (AD && AD.id) || '';
+  if(!aid) return toast('缺少资产 ID');
+  const r=await fetch('/api/img/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({asset:aid,file})});
+  const j=await r.json(); if(!r.ok) return toast(j.error||'采用失败');
+  toast('已采用：'+aid);
+  AST.data=null; await loadAssets(); closeCandGallery();
+}
 function candGalleryHtml(){
   const g = state.candGallery;
   if(!g) return '';
@@ -1911,7 +1931,8 @@ function candGalleryHtml(){
             style="width:100%;height:150px;object-fit:cover;display:block;cursor:zoom-in">
           <div style="padding:6px 8px">
             <div class="mono dim" style="font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((g.names||{})[f]||f.split('/').pop())}</div>
-            <button class="btn ok" style="font-size:10px;padding:1px 8px;margin-top:4px" onclick="adAdopt('${esc(f)}');closeCandGallery()">采用</button>
+            <button class="btn ok" style="font-size:10px;padding:1px 8px;margin-top:4px"
+              onclick="adoptFromGallery('${esc(f)}','${esc(((g.assets||{})[f])||'')}')">采用</button>
           </div>
         </div>`).join('')}
       </div>`:'<div class="dim">这个资产还没有候选图。</div>'}
