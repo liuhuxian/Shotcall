@@ -1806,14 +1806,30 @@ async function openAsset(id){
   render();
   await loadAssetDetail();
 }
-function closeAsset(){ AD=null; render(); }
+function closeAsset(){ clearAssetPoll(); AD=null; render(); }
 function adAsset(){ return ((AST.data&&AST.data.assets)||[]).find(a=>a.id===AD.id) || null; }
 async function loadAssetDetail(){
   if(!AD) return;
-  AD.cands=[]; AD.jobs=[];
-  try{ AD.cands=(await (await fetch('/api/img/candidates?asset='+encodeURIComponent(AD.id))).json()).items||[]; }catch(e){}
-  try{ const j=await (await fetch('/api/img/jobs')).json(); AD.jobs=(j.jobs||[]).filter(x=>x.asset===AD.id); }catch(e){}
+  const id=AD.id;
+  try{ AD.cands=(await (await fetch('/api/img/candidates?asset='+encodeURIComponent(id))).json()).items||[]; }catch(e){}
+  try{ const j=await (await fetch('/api/img/jobs')).json(); AD.jobs=(j.jobs||[]).filter(x=>x.asset===id); }catch(e){}
   AD.loading=false; render();
+  scheduleAssetPoll();
+}
+
+let AD_POLL=null;
+function clearAssetPoll(){ if(AD_POLL){ clearTimeout(AD_POLL); AD_POLL=null; } }
+function scheduleAssetPoll(){
+  clearAssetPoll();
+  if(!AD || !AD.jobs) return;
+  const live=(AD.jobs||[]).filter(j=>j.status==='running'||j.status==='queued'||j.status==='pending');
+  if(!live.length) return;
+  AD_POLL=setTimeout(async()=>{
+    if(!AD) return;
+    const before=(AD.cands||[]).length;
+    await loadAssetDetail();
+    if(AD && (AD.cands||[]).length>before) toast('有新候选：'+((AD.cands||[]).length-before)+' 张');
+  }, 6000);
 }
 function adRefs(a){
   const out=[];
@@ -1825,14 +1841,15 @@ async function adGenerate(){
   const a=adAsset(); if(!a) return;
   const prompt=(AD.prompt||'').trim();
   if(!prompt) return toast('提示词为空');
-  if(!AD.ref) return toast('先点「引用当前」或「引用其他」选择一张参考图');
-  const body={asset:a.id, mode:'edit', prompt:prompt.trim(), ref:AD.ref,
+  const mode = AD.ref ? 'edit' : 't2i';
+  const body={asset:a.id, mode, prompt:prompt.trim(),
     n:parseInt(AD.n||1), size:AD.size||'2656x1504', steps:parseInt(AD.steps||8)};
+  if(AD.ref) body.ref = AD.ref;
   const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
   const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
-  toast('已提交 '+(j.jobs||[]).length+' 张：'+j.batch);
-  setTimeout(()=>loadAssetDetail(), 5000);
+  toast('已提交 '+(j.jobs||[]).length+' 张：'+j.batch+'（完成后自动刷新）');
+  await loadAssetDetail();
 }
 async function adLoadRefs(){
   try{ AD.refs=(await (await fetch('/api/img/refs')).json()).items||[]; }catch(e){ AD.refs=[]; }
@@ -1904,16 +1921,19 @@ function assetDetailHtml(){
         <div style="display:flex;gap:8px;flex-wrap:wrap">${histCards}</div>`:''}
       <div class="dim" style="font-size:11px;margin:9px 0 5px">生成候选</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${cands||'<div class="dim" style="font-size:11.5px">还没有候选图。</div>'}</div>
+      ${(AD.jobs||[]).some(x=>x.status==='running'||x.status==='queued')
+        ? `<div style="margin:8px 0;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)">
+            正在生成 ${(AD.jobs||[]).filter(x=>x.status==='running'||x.status==='queued').length} 张 · 每 6 秒自动刷新，不用手动点</div>`:''}
       ${jobs?`<div style="margin-top:10px"><div class="dim" style="font-size:11px;margin-bottom:4px">任务记录</div>
         <table><thead><tr><th>任务</th><th>状态</th><th>卡</th><th>耗时</th><th>错误</th></tr></thead><tbody>${jobs}</tbody></table></div>`:''}
     </div></div>`;
   const form=isVoice?`<div class="dim" style="font-size:11.5px">音色资产不走出图；历史音色在绑定里。</div>`:`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
       <span class="dim" style="font-size:11px">参考图</span>
-      <button class="btn acc" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
-      <button class="btn ghost" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()">引用其他</button>
-      <span class="dim" style="font-size:10px">${AD.ref?('已选：'+esc(AD.ref.split('/').pop())):'未选参考图'}</span>
-      ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;render()">清除</button>`:''}
+      <button class="btn ${(AD.ref&&img&&AD.ref===img)?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
+      <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()">引用其他</button>
+      <span class="dim" style="font-size:10px">${AD.ref?('已选：'+esc(AD.ref.split('/').pop())):'未选参考图 · 走文生图'}</span>
+      ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
       <div class="ph"><span>引用其他图</span><span class="dim">项目内已有图，或从本机上传</span></div>
@@ -1938,7 +1958,8 @@ function assetDetailHtml(){
       <span class="dim" style="font-size:11px">尺寸</span><select id="adSize" onchange="AD.size=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px">
         ${['2656x1504','2048x1152','1536x864'].map(v=>`<option value="${v}" ${AD.size===v?'selected':''}>${v==='2656x1504'?'16:9 2656×1504':v==='2048x1152'?'16:9 2048×1152':'16:9 1536×864'}</option>`).join('')}</select>
       <span class="dim" style="font-size:11px">步数</span><select id="adSteps" onchange="AD.steps=this.value" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 5px"><option value="8" ${String(AD.steps)==='8'?'selected':''}>8</option><option value="6" ${String(AD.steps)==='6'?'selected':''}>6</option></select>
-      <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="adGenerate()">提交生成</button>
+      <button class="btn acc" style="font-size:11px;padding:3px 12px" onclick="adGenerate()">${AD.ref?'提交改图':'提交文生图'}</button>
+      <span class="dim" style="font-size:10px">${AD.ref?'用引用的图作底图':'无参考图，按提示词直接出图'}</span>
       <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadAssetDetail()">刷新</button>
     </div>`;
   return `<div id="assetDetail" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;overflow:auto;padding:30px 18px"
