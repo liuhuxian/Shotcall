@@ -1923,7 +1923,7 @@ function candGalleryHtml(){
   const g = state.candGallery;
   if(!g) return '';
   const files = g.files || [];
-  return `<div style="position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:2600;overflow:auto;padding:22px"
+  return `<div id="candGallery" style="position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:2600;overflow:auto;padding:22px"
     onclick="if(event.target===this)closeCandGallery()">
     <div style="max-width:1500px;margin:0 auto">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
