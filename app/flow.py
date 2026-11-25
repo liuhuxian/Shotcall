@@ -71,7 +71,9 @@ def _prompt_09b():
 {{INPUTS}}
 
 六段式、帧数与时长规则按 minimax-h3-video-prompts；表演按 performance-direction；光线按 lighting-direction；文件命名与验收按 film-cinedance。
-本项目追加一条：单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
+本项目追加两条：
+- 单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
+- 文件末尾必须有 ```yoko-shots JSON 块（单元 id、时长、镜号、参考图、音色、接续），否则生成台读不到单元。
 边界：只做本阶段，不自行确认，不调用生成接口。
 完成后只汇报：版本、路径、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。
 """
@@ -147,7 +149,7 @@ STEPS = [
              dict(label="视觉连贯审查", kind="09 视觉连贯审查",
                   pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/visual-continuity-audit-v(\d{3})(?:-\d+)?\.md$",
                   output="09-镜头与视频提示词/镜头规划/{scene}/visual-continuity-audit-{v}.md"),
-             dict(label="生成单元规划", kind="09 generation-units-minimax-h3",
+             dict(label="生成单元规划", kind="09 generation-units-minimax-h3", deps=["primary"],
                   pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$",
                   output="09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md"),
          ],
@@ -156,6 +158,8 @@ STEPS = [
          kind="09 视频提示词", scope="{scene}",
          pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3-ref2va-v(\d{3})(?:-\d+)?\.md$",
          output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-ref2va-{v}.md", deps=["09a", "07"],
+         extra_inputs=[dict(scope="{scene}",
+                            pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$")],
          prompt=_prompt_09b()),
 ]
 
@@ -313,6 +317,24 @@ def _inputs(project: Path, step, scene=None):
             a = _latest(project, dep, scene if dep["scope"] == "{scene}" else None)
             if a:
                 out.append(a["path"])
+    # 额外输入：同场某类文件的最新一版（如 09b 要读生成单元规划）
+    for spec in step.get("extra_inputs") or []:
+        pat = spec["pattern"]
+        best = None
+        for a in _all(project):
+            m = re.search(pat, a.get("path", ""))
+            if m and (spec.get("scope") != "{scene}" or m.group(1) == scene):
+                if best is None or _ver(a["path"]) >= _ver(best):
+                    best = a["path"]
+        if best is None:
+            for f in project.glob(spec.get("glob") or "**/*"):
+                rel = str(f.relative_to(project))
+                m = re.search(pat, rel)
+                if m and (spec.get("scope") != "{scene}" or m.group(1) == scene):
+                    if best is None or _ver(rel) >= _ver(best):
+                        best = rel
+        if best:
+            out.append(best)
     return out
 
 
@@ -424,6 +446,34 @@ def _run_guard(project: Path, args: list):
     return text.strip()
 
 
+def _kind_for(step, rel: str) -> str:
+    """同一张卡的多个产出共用 kind 会互相顶掉当前版，这里按路径取各自 kind。"""
+    for x in (step.get("extra") or []):
+        if re.search(x["pattern"], rel or ""):
+            return x.get("kind") or step["kind"]
+    return step["kind"]
+
+
+def _extra_deps(step, rel: str, project: Path, scene: str) -> list:
+    """附带产出自己的依赖：如生成单元必须依赖同场镜头表。"""
+    for x in (step.get("extra") or []):
+        if not re.search(x["pattern"], rel or ""):
+            continue
+        need = x.get("deps") or []
+        out = []
+        for spec in need:
+            if spec == "primary":
+                a = _latest(project, step, scene if step["scope"] == "{scene}" else None)
+                if a:
+                    out.append(a["path"])
+            elif spec == "acting":
+                a = _latest(project, BY_KEY["08"], scene)
+                if a:
+                    out.append(a["path"])
+        return out
+    return []
+
+
 def register(project: Path, step_key: str, scene: str = "N001", path: str = None, outcome: str = "passed"):
     step = BY_KEY.get(step_key)
     if not step:
@@ -436,11 +486,14 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
         raise ValueError("文件不在项目内或不存在")
     scope = scene if step["scope"] == "{scene}" else step["scope"]
     deps = _inputs(project, step, scene if step["scope"] == "{scene}" else None)
+    deps += _extra_deps(step, rel, project, scene)
+    deps = list(dict.fromkeys(deps))
+    kind = _kind_for(step, rel)
     if step.get("register") == "conclusion":
-        args = ["register-conclusion", "--project", str(project), "--kind", step["kind"],
+        args = ["register-conclusion", "--project", str(project), "--kind", kind,
                 "--scope", scope, "--path", rel, "--outcome", outcome]
     else:
-        args = ["register-draft", "--project", str(project), "--kind", step["kind"],
+        args = ["register-draft", "--project", str(project), "--kind", kind,
                 "--scope", scope, "--path", rel]
     for d in deps:
         args += ["--depends-on", d]
@@ -474,6 +527,9 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
     step = BY_KEY.get(step_key)
     if not step:
         raise ValueError("未知流程")
+    if step.get("register") == "conclusion":
+        return {"ok": True, "skipped": True,
+                "note": "结论类成果登记即生效（已完成-结论），不需要确认"}
     rel = path
     if not rel:
         a = _latest(project, step, scene if step["scope"] == "{scene}" else None)
@@ -484,7 +540,7 @@ def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None)
     if rec:
         return confirm_path(project, rel)
     scope = scene if step["scope"] == "{scene}" else step["scope"]
-    out = _run_guard(project, ["confirm", "--project", str(project), "--kind", step["kind"],
+    out = _run_guard(project, ["confirm", "--project", str(project), "--kind", _kind_for(step, rel),
                                "--scope", scope, "--path", rel])
     return {"ok": True, "path": rel, "output": out}
 
