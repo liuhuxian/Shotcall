@@ -646,7 +646,16 @@ function cardsGrid(d){
         <i class="dot" style="background:${color};width:8px;height:8px"></i>
         <b style="font-size:13px">卡 ${c.card}</b>
         <span class="dim mono" style="font-size:10.5px">:${c.port}</span>
-        <span class="dim" style="margin-left:auto;font-size:10.5px">${c.hasInstance?'实例运行中':'未启动'}</span>
+        <span class="dim" style="margin-left:auto;font-size:10.5px">${(()=>{
+          const q = (inst && inst.queue) || {};
+          if(c.hasInstance){
+            if(q.run > 0) return '生成中';
+            if(q.pend > 0) return '排队中';
+            return '空闲待命';
+          }
+          if(c.usedGB != null && c.usedGB > 8) return '他进程占用';
+          return '未启动';
+        })()}</span>
       </div>
       <div class="bar" style="margin:0 0 4px"><i style="width:${c.pct||0}%;background:${color}"></i></div>
       <div class="mono dim" style="font-size:10.5px;margin-bottom:8px">
@@ -673,7 +682,7 @@ function cardsGrid(d){
   }).join("");
   return `<div class="panel" style="margin-bottom:14px">
     <div class="ph"><span>显卡占用</span>
-      <span class="dim">绿=空闲 · 橙=有占用 · 红=接近满载 · 手动启停，不自动扩缩</span></div>
+      <span class="dim">绿=空闲 · 橙=有占用 · 红=接近满载 · “他进程占用”=非本工作台 · 手动启停，不自动扩缩</span></div>
     <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${cells}</div>
   </div>`;
 }
@@ -793,7 +802,11 @@ function sBackend(){
   return `
   <div class="grid4 compactKpi" style="margin-bottom:12px">
     <div class="card"><div class="muted" style="font-size:12px">已启动实例</div><div class="kpi">${s.instances||0}</div></div>
-    <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div></div>
+    <div class="card"><div class="muted" style="font-size:12px">正在生成</div><div class="kpi" style="color:var(--acc)">${s.running||0}</div>
+      <div class="dim" style="font-size:10.5px;margin-top:3px">${(()=>{
+        const busyOther = (cards||[]).filter(c=>!c.hasInstance && c.usedGB != null && c.usedGB > 8).length;
+        return busyOther ? `另有 ${busyOther} 张卡被他进程占用` : '本工作台任务';
+      })()}</div></div>
     <div class="card"><div class="muted" style="font-size:12px">排队任务</div>
       <div class="kpi">${(s.pendingLocal||0)+(s.dispatched||0)}<small>待跑</small></div>
       <div class="dim" style="font-size:10.5px;margin-top:3px">待派 ${s.pendingLocal||0} · 已派 ${s.dispatched||0} · ComfyUI 内 ${s.queueTotal||0}</div></div>
