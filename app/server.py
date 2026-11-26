@@ -1933,6 +1933,42 @@ class Handler(BaseHTTPRequestHandler):
             items.sort(key=lambda x: x.get("at") or 0, reverse=True)
             self._send(200, json.dumps({"items": items[:120]}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/fs/browse":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            want = q.get("path", [""])[0].strip()
+            roots = [PROJECT, Path.home()]
+            base = Path(want).expanduser() if want else PROJECT
+            try:
+                base = base.resolve()
+            except Exception:
+                self._send(400, b'{"error":"path invalid"}', "application/json; charset=utf-8")
+                return
+            if not any(str(base) == str(r) or str(base).startswith(str(r) + "/") for r in roots):
+                self._send(403, b'{"error":"\u53ea\u5141\u8bb8\u9879\u76ee\u76ee\u5f55\u4e0e\u7528\u6237\u4e3b\u76ee\u5f55"}',
+                           "application/json; charset=utf-8")
+                return
+            if not base.is_dir():
+                self._send(400, b'{"error":"not a directory"}', "application/json; charset=utf-8")
+                return
+            dirs, imgs = [], []
+            try:
+                for f in sorted(base.iterdir(), key=lambda x: x.name.lower()):
+                    if f.name.startswith("."):
+                        continue
+                    if f.is_dir():
+                        dirs.append({"name": f.name, "path": str(f)})
+                    elif f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                        imgs.append({"name": f.name, "path": str(f),
+                                     "sizeKB": round(f.stat().st_size / 1024),
+                                     "mtime": int(f.stat().st_mtime)})
+            except PermissionError:
+                self._send(403, b'{"error":"permission denied"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps({"path": str(base), "parent": str(base.parent),
+                                        "dirs": dirs[:200], "images": imgs[:200],
+                                        "project": str(PROJECT)},
+                                       ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/img/refs":
             roots = [PROJECT / "07-图像资产", PROJECT / "制作运行/引用图",
                      store.state_dir(PROJECT) / "首帧候选",

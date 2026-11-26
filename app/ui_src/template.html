@@ -2027,6 +2027,16 @@ function adChooseRef(file){
 function adDropExtra(file){
   AD.extraRefs = (AD.extraRefs||[]).filter(x=>x!==file); render();
 }
+async function adBrowse(dir){
+  const q = dir ? ('?path='+encodeURIComponent(dir)) : '';
+  try{
+    const r = await fetch('/api/fs/browse'+q);
+    const j = await r.json();
+    if(!r.ok){ toast(j.error||'无法读取目录'); return; }
+    AD.browse = j;
+  }catch(e){ toast('读取失败：'+e); return; }
+  render();
+}
 function adUsePath(){
   const v=((document.getElementById('adPath')||{}).value||'').trim();
   if(!v) return toast('先输入图片路径');
@@ -2150,10 +2160,32 @@ function assetDetailHtml(){
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
           <input type="file" accept="image/*" onchange="adUpload(this.files[0])" style="font-size:10.5px;color:#9aa5b4">
           <span class="dim" style="font-size:10.5px">或输入项目内路径</span>
-          <input id="adPath" placeholder="07-图像资产/候选图片/…png" style="width:300px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 6px;font-size:10.5px">
+          <input id="adPath" placeholder="/绝对路径 或 项目内相对路径" style="width:320px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:4px;padding:2px 6px;font-size:10.5px">
           <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="adUsePath()">用此路径</button>
-          <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="AD.pickOpen=false;render()">收起</button>
+          <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="adBrowse()">浏览文件夹…</button>
+          <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="AD.pickOpen=false;AD.browse=null;render()">收起</button>
         </div>
+        ${AD.browse?`<div style="border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin-bottom:7px;background:#0c1015">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+            <span class="mono dim" style="font-size:10px;word-break:break-all">${esc(AD.browse.path)}</span>
+            <span style="flex:1"></span>
+            <button class="btn ghost" style="font-size:9.5px;padding:1px 7px" onclick="adBrowse(AD.browse.parent)">上一层</button>
+            <button class="btn ghost" style="font-size:9.5px;padding:1px 7px" onclick="adBrowse(AD.browse.project)">项目根</button>
+            <button class="btn ghost" style="font-size:9.5px;padding:1px 7px" onclick="AD.browse=null;render()">关闭浏览</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px">
+            ${(AD.browse.dirs||[]).map(d=>`<span onclick="adBrowse('${esc(d.path)}')" style="cursor:pointer;font-size:10px;padding:2px 7px;
+              border:1px solid var(--line);border-radius:5px;color:#9fb0c6">📁 ${esc(d.name)}</span>`).join('')||'<span class="dim" style="font-size:10px">没有子目录</span>'}
+          </div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;max-height:220px;overflow:auto">
+            ${(AD.browse.images||[]).map(im=>`<div style="width:120px">
+              <img src="/api/proj/file?p=${encodeURIComponent(im.path)}" title="${esc(im.name)}"
+                onclick="adChooseRef('${esc(im.path)}')"
+                style="width:100%;height:76px;object-fit:cover;border-radius:5px;cursor:pointer;display:block;border:1px solid var(--line)">
+              <div class="dim mono" style="font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(im.name)}</div>
+            </div>`).join('')||'<span class="dim" style="font-size:10px">这个目录没有图片</span>'}
+          </div>
+        </div>`:''}
         <div style="display:flex;gap:7px;flex-wrap:wrap;max-height:260px;overflow:auto">
           ${(AD.refs||[]).slice(0,80).map(r=>`<div style="width:134px">
             <img src="/api/proj/file?p=${encodeURIComponent(r.file)}"
