@@ -3070,13 +3070,14 @@ function sStageBody(no){
   const items = (d.artifacts||[]).filter(a=>a.stage===no);
   const rows = artGrouped(items).map(g=>{
     const a = g.selected;
-    const c = ART_COLOR[a.status]||"var(--dim)";
     const stale = (a.staleDeps||[]).length;
+    const eff = (stale && a.status === 'confirmed') ? 'stale' : a.status;
+    const c = ART_COLOR[eff]||"var(--dim)";
     const lo = (a.local&&a.local.local)||'none';
     const localBadge = lo==='confirmed'?'<span class="badge b-ok" style="font-size:9.5px">本地已确认</span>'
       : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'';
     return `<tr>
-      <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[a.status]||a.status}</span></td>
+      <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[eff]||eff}</span></td>
       <td><div style="font-size:12.5px">${esc(artName(a.kind))} ${localBadge}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
@@ -3915,9 +3916,9 @@ const STAGE_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", blocked:"var(--
 const STAGE_LABEL = {confirmed:"已确认", draft:"有待确认", blocked:"文件缺失",
                      conclusion:"已出结论", superseded:"已替代", empty:"未开始"};
 const ART_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", superseded:"#5c6474",
-                   conclusion:"var(--acc)", unknown:"var(--dim)"};
+                   conclusion:"var(--acc)", stale:"var(--bad)", unknown:"var(--dim)"};
 const ART_LABEL = {confirmed:"已确认", draft:"草稿", superseded:"已替代",
-                   conclusion:"结论", unknown:"未知"};
+                   conclusion:"结论", stale:"上游过期", unknown:"未知"};
 
 let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null,
              enabled:new Set(), prog:null, progTimer:null};
