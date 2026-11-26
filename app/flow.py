@@ -55,7 +55,7 @@ def _prompt_09():
 - .agents/skills-upstream/minimax-h3-prompt-writing  → H3 官方写法（六段式/字段/段序）
 - cinematography（构图、镜头语言、运镜）
 - lighting-direction（光线、光比、色温）
-- 本项目实测约束：00-项目管理/LOCAL-FACTS.md（帧数 17n+5、yoko-shots 块、音色挂载）
+- 本项目实测约束：00-项目管理/LOCAL-FACTS.md（帧数 17n+5、shotcall-units 块、音色挂载）
 
 项目根：{{PROJECT}}
 场次：{{SCOPE}}
@@ -71,7 +71,7 @@ def _prompt_09():
 
 本项目追加两条：
 - 提示词里的单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
-- 提示词文件末尾必须有 ```yoko-shots JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
+- 提示词文件末尾必须有 ```shotcall-units JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
 
 边界：只做本阶段，不自行确认，不调用生成接口。
 完成后只汇报：产出的文件清单（含版本）、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。

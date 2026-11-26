@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""把 07 资产文档同步到洋子画布（画布1.json）。
+"""把 07 资产文档同步到本地画布文件（画布1.json）。
 
 规则：
 - 只同步 character / scene，且有提示词的条目
-- 已有节点按 yokoAssetSlotId 匹配，只更新提示词与标签，保留位置、绑定、采用图
+- 已有节点按 shotcallSlotId 匹配，只更新提示词与标签，保留位置、绑定、采用图
 - 资产里已不存在的旧节点（例如拆分的 L02）删除
 - 新资产按同类型的现有节点克隆，排在同区网格的末尾
 - 写文件前备份为 <文件名>.bak-<时分>
@@ -91,7 +91,7 @@ def sync(project: Path, canvas_path: Path = None, dry: bool = False) -> dict:
     gen = [n for n in nodes if str(n.get("type")) == "remote-imageGenerationNode"]
     by_slot = {}
     for n in gen:
-        s = (n.get("data") or {}).get("yokoAssetSlotId")
+        s = _data(n).get("shotcallSlotId")
         if s:
             by_slot[s] = n
 
@@ -115,7 +115,8 @@ def sync(project: Path, canvas_path: Path = None, dry: bool = False) -> dict:
                 pm = d.get("promptModel")
                 if isinstance(pm, list) and pm and isinstance(pm[0], list) and pm[0]:
                     pm[0][0]["text"] = a["prompt"] if isinstance(pm[0][0], dict) else pm[0][0]
-                d["yokoAssetPromptVersion"] = int(d.get("yokoAssetPromptVersion") or 0) + 1
+                d["shotcallPromptVersion"] = int(d.get("shotcallPromptVersion") or d.get("yokoAssetPromptVersion") or 0) + 1
+                d.pop("yokoAssetPromptVersion", None)
                 changed = True
             if label and d.get("label") != label:
                 d["label"] = label
@@ -128,21 +129,21 @@ def sync(project: Path, canvas_path: Path = None, dry: bool = False) -> dict:
     all_assets = doc.get("assets") or []
 
     def _alive(n) -> bool:
-        slot = (n.get("data") or {}).get("yokoAssetSlotId") or ""
+        slot = _data(n).get("shotcallSlotId") or ""
         return any(_matches(slot, a) for a in all_assets)
 
     drop = [n for n in gen
-            if (n.get("data") or {}).get("yokoAssetKind") in ("character", "scene")
+            if _data(n).get("shotcallKind", _data(n).get("yokoAssetKind")) in ("character", "scene")
             and not _alive(n)]
     if drop:
         nodes = [n for n in nodes if n not in drop]
-        removed = [(n.get("data") or {}).get("yokoAssetSlotId") or (n.get("data") or {}).get("label", "")
+        removed = [_data(n).get("shotcallSlotId") or _data(n).get("label", "")
                    for n in drop]
 
     # 新节点：克隆同类型模板，排在网格末尾
     for a, label in added:
         tmpl = next((n for n in nodes
-                     if (n.get("data") or {}).get("yokoAssetKind") == kind_of(a)), None)
+                     if _data(n).get("shotcallKind", _data(n).get("yokoAssetKind")) == kind_of(a)), None)
         if not tmpl:
             continue
         node = copy.deepcopy(tmpl)
@@ -155,11 +156,12 @@ def sync(project: Path, canvas_path: Path = None, dry: bool = False) -> dict:
         if isinstance(pm, list) and pm and isinstance(pm[0], list) and pm[0]:
             pm[0][0]["text"] = a["prompt"]
         d["outputs"] = {}
-        d["yokoAssetSlotId"] = _slot(a)
-        d["yokoAssetKind"] = kind_of(a)
-        d["yokoAssetPromptVersion"] = 1
-        d.pop("yokoAdoptedPreview", None)
-        d.pop("yokoMatchedPreview", None)
+        d["shotcallSlotId"] = _slot(a)
+        d["shotcallKind"] = kind_of(a)
+        d["shotcallPromptVersion"] = 1
+        for old in ("yokoAssetSlotId", "yokoAssetKind", "yokoAssetPromptVersion",
+                    "yokoAdoptedPreview", "yokoMatchedPreview"):
+            d.pop(old, None)
         nodes.append(node)
 
     # 同类型重排网格（保持 5 列，从各自起始行开始）

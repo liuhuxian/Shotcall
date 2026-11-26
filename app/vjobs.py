@@ -282,28 +282,36 @@ def latest_prompt_file(d: Path):
     return max(files, key=ver)
 
 
-def shots_block(txt: str):
-    """解析 yoko-shots 块。只认新格式 {"schemaVersion":1,"units":[...]}。
+BLOCK_NAMES = ("shotcall-units", "yoko-shots")   # 第二项是历史标记，仅为读旧文件保留
 
+
+def shots_block(txt: str):
+    """解析 shotcall-units 块（兼容历史标记名）。
+
+    只认新格式 {"schemaVersion":1,"units":[...]}；裸数组按旧格式继续读。
     返回 (units, error)；error 为 None 表示成功。
     """
-    m = re.search(r"```yoko-shots\n(.*?)\n```", txt, re.S)
+    m = None
+    for name in BLOCK_NAMES:
+        m = re.search(r"```" + name + r"\n(.*?)\n```", txt, re.S)
+        if m:
+            break
     if not m:
-        return [], "缺少 yoko-shots 块"
+        return [], "缺少 shotcall-units 块"
     try:
         raw = json.loads(m.group(1))
     except Exception as e:
-        return [], f"yoko-shots 块不是合法 JSON：{e}"
+        return [], f"shotcall-units 块不是合法 JSON：{e}"
     if isinstance(raw, list):          # 旧格式：裸数组，继续读
-        return (raw, None) if raw else ([], "yoko-shots 块是空数组")
+        return (raw, None) if raw else ([], "shotcall-units 块是空数组")
     units = raw.get("units")
     if not isinstance(units, list) or not units:
-        return [], "yoko-shots 块里没有 units 数组"
+        return [], "shotcall-units 块里没有 units 数组"
     return units, None
 
 
 def parse_sync_refs(project: Path, scene: str) -> dict:
-    """从视频提示词 md 的 yoko-shots 块里取每单元的参考图与资产 ID。"""
+    """从视频提示词 md 的 shotcall-units 块里取每单元的参考图与资产 ID。"""
     d = project / VP_DIR / scene
     if not d.is_dir():
         return {}

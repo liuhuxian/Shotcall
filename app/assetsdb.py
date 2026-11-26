@@ -180,7 +180,7 @@ def write_binding(project: Path, asset: dict, image_rel: str, version: str = Non
     bind_dir = root / "资产绑定"
     bind_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(bind_dir.glob("asset-bindings-*.md"))
-    header = "# 洋子工作台资产绑定\n\n按导演台采用记录生成的新快照；旧快照保留。\n"
+    header = "# 项目资产绑定\n\n按导演台采用记录生成的新快照；旧快照保留。\n"
     blocks = []
     old_id = ""
     if files:
@@ -317,7 +317,7 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
                int((slot or {}).get("bindingVersion") or 0))
     binding = write_binding(project, asset, image_rel, version=f"v{base}")
     binding_rel = str(binding.relative_to(project))
-    # 洋子 project.json 里没有这个槽位（例如新拆分的资产）时，只写绑定与资产文档，
+    # 外部 project.json 里没有这个槽位（例如新拆分的资产）时，只写绑定与资产文档，
     # 不再整条失败——否则这些资产永远无法直接指定图片。
     ver = base + 1
     cand = None

@@ -1,6 +1,6 @@
 # 导演工作台 · 工作流程说明
 
-> 生成时间：2026-11-26 18:17　·　数据来源：工作台流程定义 `app/flow.py`
+> 生成时间：2026-11-26 18:56　·　数据来源：工作台流程定义 `app/flow.py`
 
 > 本文只说明**流程本身**：有哪些阶段、每步用什么技能、产出什么文件、谁依赖谁。
 > 流程卡只负责给输入；产物清单、命名与验收标准由对应 skill 决定。
@@ -87,7 +87,7 @@
 | 09 | `09-镜头与视频提示词/镜头规划/{scene}/continuity-ledger-{v}.md`（连续性台账） | 服装、光向、持物、伤势等跨镜连续性记录 | 同上 |
 | 09 | `09-镜头与视频提示词/镜头规划/{scene}/visual-continuity-audit-{v}.md`（视觉连贯审查） | 轴线、视线、动作接力的自查与结论 | 同上 |
 | 09 | `09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md`（生成单元规划） | 哪几镜合成一次生成、每条多长、起止状态与参考图职责 | 同上 |
-| 09 | `09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md`（视频提示词） | 可直接投产的六段式提示词，末尾附 yoko-shots 数据块 | 同上 |
+| 09 | `09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md`（视频提示词） | 可直接投产的六段式提示词，末尾附 shotcall-units 数据块 | 同上 |
 
 > 产出路径按文件性质归档，不代表由该阶段的卡片生成。
 > 05 与 06 按集管理：路径里的 `{episode}` 是集号（E001），一集一组文件；切集时 05/06 卡片随之切换。
@@ -95,7 +95,7 @@
 ### 09 镜头规划下的配套文件
 
 视频提示词按官方 H3 六段式（`subject_definitions` → `summary` → `retention_analysis` → `detailed_description`
- → `overall_soundscape` → `non_diegetic_music`），末尾附 yoko-shots 数据块；
+ → `overall_soundscape` → `non_diegetic_music`），末尾附 shotcall-units 数据块；
 这些文件由 `film-cinedance` 技能定义（“拍法、镜头与生成单元确认门”三个内部门禁），
 流程卡不逐一列举，只保证它们能进入登记与确认流程。
 

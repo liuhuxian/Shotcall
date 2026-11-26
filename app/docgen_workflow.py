@@ -63,7 +63,7 @@ OUTPUT_DESC = {
     ("09", "连续性台账"): "服装、光向、持物、伤势等跨镜连续性记录",
     ("09", "视觉连贯审查"): "轴线、视线、动作接力的自查与结论",
     ("09", "生成单元规划"): "哪几镜合成一次生成、每条多长、起止状态与参考图职责",
-    ("09", "视频提示词"): "可直接投产的六段式提示词，末尾附 yoko-shots 数据块",
+    ("09", "视频提示词"): "可直接投产的六段式提示词，末尾附 shotcall-units 数据块",
 }
 
 def craft_skills():
@@ -153,7 +153,7 @@ def build() -> str:
 
     out.append("### 09 镜头规划下的配套文件\n")
     out.append("视频提示词按官方 H3 六段式（`subject_definitions` → `summary` → `retention_analysis` → `detailed_description`")
-    out.append(" → `overall_soundscape` → `non_diegetic_music`），末尾附 yoko-shots 数据块；")
+    out.append(" → `overall_soundscape` → `non_diegetic_music`），末尾附 shotcall-units 数据块；")
     out.append("这些文件由 `film-cinedance` 技能定义（“拍法、镜头与生成单元确认门”三个内部门禁），")
     out.append("流程卡不逐一列举，只保证它们能进入登记与确认流程。\n")
     out.append("| 文件 | 作用 |")
