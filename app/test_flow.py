@@ -30,9 +30,13 @@ def main():
     nxt_v = int(str(s09.get('nextVersion') or 'v000')[1:])
     # 磁盘上若有未登记的更高版本，下一版会跳过它们，所以只要求严格大于当前版
     check("09 下一版已递增", nxt_v > cur_v, (s09.get('version'), s09.get('nextVersion')))
-    check("09 依赖包含表演与资产", any("表演设计" in x or "图像资产" in x
-          for x in (s09.get('inputs') or [])), s09.get('inputs'))
-    check("09 一次产出 10 个文件", len(s09.get("outputs") or []) == 10, len(s09.get("outputs") or []))
+    s08 = next(x for x in data['steps'] if x['key'] == '08')
+    check("08 依赖剧本与资产", any("剧本" in x or "图像资产" in x
+          for x in (s08.get('inputs') or [])), s08.get('inputs'))
+    check("08 一次产出 3 个文件", len(s08.get("outputs") or []) == 3,
+          [o.get("label") for o in s08.get("outputs") or []])
+    check("09 只产出提示词", len(s09.get("outputs") or []) == 1,
+          [o.get("label") for o in s09.get("outputs") or []])
 
     src = next(REAL.glob('.agents/skills/*/ai-film-router/scripts/artifact_guard.py')).parent
     p = Path(tempfile.mkdtemp(prefix="flow-test-"))

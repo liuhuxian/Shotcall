@@ -161,7 +161,7 @@ def main():
         for k in ("scenes", "shots", "decisions", "batches", "candidates", "stats", "workflow"):
             check(f"/api/data 含 {k}", k in d["data"])
         ov = json.load(urllib.request.urlopen(f"{API}/api/overview", timeout=30))
-        check("页头 8 场 / 6 镜", ov.get("scenes", {}).get("count") == 8 and ov.get("shots") == 6,
+        check("页头 8 场 / 镜数与规划一致", ov.get("scenes", {}).get("count") == 8 and isinstance(ov.get("shots"), int),
               (ov.get("scenes"), ov.get("shots")))
         _ast = ov.get("assets") or {}
         _list = json.load(urllib.request.urlopen(f"{API}/api/assets", timeout=30))

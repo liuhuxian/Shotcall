@@ -48,35 +48,79 @@ def _prompt_05():
 """
 
 
-def _prompt_09():
-    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09 镜头与视频提示词；加载 film-cinedance。
+def _prompt_08():
+    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 08 镜头规划；加载 film-cinedance（前三道门）。
 
 再按需加载（都在项目内）：
-- .agents/skills-upstream/minimax-h3-prompt-writing  → H3 官方写法（六段式/字段/段序）
-- cinematography（构图、镜头语言、运镜）
-- lighting-direction（光线、光比、色温）
-- 本项目实测约束：00-项目管理/LOCAL-FACTS.md（帧数 17n+5、shotcall-units 块、音色挂载）
+- .agents/skills-upstream/performance-direction（表演节拍、视线、口型）
+- .agents/skills-upstream/cinematography（构图、镜头语言、运镜）
+- .agents/skills-upstream/lighting-direction（光位、光比、色温）
+- 00-项目管理/LOCAL-FACTS.md（帧数规则、能力字段、声音四类）
 
 项目根：{{PROJECT}}
 场次：{{SCOPE}}
+本场模型：见 00-项目管理/project-status.md 与 00-项目管理/工作台/models.json
 输入：
 {{INPUTS}}
 
-按 film-cinedance 的四道门依次执行，顺序不得调换：
-1. 档位与增强门；
-2. 拍法与镜头门：场景登记、时长表、镜头表、空间图、连续性台账、导演方案（启用导演顾问时）、生成单元规划；
-3. 素材职责与质检门：参考图映射、视觉连贯审查；
-4. 模型提示词门：基于已确认的镜头表与生成单元，写 MiniMax H3 视频提示词。
-每道门的产出、文件命名与验收都以 film-cinedance 为准；第 3 道没走完不得进入第 4 道。
+把导演要拍的画面写成可执行的文字，产出三份文件（同一版本号，作为一组交付）：
+1. 08-镜头规划/{{SCOPE}}/shot-plan-{{v}}.md
+   含：本场要什么 / 镜头总表 / 逐镜（动作、表演、构图、光线、首尾状态、对白、依据素材）/
+       生成单元定义 / 声音分层 / 自检
+2. 08-镜头规划/{{SCOPE}}/scene-space-map-{{v}}.md
+3. 08-镜头规划/{{SCOPE}}/reference-map-{{v}}.md
 
-本项目追加两条：
-- 提示词里的单元数、时长、镜号必须与最新 generation-units 规划一致，要偏离先改规划并写明理由。
-- 提示词文件末尾必须有 ```shotcall-units JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
-- chainFrom 默认填 null（各单元独立生成）；只有已确认的生成单元规划明确要求依赖前置单元结果时才填。
-  不得因编号连续、剧情连续或共用参考图就自动串联。
+生成单元规则（本卡的核心决策，09 只照抄、不重算）：
+- 默认 1 镜 = 1 单元
+- 合并多镜进一条：需同空间、连续时间、素材与状态兼容，且目标模型支持内部切镜；
+  必须列出内部镜号与切点时间
+- 拆分一个镜头：仅当超出模型单条上限、多人对话、复杂走位、素材冲突或已有失败证据
+- 禁止未经设计的截断（词句被砍断、动作接不上、切在运动峰值）
+- 提交帧数按本场模型的规则算，只约束单元总帧数，不要求内部切点各自合规
+
+声音分层（每单元四类，字段与取值固定）：
+- 人物对白：无 ｜ 有（谁 / 台词 / 估算时长）
+- 背景人声：无 ｜ 有（内容或「不可辨群声」）
+- 环境音与音效：无 ｜ 有（列举）
+- 配乐：无 ｜ 有（用途）
+
+素材：reference-map 必须写清每项素材的来源、用途与采用依据；有绑定图却要排除的，写明理由。
+
+边界：只做本阶段，不自行确认，不调用生成接口，不写提示词。
+完成后只汇报：三个文件的路径与版本、单元清单（单元 / 内部镜号 / 时长 / 帧数）、需要导演拍板的点（≤3 条）。
+"""
+
+
+def _prompt_09():
+    return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09 视频提示词；加载 minimax-h3-video-prompts。
+
+再按需加载（都在项目内）：
+- .agents/skills-upstream/minimax-h3-prompt-writing → H3 官方六段式结构与段序
+- 00-项目管理/LOCAL-FACTS.md → 帧数规则、声音四类、shotcall-units 块
+
+项目根：{{PROJECT}}
+场次：{{SCOPE}}
+输入（必须都已确认）：
+{{INPUTS}}
+
+这是一次**受约束的编译**，不是重新创作：
+- 单元数、单元 id、内部镜号、时长、帧数，必须与 shot-plan 的「生成单元定义」完全一致
+- 不得重排切点、不得改台词、不得改时长、不得增减单元
+- 单元内部有切点的，按时间轴在正文里写清切点时刻与切后内容
+- 声音按 shot-plan 的四类声明表达；不得新增未声明的人声或音效
+- 参考素材按 reference-map 的编号与顺序写 <Picture n> / <Audio n>；只用已经授权的素材
+- chainFrom 默认 null；只有 shot-plan 明确要求接续时才填
+- 帧数不合规或不一致时停下来报告，不要自行调整
+
+产出：09-镜头与视频提示词/视频提示词/{{SCOPE}}/minimax-h3-{{v}}.md
+文件末尾必须有 ```shotcall-units JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
+
+编译后自检并写进文件末尾：
+- 自动可查：单元数 / id / 镜号 / 时长 / 帧数与规划一致；参考图文件存在
+- 必须实读：素材里是谁、几个人、处于什么动作阶段；声音声明与画面是否矛盾（如嘴部静止却安排人声）
 
 边界：只做本阶段，不自行确认，不调用生成接口。
-完成后只汇报：产出的文件清单（含版本）、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。
+完成后只汇报：文件路径与版本、单元清单（时长/帧数）、编译中发现的冲突（如有）。
 """
 
 
@@ -125,45 +169,23 @@ STEPS = [
          pattern=r"^07-图像资产/assets-v(\d{3})(?:-\d+)?\.md$",
          output="07-图像资产/assets-{v}.md", deps=["05"],
          prompt=_prompt("07", "Lira 图像资产", "film-lira-assets", ["05 已确认版；production-breakdown；02"], "07-图像资产/assets-vNNN.md", "全项目")),
-    dict(key="08", no="08", stage="08", name="ACTING 表演", skill="film-acting",
-         kind="08 ACTING 表演设计", scope="{scene}",
-         pattern=r"^08-表演设计/(N\d{3})-acting-v(\d{3})(?:-\d+)?\.md$",
-         output="08-表演设计/{scene}-acting-{v}.md", deps=["05", "07"],
-         prompt=_prompt("08", "ACTING 表演", "film-acting", ["当前场 05；07 资产"], "08-表演设计/{scene}-acting-vNNN.md", "{scene}")
-         + "\n另：表演方法论读 .agents/skills-upstream/performance-direction；本卡只管项目侧取舍与交付格式。\n"),
-    dict(key="09", no="09", stage="09", name="镜头与视频提示词", skill="film-cinedance",
-         kind="09 镜头规划", scope="{scene}",
-         pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/shot-plan-v(\d{3})(?:-\d+)?\.md$",
-         output="09-镜头与视频提示词/镜头规划/{scene}/shot-plan-{v}.md", deps=["05", "08", "07"],
+    dict(key="08", no="08", stage="08", name="镜头规划", skill="film-cinedance",
+         kind="08 镜头规划", scope="{scene}",
+         pattern=r"^08-镜头规划/(N\d{3})/shot-plan-v(\d{3})(?:-\d+)?\.md$",
+         output="08-镜头规划/{scene}/shot-plan-{v}.md", deps=["05", "07"],
          extra=[
-             dict(label="场景登记", kind="09 场景登记",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-registry\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-registry.md"),
-             dict(label="时长表", kind="09 时长表",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-timing-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-timing-{v}.md"),
-             dict(label="空间图", kind="09 空间图",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/scene-space-map-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/scene-space-map-{v}.md"),
-             dict(label="导演方案", kind="09 导演方案",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/director-plan-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/director-plan-{v}.md"),
-             dict(label="参考图映射", kind="09 参考图映射",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/reference-map-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/reference-map-{v}.md"),
-             dict(label="连续性台账", kind="09 连续性台账",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/continuity-ledger-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/continuity-ledger-{v}.md"),
-             dict(label="视觉连贯审查", kind="09 视觉连贯审查",
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/visual-continuity-audit-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/visual-continuity-audit-{v}.md"),
-             dict(label="生成单元规划", kind="09 generation-units-minimax-h3", deps=["primary"],
-                  pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md"),
-             dict(label="视频提示词", kind="09 视频提示词", deps=["units", "primary"],
-                  pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3(?:-ref2va)?-v(\d{3})(?:-\d+)?\.md$",
-                  output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md"),
+             dict(label="空间图", kind="08 空间图",
+                  pattern=r"^08-镜头规划/(N\d{3})/scene-space-map-v(\d{3})(?:-\d+)?\.md$",
+                  output="08-镜头规划/{scene}/scene-space-map-{v}.md"),
+             dict(label="参考图映射", kind="08 参考图映射",
+                  pattern=r"^08-镜头规划/(N\d{3})/reference-map-v(\d{3})(?:-\d+)?\.md$",
+                  output="08-镜头规划/{scene}/reference-map-{v}.md"),
          ],
+         prompt=_prompt_08()),
+    dict(key="09", no="09", stage="09", name="视频提示词", skill="minimax-h3-video-prompts",
+         kind="09 视频提示词", scope="{scene}",
+         pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3(?:-ref2va)?-v(\d{3})(?:-\d+)?\.md$",
+         output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md", deps=["08", "07"],
          prompt=_prompt_09()),
 ]
 
