@@ -22,7 +22,9 @@ def main():
     r = agentrunner.dispatch(p, "01", "N001")
     t = r["task"]
     check("任务单已生成", (p / t["promptFile"]).is_file(), t)
-    check("未配置命令不自动执行", r["started"] is False, r)
+    # 未显式配置时：本机默认 Agent 可用就自动执行（否则点「派给 Agent」毫无反应）
+    auto_ok = agentrunner.AGENT_BY_ID["dsh"]["available"]
+    check("未配置时按默认 Agent 自动执行", r["started"] is auto_ok, r)
     check("任务单含下一版路径", t["output"].endswith("synopsis-v001.md"), t)
     items = agentrunner.list_tasks(p)
     check("任务可列出", any(x["id"] == t["id"] for x in items), items)

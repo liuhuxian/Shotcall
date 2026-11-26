@@ -199,7 +199,13 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
         raise ValueError("未知流程")
     cfg = load_config(project)
     if not cfg.get("configured"):
-        cfg = dict(cfg); cfg["configured"] = False
+        # 没有显式配置时：默认 Agent 的本机命令存在就直接跑，避免点了「派给 Agent」毫无反应
+        auto = AGENT_BY_ID.get(cfg.get("agent") or "dsh") or {}
+        if auto.get("available"):
+            cfg = dict(cfg)
+            cfg["configured"] = True
+            cfg["source"] = "auto"
+            cfg["model"] = cfg.get("model") or auto.get("default_model") or ""
     tid = "AG-" + time.strftime("%Y%m%d-%H%M%S") + "-" + step_key + "-" + uuid.uuid4().hex[:4]
     d = _dir(project)
     md = d / (tid + ".md")

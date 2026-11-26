@@ -2715,9 +2715,26 @@ async function dispatchFlow(key){
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
-  if(j.started) toast('已派给 Agent：'+j.task.id+'（'+(j.task.agent||'')+' / '+(j.task.model||'')+'）');
+  if(j.started){
+    toast('已派给 Agent：'+(j.task.agent||'')+' / '+(j.task.model||'')+'，任务 '+j.task.id.slice(-8)+'（完成后自动刷新）');
+    window.__agentTask = {id: j.task.id, step: key, at: Date.now()};
+    if(window.__agentTimer) clearInterval(window.__agentTimer);
+    window.__agentTimer = setInterval(async ()=>{
+      try{
+        const d = await (await fetch('/api/agent/tasks')).json();
+        const cur = (d.items||[]).find(x=>x.id===(window.__agentTask||{}).id);
+        if(!cur || ['done','failed','unavailable','stopped'].includes(cur.status)){
+          clearInterval(window.__agentTimer); window.__agentTimer=null;
+          const okk = cur && cur.status==='done';
+          toast(okk ? ('Agent 已完成：'+(cur.output||'')) : ('Agent '+(cur?cur.status:'结束')+(cur&&cur.error?('：'+cur.error.slice(0,60)):'')));
+          window.__agentTask = null;
+          FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
+        }
+      }catch(e){}
+    }, 6000);
+  }
   else if(j.reason) toast('未启动：'+j.reason);
-  else toast('任务单已生成（未配置 Agent）：'+j.task.promptFile);
+  else toast('只生成了任务单，没有启动 Agent：'+j.task.promptFile);
   FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
 }
 
