@@ -2768,6 +2768,10 @@ async function registerAllPending(key){
   if(bad.length) console.warn('登记失败', bad);
 }
 
+const ONLY_PROMPT_EXTRA = '本轮只做第 4 道门（模型提示词）：复用已确认的镜头表与生成单元，只编译 MiniMax H3 提示词。' +
+  '不要重做镜头规划，不要新增或覆盖 shot-plan / scene-timing / scene-space-map / continuity-ledger / director-plan / reference-map / visual-continuity-audit / generation-units 的版本。' +
+  '如果生成单元还不是已确认版本，就停下来报告，不要自行确认，也不要改规划。';
+
 async function dispatchFlow(key, nextPath){
   let who='本机默认 Agent';
   try{
@@ -2780,8 +2784,10 @@ async function dispatchFlow(key, nextPath){
   const msg='将启动 '+who+' 执行第 '+key+' 步'+(nextPath?('\n产出：'+nextPath):'')+
     '\n\n会真实调用模型、消耗额度，并在项目目录写文件。确认继续？';
   if(!confirm(msg)) return;
+  const onlyPrompt = key==='09' && !!state.onlyPrompt09;
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:normEp(FLOW.episode)||normEp(state.ep)})});
+    body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:normEp(FLOW.episode)||normEp(state.ep),
+      extra: onlyPrompt?ONLY_PROMPT_EXTRA:''})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
   if(j.started){
     toast('已派给 Agent：'+(j.task.agent||'')+' / '+(j.task.model||'')+'，任务 '+j.task.id.slice(-8)+'（完成后自动刷新）');
@@ -2913,6 +2919,11 @@ function sFlow(onlyStage){
           </div>`).join('')}
         </div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          ${st.key==='09'?`<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#9aa5b4;cursor:pointer"
+              title="复用已确认的镜头表与生成单元，只编译提示词，不重做镜头规划">
+            <input type="checkbox" ${state.onlyPrompt09?'checked':''} onchange="state.onlyPrompt09=this.checked;render()">
+            只做提示词（第 4 道门）
+          </label>`:''}
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="copyFlow('${st.key}',this)">复制提示词</button>
           <button class="btn ghost" style="font-size:11px;padding:3px 10px" ${ (st.blocked||[]).length?'disabled title="上游未完成"':(`onclick="dispatchFlow('${st.key}','${esc(st.nextPath||'')}')"`) }>派给 Agent</button>
           ${is06?`<select id="flow-outcome-06" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:11px">

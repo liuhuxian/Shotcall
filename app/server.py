@@ -2471,7 +2471,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body = self._json_body()
                 out = agentrunner.dispatch(PROJECT, str(body.get("step") or ""),
-                                           str(body.get("scene") or "N001"))
+                                           str(body.get("scene") or "N001"),
+                                           str(body.get("extra") or ""))
                 self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             except Exception as e:

@@ -204,7 +204,7 @@ def _run(project: Path, task: dict, prompt: str, cfg: dict):
     _update(project, task)
 
 
-def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
+def dispatch(project: Path, step_key: str, scene: str = "N001", extra: str = "") -> dict:
     data = flow.steps_payload(project, scene)
     st = next((x for x in data.get("steps") or [] if x["key"] == step_key), None)
     if not st:
@@ -225,7 +225,10 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     tid = "AG-" + time.strftime("%Y%m%d-%H%M%S") + "-" + step_key + "-" + uuid.uuid4().hex[:4]
     d = _dir(project)
     md = d / (tid + ".md")
-    prompt = (st["prompt"]
+    base = st["prompt"]
+    if extra:
+        base += "\n\n【本轮范围限定】\n" + extra.strip()
+    prompt = (base
               + "\n\n完成后把成果写到：" + st["nextPath"]
               + "\n不要覆盖旧版。写完后在最后逐行列出本次产出的全部文件相对路径，"
                 "每行以「文件：」开头，方便导演台核对；不需要自己去登记。\n")
