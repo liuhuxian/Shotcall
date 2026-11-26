@@ -51,6 +51,12 @@ def _prompt_05():
 def _prompt_09():
     return """你是本项目执行 Agent。读项目内 .agents/skills 下的 ai-film-router，只执行 09 镜头与视频提示词；加载 film-cinedance。
 
+再按需加载（都在项目内）：
+- .agents/skills-upstream/minimax-h3-prompt-writing  → H3 官方写法（六段式/字段/段序）
+- cinematography（构图、镜头语言、运镜）
+- lighting-direction（光线、光比、色温）
+- 本项目实测约束：00-项目管理/LOCAL-FACTS.md（帧数 17n+5、yoko-shots 块、音色挂载）
+
 项目根：{{PROJECT}}
 场次：{{SCOPE}}
 输入：
@@ -119,7 +125,8 @@ STEPS = [
          kind="08 ACTING 表演设计", scope="{scene}",
          pattern=r"^08-表演设计/(N\d{3})-acting-v(\d{3})(?:-\d+)?\.md$",
          output="08-表演设计/{scene}-acting-{v}.md", deps=["05", "07"],
-         prompt=_prompt("08", "ACTING 表演", "film-acting", ["当前场 05；07 资产"], "08-表演设计/{scene}-acting-vNNN.md", "{scene}")),
+         prompt=_prompt("08", "ACTING 表演", "film-acting", ["当前场 05；07 资产"], "08-表演设计/{scene}-acting-vNNN.md", "{scene}")
+         + "\n另：表演方法论读 .agents/skills-upstream/performance-direction；本卡只管项目侧取舍与交付格式。\n"),
     dict(key="09", no="09", stage="09", name="镜头与视频提示词", skill="film-cinedance",
          kind="09 镜头规划", scope="{scene}",
          pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/shot-plan-v(\d{3})(?:-\d+)?\.md$",
