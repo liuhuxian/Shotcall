@@ -2976,7 +2976,8 @@ function sStages(){
     ? state.stage : (stages.find(s=>s.state!=="empty")||stages[0]||{}).no;
 
   const rail = stages.map((st,i)=>{
-    const color = STAGE_COLOR[st.state] || "var(--dim)";
+    const staleN = st.staleDeps || 0;
+    const color = staleN ? "var(--bad)" : (STAGE_COLOR[st.state] || "var(--dim)");
     const on = st.no === sel;
     const last = i === stages.length-1;
     return `<div onclick="go('stages',{stage:'${st.no}'})"
@@ -2990,7 +2991,7 @@ function sStages(){
       </div>
       <div style="padding-bottom:14px;flex:1;min-width:0">
         <div style="font-size:12.5px;font-weight:${on?'600':'400'};color:${on?'#e6ebf3':'#9aa5b4'}">${esc(st.name)}</div>
-        <div class="dim" style="font-size:10.5px;margin-top:2px">${st.artifacts?`${st.artifacts} 项成果`:''}${st.counts.draft?` · <span style="color:var(--warn)">${st.counts.draft} 待确认</span>`:''}${st.unregistered?` · <span style="color:#7c8798">${st.unregistered} 未登记</span>`:''}</div>
+        <div class="dim" style="font-size:10.5px;margin-top:2px">${st.artifacts?`${st.artifacts} 项成果`:''}${st.counts.draft?` · <span style="color:var(--warn)">${st.counts.draft} 待确认</span>`:''}${st.unregistered?` · <span style="color:#7c8798">${st.unregistered} 未登记</span>`:''}${staleN?` · <span style="color:var(--bad)">${staleN} 上游过期</span>`:''}</div>
       </div>
     </div>`;
   }).join("");
