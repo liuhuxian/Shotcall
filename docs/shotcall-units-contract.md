@@ -69,7 +69,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `sourceShotPlan` | string | 是 | 所依据镜头表路径；须是当前确认版 |
-| `sourceGenerationUnits` | string | 是 | 所依据生成单元规划路径；须是当前确认版 |
+| `sourceGenerationUnits` | string | 是 | 所依据的生成单元路径；单元内嵌在 shot-plan 时，指向该 `shot-plan-vNNN.md`，须是当前确认版 |
 
 ### 3.7 实验单元
 
