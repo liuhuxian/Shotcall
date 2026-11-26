@@ -1,0 +1,9 @@
+[submodule "skills-deps/vendor/skills"]
+	path = skills-deps/vendor/skills
+	url = https://github.com/fal-ai-community/skills
+[submodule "skills-deps/vendor/generative-media-skills"]
+	path = skills-deps/vendor/generative-media-skills
+	url = https://github.com/calesthio/generative-media-skills
+[submodule "skills-deps/vendor/MiniMax-H3"]
+	path = skills-deps/vendor/MiniMax-H3
+	url = https://github.com/MiniMax-AI/MiniMax-H3

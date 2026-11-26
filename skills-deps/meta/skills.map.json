@@ -1,0 +1,40 @@
+{
+ "schemaVersion": 1,
+ "note": "每个 skill 指向上游仓库的一个 commit；本仓库只存指针与校验清单，不存上游正文",
+ "skills": {
+  "cinematography": {
+   "repo": "https://github.com/fal-ai-community/skills",
+   "commit": "653a2b7955a867ca5d12b2a2d93342b9cd706c99",
+   "path": "skills/cinematography",
+   "files": {
+    "SKILL.md": "b49941bdba761addf69cbc1828736772e7c73353"
+   }
+  },
+  "lighting-direction": {
+   "repo": "https://github.com/calesthio/generative-media-skills",
+   "commit": "d5daa8a23514c2e5b0ef1c9ac6874db632fb7ae7",
+   "path": "skills/production/creative-direction/lighting-direction",
+   "files": {
+    "SKILL.md": "eee6f6f17bc47e2aba1bda73fc1fbc4ae3b8199a"
+   }
+  },
+  "performance-direction": {
+   "repo": "https://github.com/calesthio/generative-media-skills",
+   "commit": "d5daa8a23514c2e5b0ef1c9ac6874db632fb7ae7",
+   "path": "skills/production/creative-direction/performance-direction",
+   "files": {
+    "SKILL.md": "fd6afa166eaa72f466db001ad781ae5bb6502936"
+   }
+  },
+  "minimax-h3-prompt-writing": {
+   "repo": "https://github.com/MiniMax-AI/MiniMax-H3",
+   "commit": "b731d8846cf789f284d538013d5caea053c511c8",
+   "path": ".agents/skills/h3-prompt-writing",
+   "files": {
+    "SKILL.md": "a7ae20a21d57f7dc3b8e975a941fd54052d4a945",
+    "references/base-en.txt": "811fdc565098d63c22d6863977a82955aedf9852",
+    "references/ref-en.txt": "d7ab19153739aee7c70ebf1c00df842c700302c5"
+   }
+  }
+ }
+}
