@@ -21,12 +21,11 @@ STAGES = [
      "desc": "结构体检与必改项", "patterns": [r"stress", r"audit"]},
     {"no": "07", "dir": "07-图像资产", "name": "图像资产",
      "desc": "角色卡、场景、道具、绑定图", "patterns": [r"assets?", r"asset-bindings"]},
-    {"no": "08", "dir": "08-表演设计", "name": "表演设计",
-     "desc": "逐场情绪、目标、节拍、表演段落", "patterns": [r"acting"]},
-    {"no": "09", "dir": "09-镜头与视频提示词", "name": "镜头与视频提示词",
-     "desc": "镜头表、生成单元、H3 提示词、生成结果", "patterns": [r"shot-plan", r"generation-units",
-                                                              r"minimax-h3", r"director-plan",
-                                                              r"scene-timing", r"continuity-ledger"]},
+    {"no": "08", "dir": "08-镜头规划", "name": "镜头规划",
+     "desc": "镜头表、空间、素材职责、生成单元", "patterns": [r"shot-plan", r"scene-space-map",
+                                                          r"reference-map"]},
+    {"no": "09", "dir": "09-镜头与视频提示词", "name": "视频提示词",
+     "desc": "按已确认的镜头与单元编译模型提示词", "patterns": [r"minimax-h3", r"seedance"]},
 ]
 
 STATUS = {
