@@ -2022,13 +2022,26 @@ function assetDetailHtml(){
   const isVoice=a.type==='voice';
   const refs=adRefs(a);
   const refOpts=refs.map(r=>`<option value="${esc(r.v)}">${esc(r.label)}</option>`).join("");
-  const hist=(a.history||[]).filter(h=>h.exists).map(h=>({...h,name:(h.file||'').split('/').pop()}));
-  const histCards=hist.slice().reverse().map(h=>`<div style="width:176px">
+  const _h=(a.history||[]).filter(h=>h.exists).map(h=>({...h,name:(h.file||'').split('/').pop()}));
+  const _byFile=new Map();
+  _h.forEach(h=>{
+    const k=h.file||'';
+    const prev=_byFile.get(k);
+    const vnum=x=>parseInt(String((x||{}).version||'v0').replace(/[^0-9]/g,''),10)||0;
+    if(!prev || vnum(h) >= vnum(prev)) _byFile.set(k,h);
+  });
+  const hist=[..._byFile.values()];
+  const histCards=hist.slice().reverse().map(h=>{
+    const isCur = img && h.file === img;
+    return `<div style="width:176px">
     <img src="/api/proj/file?p=${encodeURIComponent(h.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(h.file)}')"
-      style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--ok);cursor:zoom-in;display:block">
+      style="width:100%;height:105px;object-fit:cover;border-radius:6px;border:1px solid ${isCur?'var(--acc)':'var(--ok)'};cursor:zoom-in;display:block">
     <div class="dim" style="font-size:9px;margin-top:3px">${esc(h.version||'')} · ${esc(String(h.at||'').slice(0,10))}</div>
-    <div class="badge b-ok" style="font-size:9px">历史采用 ${esc(h.version||'')}</div>
-  </div>`).join("");
+    <div style="display:flex;gap:5px;align-items:center;margin-top:2px">
+      <span class="badge ${isCur?'b-acc':'b-ok'}" style="font-size:9px">${isCur?'当前绑定':'历史 '+esc(h.version||'')}</span>
+      ${isCur?'':`<button class="btn ok" style="font-size:9px;padding:1px 6px" onclick="adAdopt('${esc(h.file)}')">设为当前</button>`}
+    </div>
+  </div>`;}).join("");
   const seenFiles=new Set(hist.map(h=>h.file));
   const cands=(AD.cands||[]).filter(c=>!seenFiles.has(c.file)).slice(0,6).map(c=>`<div style="width:176px">
     <img src="/api/proj/file?p=${encodeURIComponent(c.file)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(c.file)}')"

@@ -84,9 +84,12 @@ def parse_bindings(project: Path) -> dict:
         scenes = re.search(r"场次：(.+)", block)
         if not aid:
             continue
-        key = aid.group(1).strip().split("/")[-1].strip()
-        out[key + ("" if "--" not in aid.group(1) else "--" + aid.group(1).split("--")[1].strip())] = {
-            "id": aid.group(1).strip(),
+        raw_id = aid.group(1).strip()
+        # 短 ID 作为主键：不同快照里可能出现 L02-A 与 L02--L02-A 两种写法，
+        # 统一按状态 ID 归并，后读到的快照覆盖先读到的（即最新绑定生效）。
+        key = raw_id.split("--")[-1].strip()
+        rec = {
+            "id": raw_id,
             "name": name,
             "version": ver.group(1).strip() if ver else "",
             "stateId": (re.search(r"类型与状态：.+?/\s*([A-Z]\d{2}(?:-[A-Z])?)", block).group(1)
@@ -95,6 +98,8 @@ def parse_bindings(project: Path) -> dict:
             "scenes": scenes.group(1).strip() if scenes else "",
             "exists": bool(img) and (project / img.group(1).strip()).exists(),
         }
+        out[key] = rec
+        out[raw_id] = rec
     return out
 
 
@@ -288,6 +293,10 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
     if not asset:
         raise ValueError("未知资产")
     sha = hashlib.sha256(img.read_bytes()).hexdigest()
+    cur_img = (asset.get("binding") or {}).get("image")
+    if cur_img and cur_img == image_rel:      # 已经是当前图，不重复生成版本
+        return {"ok": True, "unchanged": True, "version": (asset.get("binding") or {}).get("version"),
+                "bindingFile": None, "assetDoc": None, "sha256": sha}
     binding = write_binding(project, asset, image_rel)
     binding_rel = str(binding.relative_to(project))
     proj = _read_project(project)
