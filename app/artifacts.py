@@ -47,12 +47,20 @@ DOC_EXT = (".md",)
 VERSIONED = __import__("re").compile(r"-v(\d{3})(-\d+)?\.md$")
 
 
+REF2VA_NAME = __import__("re").compile(r"/minimax-h3-ref2va-v(\d{3})(-\d+)?\.md$")
+
+
 def family_of(path: str) -> tuple:
-    """把一个文件归到"同一份文档的第几版"：返回 (家族键, 版本号)。"""
-    m = VERSIONED.search(path)
+    """把一个文件归到"同一份文档的第几版"：返回 (家族键, 版本号)。
+
+    minimax-h3-ref2va-vNNN.md 与 minimax-h3-vNNN.md 是同一份提示词的两个命名，
+    归并到同一家族，避免出现两个"当前版"。
+    """
+    norm = REF2VA_NAME.sub(r"/minimax-h3-v\1\2.md", path)
+    m = VERSIONED.search(norm)
     if not m:
-        return (path, 0)
-    return (VERSIONED.sub("", path), int(m.group(1)))
+        return (norm, 0)
+    return (VERSIONED.sub("", norm), int(m.group(1)))
 
 
 def scan_unregistered(project: Path, known: set, known_versions: dict = None) -> list:

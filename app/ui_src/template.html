@@ -3087,7 +3087,11 @@ function artName(kind){
   return k || String(kind||"");
 }
 
-function artFamily(p){ return String(p||'').replace(/-v\d{3}(?:-\d+)?\.md$/, ''); }
+function artFamily(p){
+  // ref2va 与普通命名是同一份提示词，归并成一个家族
+  const norm = String(p||'').replace(/minimax-h3-ref2va-v(\d{3})/, 'minimax-h3-v$1');
+  return norm.replace(/-v\d{3}(?:-\d+)?\.md$/, '');
+}
 function artVersion(a){ const m=/-v(\d{3})(?:-\d+)?\.md$/.exec(a.path||''); return m?parseInt(m[1],10):0; }
 function artVersionLabel(a){ return 'v'+String(artVersion(a)).padStart(3,'0')+' · '+artName(a.kind)+' · '+(ART_LABEL[a.status]||a.status); }
 function artPick(fam,path){ ART_PICK[fam]=path; render(); }
