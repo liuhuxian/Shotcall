@@ -29,8 +29,15 @@ def load_registry(project: Path) -> dict:
         d = json.loads(f.read_text(encoding="utf-8"))
     except Exception as e:
         return {"exists": True, "error": f"{e}", "artifacts": [], "current": {}}
+    arts = d.get("artifacts") or []
+    # 同一份提示词曾被登记成「（音色版）」「（修台词版）」等不同 kind，
+    # 导致每个都自称当前版；这里在读取时归一，避免界面出现多个当前。
+    for a in arts:
+        k = a.get("kind") or ""
+        if k.startswith("09 视频提示词") and not k.startswith("09 视频提示词::"):
+            a["kind"] = "09 视频提示词"
     return {"exists": True, "registryPath": STATE_FILE,
-            "artifacts": d.get("artifacts") or [], "current": d.get("current") or {},
+            "artifacts": arts, "current": d.get("current") or {},
             "schemaVersion": d.get("schema_version")}
 
 
