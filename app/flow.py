@@ -543,6 +543,16 @@ def _outputs(project: Path, step, scene, episode=None):
     return rows
 
 
+def _stale_index(project: Path) -> dict:
+    """登记表里每份成果的过期依赖（含传递），按路径索引。"""
+    try:
+        import artifacts as _art
+        d = _art.build(project)
+    except Exception:
+        return {}
+    return {a.get("path"): (a.get("staleDeps") or []) for a in d.get("artifacts") or []}
+
+
 def _dep_gate(project: Path, step, scene: str, episode: str = None):
     """返回 (blocked, warnings)：声明的上游一张都没有 → 阻塞；有但还没确认 → 警告。"""
     blocked, warns = [], []
@@ -588,8 +598,16 @@ def steps_payload(project: Path, scene: str = "N001", episode: str = None):
             "canRegister": True,
             "blocked": _dep_gate(project, s, scene, episode)[0],
             "depWarnings": _dep_gate(project, s, scene, episode)[1],
+            "staleDeps": (_stale_index(project).get((a or {}).get("path")) if a else None) or [],
             "outputs": _outputs(project, step_obj, scene, episode),
         })
+    # 自身成果的上游过期，也视为没 ready
+    for x in out:
+        if x["staleDeps"]:
+            x["blocked"] = list(x["blocked"]) + [
+                "上游已更新：" + "；".join(
+                    f"{r['path'].split('/')[-1]}（{r['reason']}）" for r in x["staleDeps"][:3])
+            ]
     eps = episodes_of(project)
     cur_ep = episode or (scene_episode(project, scene) if scene else None)
     return {"scene": scene, "episode": cur_ep, "episodes": eps, "steps": out}

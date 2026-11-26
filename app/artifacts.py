@@ -166,20 +166,48 @@ def build(project: Path) -> dict:
             item["statusText"] = "历史已替代"
             item["supersededBy"] = "同族更高版本已确认"
 
-    # 依赖失效判定：上游被改过 / 缺失 / 尚未确认
-    for item in known.values():
-        stale = []
-        for dep_path in item["dependsOn"]:
+    # 依赖失效判定：缺失 / 改动 / 仍是草稿 / 上游已更新到新版本（含传递）
+    fam_max = {}
+    for pth in known:
+        fam, ver = family_of(pth)
+        fam_max[fam] = max(fam_max.get(fam, 0), ver)
+
+    memo = {}
+
+    def stale_of(item, stack=()):
+        pth = item["path"]
+        if pth in memo:
+            return memo[pth]
+        if pth in stack:                     # 环：不算过期，避免死循环
+            return []
+        out_reasons = []
+        for dep_path in item.get("dependsOn") or []:
             dep = known.get(dep_path)
             if not dep:
-                stale.append({"path": dep_path, "reason": "未登记"})
-            elif not dep["exists"]:
-                stale.append({"path": dep_path, "reason": "文件缺失"})
-            elif dep["fileState"] == "modified":
-                stale.append({"path": dep_path, "reason": "上游已改动"})
-            elif dep["status"] == "draft":
-                stale.append({"path": dep_path, "reason": "上游仍是草稿"})
-        item["staleDeps"] = stale
+                out_reasons.append({"path": dep_path, "reason": "未登记"})
+                continue
+            if not dep.get("exists"):
+                out_reasons.append({"path": dep_path, "reason": "文件缺失"})
+                continue
+            if dep.get("fileState") == "modified":
+                out_reasons.append({"path": dep_path, "reason": "上游已改动"})
+                continue
+            fam, ver = family_of(dep_path)
+            top = fam_max.get(fam, ver)
+            if top > ver:
+                out_reasons.append({"path": dep_path,
+                                    "reason": f"上游已更新到 v{top:03d}"})
+                continue
+            if dep.get("status") == "draft":
+                out_reasons.append({"path": dep_path, "reason": "上游仍是草稿"})
+                continue
+            if stale_of(dep, stack + (pth,)):     # 传递：上游的上游过期
+                out_reasons.append({"path": dep_path, "reason": "上游的上游已过期"})
+        memo[pth] = out_reasons
+        return out_reasons
+
+    for item in known.values():
+        item["staleDeps"] = stale_of(item)
 
     arts = sorted(known.values(), key=lambda x: (x["stage"], x["path"]))
     known_versions = {}

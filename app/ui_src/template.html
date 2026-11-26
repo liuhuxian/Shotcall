@@ -2843,7 +2843,8 @@ function sFlow(onlyStage){
       <div class="pb">
         ${(st.blocked||[]).length?`<div style="margin-bottom:8px;padding:7px 9px;border:1px solid var(--bad);border-radius:6px;
             font-size:11px;color:var(--bad);line-height:1.6">
-            <b>上游未完成，本步不能开工：</b>${st.blocked.map(esc).join('；')}</div>`:''}
+            <b>本步还没 ready：</b>${st.blocked.map(esc).join('；')}
+            ${(st.staleDeps||[]).length?`<div style="margin-top:4px">上游有新版本后，这份成果需要重做或重新确认。</div>`:''}</div>`:''}
         ${(st.depWarnings||[]).length?`<div style="margin-bottom:8px;padding:7px 9px;border:1px solid var(--warn);border-radius:6px;
             font-size:11px;color:var(--warn);line-height:1.6">
             依赖尚未确认：${st.depWarnings.map(esc).join('；')}</div>`:''}
