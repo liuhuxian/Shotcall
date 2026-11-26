@@ -1962,7 +1962,10 @@ async function adGenerate(){
     n:parseInt(AD.n||1), size:AD.size||lastSize(), steps:parseInt(AD.steps||8)};
   if(AD.ref) body.ref = AD.ref;
   const extra=(AD.extraRefs||[]).filter(Boolean);
-  if(extra.length) body.refs=[AD.ref, ...extra].filter(Boolean);
+  const main=AD.ref || extra.shift() || null;
+  if(main) body.ref = main;
+  const allRefs=[main, ...extra].filter(Boolean);
+  if(allRefs.length>1) body.refs=allRefs;
   const sz=body.size.split('x'); body.width=parseInt(sz[0]); body.height=parseInt(sz[1]);
   const r=await fetch('/api/img/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json(); if(!r.ok) return toast(j.error||'提交失败');
@@ -1992,6 +1995,9 @@ function adPickBind(){
 }
 function adChooseRef(file){
   AD.extraRefs = AD.extraRefs || [];
+  // 还没有主图：第一张选中的就是主图
+  if(!AD.ref){ AD.ref = file; render(); return; }
+  if(file === AD.ref){ AD.ref = AD.extraRefs.shift() || null; render(); return; }
   const i = AD.extraRefs.indexOf(file);
   if(i >= 0) AD.extraRefs.splice(i,1);
   else if(AD.extraRefs.length < 3) AD.extraRefs.push(file);
