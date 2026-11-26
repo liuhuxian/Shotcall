@@ -525,6 +525,14 @@ def build(project: Path) -> dict:
         a["prompt"] = prompts.get(a["id"]) or ""
         a["descriptor"] = descriptors.get(a["id"]) or a.get("descriptor") or ""
         a["history"] = histories.get(a["id"]) or histories.get(a["id"].replace("-", "--")) or []
+        # 显示版本：历史里同一张图的最新版本优先于绑定快照的计数
+        bnd = a.get("binding") or {}
+        if bnd.get("image"):
+            num = lambda x: int(re.sub(r"\D", "", str(x or "0")) or 0)
+            for h in (a["history"] or []):
+                if h.get("file") == bnd["image"] and num(h.get("version")) > num(bnd.get("version")):
+                    bnd["version"] = h.get("version")
+                    break
     img = [a for a in assets if a.get("type") != "voice"]   # 图像资产口径保持 36 项
     vos = [a for a in assets if a.get("type") == "voice"]
     bound = sum(1 for a in img if a["bound"])
