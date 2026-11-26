@@ -1979,7 +1979,14 @@ function adUseCurrent(){
   AD.ref=img; AD.pickOpen=false; render();
 }
 function adPickOther(){
-  if(AD.pickOpen){ AD.pickOpen=false; render(); return; }
+  if(AD.pickOpen && AD.pickMode!=='bind'){ AD.pickOpen=false; render(); return; }
+  AD.pickMode='ref';
+  if(AD.refs===null) return adLoadRefs();
+  AD.pickOpen=true; render();
+}
+function adPickBind(){
+  if(AD.pickOpen && AD.pickMode==='bind'){ AD.pickOpen=false; render(); return; }
+  AD.pickMode='bind';
   if(AD.refs===null) return adLoadRefs();
   AD.pickOpen=true; render();
 }
@@ -2011,7 +2018,8 @@ async function adAdopt(file){
   const r=await fetch('/api/img/adopt',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({asset:a.id,file,ep:'EP002'})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'采用失败');
-  toast('已采用并写新绑定：'+(j.bindingFile||''));
+  toast(j.unchanged?'这张已经是当前绑定':('已采用并写新绑定：'+(j.bindingFile||'')));
+  AD.pickOpen=false;
   AST.data=null; await loadAssets(); await loadAssetDetail();
 }
 function assetDetailHtml(){
@@ -2090,7 +2098,7 @@ function assetDetailHtml(){
       <span class="dim" style="font-size:11px">参考图</span>
       <button class="btn ${(AD.ref&&img&&AD.ref===img)?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adUseCurrent()">引用当前</button>
       <button class="btn ${(AD.ref&&(!img||AD.ref!==img))?'acc':'ghost'}" style="font-size:10.5px;padding:2px 9px" onclick="adPickOther()"
-        title="从项目里选一张图：点图片=作为出图参考；点「设为当前」=替换资产图">选择图片…</button>
+        title="选一张图作为这次出图的参考图">选择参考图</button>
       ${AD.ref?`<span style="display:inline-flex;align-items:center;gap:5px">
           <img src="/api/proj/file?p=${encodeURIComponent(AD.ref)}" title="主图 · 点击放大"
             onclick="openZoom('/api/proj/file?p=${encodeURIComponent(AD.ref)}')"
@@ -2110,7 +2118,8 @@ function assetDetailHtml(){
       ${AD.ref?`<button class="btn ghost" style="font-size:10px;padding:1px 7px" onclick="AD.ref=null;AD.pickOpen=false;render()">清除引用</button>`:''}
     </div>
     ${AD.pickOpen?`<div class="panel" style="margin-bottom:8px;border-color:var(--acc)">
-      <div class="ph"><span>选择图片</span><span class="dim">点图片=作为出图参考 · 点「设为当前」=替换资产图 · 也可从本机上传</span></div>
+      <div class="ph"><span>${AD.pickMode==='bind'?'选择图片绑定':'选择参考图'}</span>
+        <span class="dim">${AD.pickMode==='bind'?'点任意一张图，立即设为该资产的当前绑定':'点一张图作为出图参考'}</span></div>
       <div class="pb">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px">
           <input type="file" accept="image/*" onchange="adUpload(this.files[0])" style="font-size:10.5px;color:#9aa5b4">
@@ -2121,11 +2130,11 @@ function assetDetailHtml(){
         </div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;max-height:260px;overflow:auto">
           ${(AD.refs||[]).slice(0,80).map(r=>`<div style="width:134px">
-            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}" title="点击引用这张图"
-              onclick="adChooseRef('${esc(r.file)}')"
+            <img src="/api/proj/file?p=${encodeURIComponent(r.file)}"
+              title="${AD.pickMode==='bind'?'点击即绑定这张图':'点击作为参考图'}"
+              onclick="${AD.pickMode==='bind'?`adAdopt('${esc(r.file)}')`:`adChooseRef('${esc(r.file)}')`}"
               style="width:100%;height:82px;object-fit:cover;border-radius:5px;cursor:pointer;display:block;border:1px solid ${(r.file===AD.ref||(AD.extraRefs||[]).includes(r.file))?'var(--acc)':'var(--line)'}">
             <div class="dim mono" style="font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.kind||'')} · ${esc(r.name)}</div>
-            <button class="btn ok" style="font-size:9px;padding:1px 6px;margin-top:2px" onclick="adAdopt('${esc(r.file)}')">设为当前</button>
           </div>`).join('')||'<div class="dim" style="font-size:11px">读取中或没有图片…</div>'}
         </div>
       </div></div>`:''}
@@ -2166,6 +2175,8 @@ function assetDetailHtml(){
           style="width:100%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">`:
           `<div style="height:180px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center" class="dim">没有绑定图</div>`}
           <div class="dim" style="font-size:10.5px;margin-top:5px">当前绑定：${esc((a.binding||{}).version||'—')}</div>
+          <button class="btn ok" style="font-size:10.5px;padding:2px 9px;margin-top:6px" onclick="adPickBind()"
+            title="从项目里挑一张图，点选后直接成为该资产当前绑定">选择其他图片绑定</button>
           ${AD.ref&&AD.ref!==img?`<div class="dim" style="font-size:10.5px;margin-top:7px">当前引用图</div>
             <img src="/api/proj/file?p=${encodeURIComponent(AD.ref)}" onclick="openZoom('/api/proj/file?p=${encodeURIComponent(AD.ref)}')"
               style="width:100%;margin-top:3px;border-radius:6px;border:1px solid var(--acc);cursor:zoom-in">`:''}
