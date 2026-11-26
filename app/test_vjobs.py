@@ -315,9 +315,11 @@ def main():
     print("\n= 提示词文件选择 =")
     d = tmp / "N001"
     d.mkdir()
+    # 现行规则：minimax-h3-vNNN.md 与 minimax-h3-ref2va-vNNN.md 都算合法提示词
     (d / "minimax-h3-v001.md").write_text("x", encoding="utf-8")
-    check("只有 T2VA 版时拒绝", vjobs.latest_prompt_file(d) is None,
-          vjobs.latest_prompt_file(d))
+    got = vjobs.latest_prompt_file(d)
+    check("无 ref2va 后缀也能读到", got and got.name == "minimax-h3-v001.md",
+          got.name if got else None)
     (d / "minimax-h3-ref2va-v001.md").write_text("x", encoding="utf-8")
     (d / "minimax-h3-ref2va-v002.md").write_text("x", encoding="utf-8")
     got = vjobs.latest_prompt_file(d)

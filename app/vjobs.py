@@ -207,9 +207,26 @@ def save_pin(scene: str, name) -> dict:
     return pins
 
 
+def _prompt_files(d: Path) -> list:
+    """H3 提示词两种合法命名：minimax-h3-ref2va-vNNN.md（旧）与 minimax-h3-vNNN.md（现行）。
+
+    同一版本号两种都在时优先 ref2va（历史文件），不重复列出。
+    """
+    seen, out = set(), []
+    for pat in ("minimax-h3-ref2va*.md", "minimax-h3-v*.md"):
+        for f in sorted(d.glob(pat)):
+            m = re.search(r"-v(\d{3})(?:-\d+)?\.md$", f.name)
+            key = int(m.group(1)) if m else 0
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(f)
+    return out
+
+
 def list_versions(d: Path) -> list:
     out = []
-    for f in sorted(d.glob("minimax-h3-ref2va*.md")):
+    for f in _prompt_files(d):
         m = re.search(r"-v(\d{3})(?:-\d+)?\.md$", f.name)
         out.append({"name": f.name, "version": int(m.group(1)) if m else 0,
                     "sizeKB": round(f.stat().st_size / 1024),
@@ -254,7 +271,7 @@ def latest_prompt_file(d: Path):
     pinned = (load_pins() or {}).get(d.name)
     if pinned and (d / pinned).exists():
         return d / pinned
-    files = list(d.glob("minimax-h3-ref2va*.md"))   # 只认 Ref2VA 提示词，不做兜底
+    files = _prompt_files(d)                        # 两种命名都认，按版本取最大
     if not files:
         return None
 
