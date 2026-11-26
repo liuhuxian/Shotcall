@@ -103,6 +103,9 @@ def _prompt_09():
 输入（必须都已确认）：
 {{INPUTS}}
 
+其中属于 08 的三份文件必须同版本：shot-plan（含生成单元定义）、scene-space-map、reference-map。
+缺任何一份就停下来报告，不要凭主文档猜空间或素材。
+
 这是一次**受约束的编译**，不是重新创作：
 - 单元数、单元 id、内部镜号、时长、帧数，必须与 shot-plan 的「生成单元定义」完全一致
 - 不得重排切点、不得改台词、不得改时长、不得增减单元
@@ -482,6 +485,21 @@ def _inputs(project: Path, step, scene=None, episode=None):
             a = _latest(project, dep, scene if dep["scope"] == "{scene}" else None, episode=dep_ep)
             if a:
                 out.append(a["path"])
+                # 同版本组的附带产出一起带上：例如 08 的 shot-plan + 空间图 + 参考图映射
+                ver = _ver(a["path"])
+                for x in (dep.get("extra") or []):
+                    for it in _all(project):
+                        pth = it.get("path") or ""
+                        m = re.search(x["pattern"], pth)
+                        if not m:
+                            continue
+                        try:
+                            if int(m.group(2)) != ver:
+                                continue
+                        except Exception:
+                            continue
+                        if pth not in out:
+                            out.append(pth)
     # 额外输入：同场某类文件的最新一版（如 09b 要读生成单元规划）
     for spec in step.get("extra_inputs") or []:
         pat = spec["pattern"]
