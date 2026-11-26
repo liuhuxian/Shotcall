@@ -781,6 +781,66 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     return {"ok": True, "path": rel, "output": out}
 
 
+def _family_latest(project: Path, dep_path: str) -> str:
+    """同一家族里版本号最大的已登记文件（没有则返回原路径）。"""
+    import artifacts as _art
+    fam, ver = _art.family_of(dep_path)
+    best, best_ver = dep_path, ver
+    for a in _all(project):
+        f2, v2 = _art.family_of(a.get("path", ""))
+        if f2 == fam and v2 > best_ver:
+            best, best_ver = a["path"], v2
+    return best
+
+
+def ack_upstream(project: Path, step_key: str, scene: str = "N001", path: str = None,
+                 episode: str = None):
+    """认可上游更新：把这份成果的 depends_on 改成上游当前最新版，保持原有确认状态。
+
+    只改登记表里的依赖指向，不动文件内容、不动 sha、不动审批记录。
+    """
+    import json as _json
+    step = BY_KEY.get(step_key)
+    if not step:
+        raise ValueError("未知流程")
+    rel = path
+    if not rel:
+        a = _latest(project, step, scene if step["scope"] == "{scene}" else None,
+                    episode=episode if step["scope"] == "{episode}" else None)
+        if not a:
+            raise ValueError("没有已登记的成果可认可")
+        rel = a["path"]
+
+    f = project / artifacts.STATE_FILE
+    if not f.exists():
+        raise ValueError("登记表不存在")
+    d = _json.loads(f.read_text(encoding="utf-8"))
+    rec = next((a for a in d.get("artifacts") or [] if a.get("path") == rel), None)
+    if not rec:
+        raise ValueError("这份成果还没登记，不能认可上游")
+
+    before = list(rec.get("depends_on") or [])
+    after, changes = [], []
+    for dep in before:
+        new = _family_latest(project, dep)
+        after.append(new)
+        if new != dep:
+            changes.append({"from": dep, "to": new})
+    if not changes:
+        return {"ok": True, "path": rel, "changes": [], "note": "依赖已经是最新，无需改动"}
+
+    rec["depends_on"] = list(dict.fromkeys(after))
+    rec["ackedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    f.write_text(_json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    log = store.state_dir(project) / "upstream-acks.jsonl"
+    with open(log, "a", encoding="utf-8") as out:
+        out.write(_json.dumps({"at": rec["ackedAt"], "path": rel, "changes": changes},
+                              ensure_ascii=False) + "\n")
+    _all_drop()
+    return {"ok": True, "path": rel, "changes": changes}
+
+
 def confirm_path(project: Path, path: str):
     """确认任意已登记且 current.draft 指向它的成果；不要求它属于 01–09b 卡。"""
     rel = str(path)

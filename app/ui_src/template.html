@@ -2711,6 +2711,19 @@ async function confirmFlow(key){
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
 }
 
+async function ackUpstream(key){
+  const ok = confirm('把这份成果的依赖改成上游最新版本？\n\n只改依赖指向，不改文件内容，确认状态保持不变。');
+  if(!ok) return;
+  const r = await fetch('/api/workflow/ack-upstream',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', episode:normEp(FLOW.episode)||normEp(state.ep)})});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||'认可失败');
+  const n = (j.changes||[]).length;
+  toast(n ? ('已把 '+n+' 项依赖指向最新版本') : (j.note||'依赖已是最新'));
+  STG.data=null; FLOW.data=null;
+  await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
+}
+
 async function registerAllPending(key){
   const st = (FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key);
   if(!st) return;
@@ -2844,7 +2857,10 @@ function sFlow(onlyStage){
         ${(st.blocked||[]).length?`<div style="margin-bottom:8px;padding:7px 9px;border:1px solid var(--bad);border-radius:6px;
             font-size:11px;color:var(--bad);line-height:1.6">
             <b>本步还没 ready：</b>${st.blocked.map(esc).join('；')}
-            ${(st.staleDeps||[]).length?`<div style="margin-top:4px">上游有新版本后，这份成果需要重做或重新确认。</div>`:''}</div>`:''}
+            ${(st.staleDeps||[]).length?`<div style="margin-top:4px">上游有新版本后，这份成果需要重做或重新确认。</div>
+              <div style="margin-top:6px"><button class="btn ghost" style="font-size:10.5px;padding:2px 9px;border-color:var(--bad);color:var(--bad)"
+                onclick="ackUpstream('${st.key}')">认可上游更新，保持确认</button>
+                <span class="dim" style="font-size:10px;margin-left:6px">把依赖改成最新版本，不改文件内容</span></div>`:''}</div>`:''}
         ${(st.depWarnings||[]).length?`<div style="margin-bottom:8px;padding:7px 9px;border:1px solid var(--warn);border-radius:6px;
             font-size:11px;color:var(--warn);line-height:1.6">
             依赖尚未确认：${st.depWarnings.map(esc).join('；')}</div>`:''}

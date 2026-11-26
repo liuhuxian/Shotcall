@@ -2554,6 +2554,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return
+        if path == "/api/workflow/ack-upstream":
+            try:
+                body = self._json_body()
+                out = flow.ack_upstream(PROJECT, str(body.get("step") or ""),
+                                        str(body.get("scene") or "N001"),
+                                        body.get("path"),
+                                        episode=str(body.get("episode") or "") or None)
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
         if path == "/api/workflow/register":
             try:
                 body = self._json_body()
