@@ -18,7 +18,7 @@ PY
 
 while read -r name commit rel want url; do
   tmpfile="$TMP/${name}__${rel//\//_}"
-  if ! timeout 40 curl -sS -o "$tmpfile" "$url"; then
+  if ! curl -sS --retry 4 --retry-delay 2 --retry-all-errors --max-time 90 --connect-timeout 20 -o "$tmpfile" "$url"; then
     echo "❌ 下载失败 $name/$rel"; fail=1; continue
   fi
   up=$(sha1sum "$tmpfile" | cut -d' ' -f1)
