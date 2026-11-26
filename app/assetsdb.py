@@ -294,18 +294,32 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
         raise ValueError("未知资产")
     sha = hashlib.sha256(img.read_bytes()).hexdigest()
     cur_img = (asset.get("binding") or {}).get("image")
-    if cur_img and cur_img == image_rel:      # 已经是当前图，不重复生成版本
-        return {"ok": True, "unchanged": True, "version": (asset.get("binding") or {}).get("version"),
-                "bindingFile": None, "assetDoc": None, "sha256": sha}
-    binding = write_binding(project, asset, image_rel)
-    binding_rel = str(binding.relative_to(project))
+    if cur_img:
+        same = cur_img == image_rel
+        if not same:                       # 路径不同但内容相同也算同一张图
+            try:
+                cur_file = project / cur_img
+                same = cur_file.is_file() and hashlib.sha256(cur_file.read_bytes()).hexdigest() == sha
+            except Exception:
+                same = False
+        if same:
+            return {"ok": True, "unchanged": True, "version": (asset.get("binding") or {}).get("version"),
+                    "bindingFile": None, "assetDoc": None, "sha256": sha}
     proj = _read_project(project)
     slot = next((s for s in proj.get("slots") or []
                  if s.get("stateId") == asset_id or s.get("id") == asset_id
                  or str(s.get("id", "")).endswith("--" + asset_id)), None)
+    # 版本号以两处记录的较大值为基准，避免绑定快照与槽位各自计数导致 v4/v7 对不上
+    def _num(v):
+        m = re.match(r"v(\d+)", str(v or ""))
+        return int(m.group(1)) if m else 0
+    base = max(_num((asset.get("binding") or {}).get("version")),
+               int((slot or {}).get("bindingVersion") or 0))
+    binding = write_binding(project, asset, image_rel, version=f"v{base}")
+    binding_rel = str(binding.relative_to(project))
     # 洋子 project.json 里没有这个槽位（例如新拆分的资产）时，只写绑定与资产文档，
     # 不再整条失败——否则这些资产永远无法直接指定图片。
-    ver = int((slot or {}).get("bindingVersion") or 0) + 1
+    ver = base + 1
     cand = None
     if slot:
         cands = proj.setdefault("candidates", [])
@@ -355,6 +369,12 @@ def slot_history(project: Path) -> dict:
                          "at": h.get("adoptedAt") or "",
                          "exists": bool(file) and (project / file).is_file(),
                          "sha256": c.get("sha256") or ""})
+        # 同一内容只保留最后一次采用
+        dedup = {}
+        for h in hist:
+            k = h.get("sha256") or h.get("file") or h.get("candidateId")
+            dedup[k] = h
+        hist = list(dedup.values())
         for key in {slot.get("stateId", ""), slot.get("id", "")}:
             if key:
                 out[key] = hist
