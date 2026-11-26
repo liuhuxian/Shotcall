@@ -349,11 +349,13 @@ def parse_units(project: Path, scene: str) -> list:
         return []
     txt = f.read_text(encoding="utf-8")
     out = []
-    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+)秒｜([^\n]+)\n(.*?)(?=^### |\Z)", txt, re.S | re.M):
+    # 标题格式允许小数秒与附加列，例如：### U001｜8.00秒｜SH001｜192帧
+    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+(?:\.\d+)?)秒｜([^｜\n]+)(?:｜[^\n]*)?\n(.*?)(?=^### |\Z)",
+                         txt, re.S | re.M):
         body = m.group(4)
         pm = re.search(r"```text\n(.*?)```", body, re.S)
         out.append({
-            "id": m.group(1), "seconds": int(m.group(2)),
+            "id": m.group(1), "seconds": float(m.group(2)),
             "shots": m.group(3).strip(),
             "prompt": (pm.group(1).strip() if pm else ""),
             "source": f.name,

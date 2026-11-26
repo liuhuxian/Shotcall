@@ -211,6 +211,14 @@ const fmt = n => (n>=60 ? (n/60).toFixed(1)+" 分" : n+" 秒");
 const shotById = id => D.shots.find(s=>s.id===id);
 const sceneById = id => D.scenes.find(s=>s.id===id);
 
+// 任何未捕获的前端异常都提示出来，避免“点了没反应”
+window.addEventListener('unhandledrejection', e => {
+  try{ toast('操作失败：' + (e.reason && (e.reason.message || e.reason) || '未知错误')); }catch(_){}
+});
+window.addEventListener('error', e => {
+  try{ if(e && e.message) toast('页面报错：' + e.message); }catch(_){}
+});
+
 function toast(msg){
   const h=document.getElementById("toastHost");
   h.innerHTML = `<div class="toast">${esc(msg)}</div>`;
@@ -3285,11 +3293,21 @@ function sLegacy(){
 }
 
 async function confirmArt(path, verdict){
+  if(!path) return toast('缺少文件路径');
+  if(!STG.data){                                   // 数据被清空时先补读，避免静默失败
+    toast('正在读取登记数据…');
+    await loadStages(true);
+    if(!STG.data) return toast('登记数据读取失败，请刷新页面');
+  }
   const d = STG.data;
   const art = (d.artifacts||[]).find(a=>a.path===path);
-  const r = await fetch('/api/artifact/confirm', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({path, verdict, kind:art?art.kind:"", scope:art?art.scope:"", stage:art?art.stage:""})});
-  const j = await r.json();
+  toast(verdict==='pass' ? ('正在确认 '+(path.split('/').pop())+'…') : ('正在退回…'));
+  let r, j;
+  try{
+    r = await fetch('/api/artifact/confirm', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path, verdict, kind:art?art.kind:"", scope:art?art.scope:"", stage:art?art.stage:""})});
+    j = await r.json();
+  }catch(e){ return toast('确认请求失败：'+e); }
   if(!r.ok) return toast(j.error||"记录失败");
   ART_PICK[artFamily(path)] = path;
   toast(verdict==='pass' ? ((j.flow && !j.flow.already) ? ("已确认并登记："+path) : ("已确认："+path)) : ("已退回："+path));
