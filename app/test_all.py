@@ -79,7 +79,8 @@ def main():
     if st["exists"]:
         s = st["summary"]
         check("成果状态数守恒",
-              s["total"] == s["draft"] + s["confirmed"] + s["superseded"] + s["conclusion"],
+              s["total"] == (s["draft"] + s["confirmed"] + s["superseded"]
+                             + s["conclusion"] + s.get("expired", 0)),
               s)
         check("每条成果都有阶段归属", all(a["stage"] for a in st["artifacts"]),
               [a["path"] for a in st["artifacts"] if not a["stage"]][:3])

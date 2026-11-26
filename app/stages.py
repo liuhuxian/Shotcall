@@ -34,6 +34,7 @@ STATUS = {
     "confirmed": "已确认-当前",
     "superseded": "历史已替代",
     "conclusion": "已完成-结论",
+    "expired": "已过期-禁止使用",
     "missing": "文件缺失",
 }
 

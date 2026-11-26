@@ -2731,17 +2731,40 @@ async function registerAllPending(key){
   const files = st.newFiles||[];
   if(!files.length) return toast('没有待登记的新版本');
   const ok=[], bad=[];
+  const doRegister = async (f) => {
+    const r = await fetch('/api/workflow/register',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path:f, episode:normEp(FLOW.episode)||normEp(state.ep)})});
+    const j = await r.json();
+    return {ok:r.ok, err:j.error||''};
+  };
   for(const f of files){
-    try{
-      const r = await fetch('/api/workflow/register',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path:f, episode:normEp(FLOW.episode)||normEp(state.ep)})});
-      const j = await r.json();
-      if(r.ok) ok.push(f); else bad.push({f, err:j.error||'失败'});
-    }catch(e){ bad.push({f, err:String(e)}); }
+    const res = await doRegister(f).catch(e=>({ok:false, err:String(e)}));
+    if(res.ok) ok.push(f); else bad.push({f, err:res.err});
   }
-  if(ok.length) toast('已登记 '+ok.length+' 个'+(bad.length?('，失败 '+bad.length+' 个'):''));
-  else toast('登记失败：'+(bad[0]&&bad[0].err||'未知'));
-  FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
+  // 被依赖拦住时：先确认上游，再重试一次
+  const depPats = bad.map(b=>{ const m=/依赖不是当前确认版本：(.+?)\s*\//.exec(b.err); return m?m[1]:null; }).filter(Boolean);
+  const uniqDeps = [...new Set(depPats)];
+  if(uniqDeps.length){
+    const names = uniqDeps.map(d=>d.split('/').pop()).join('、');
+    if(confirm('有上游还是草稿：'+names+'\n\n先确认它们，再登记这批文件？')){
+      for(const d of uniqDeps){
+        try{
+          await fetch('/api/artifact/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({path:d, verdict:'pass'})});
+        }catch(e){}
+      }
+      const still=[];
+      for(const b of bad){
+        const res = await doRegister(b.f).catch(e=>({ok:false, err:String(e)}));
+        if(res.ok) ok.push(b.f); else still.push({f:b.f, err:res.err});
+      }
+      bad.length=0; bad.push(...still);
+    }
+  }
+  if(ok.length) toast('已登记 '+ok.length+' 个'+(bad.length?('，仍失败 '+bad.length+' 个：'+bad[0].err.slice(0,60)):''));
+  else toast('登记失败：'+((bad[0]&&bad[0].err)||'未知'));
+  STG.data=null; FLOW.data=null;
+  await loadFlow(FLOW.scene||'N001',true); await loadStages(true); render();
   if(bad.length) console.warn('登记失败', bad);
 }
 
@@ -3923,9 +3946,9 @@ const STAGE_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", blocked:"var(--
 const STAGE_LABEL = {confirmed:"已确认", draft:"有待确认", blocked:"文件缺失",
                      conclusion:"已出结论", superseded:"已替代", empty:"未开始"};
 const ART_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", superseded:"#5c6474",
-                   conclusion:"var(--acc)", stale:"var(--bad)", unknown:"var(--dim)"};
+                   conclusion:"var(--acc)", expired:"var(--bad)", stale:"var(--bad)", unknown:"var(--dim)"};
 const ART_LABEL = {confirmed:"已确认", draft:"草稿", superseded:"已替代",
-                   conclusion:"结论", stale:"上游过期", unknown:"未知"};
+                   conclusion:"结论", expired:"已过期", stale:"上游过期", unknown:"未知"};
 
 let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null,
              enabled:new Set(), prog:null, progTimer:null};

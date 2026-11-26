@@ -219,7 +219,7 @@ def build(project: Path) -> dict:
     out_stages = []
     for s in stages.STAGES:
         items = [a for a in arts if a["stage"] == s["no"]]
-        counts = {"draft": 0, "confirmed": 0, "superseded": 0, "conclusion": 0}
+        counts = {"draft": 0, "confirmed": 0, "superseded": 0, "conclusion": 0, "expired": 0}
         for a in items:
             if a["status"] in counts:
                 counts[a["status"]] += 1
@@ -249,6 +249,7 @@ def build(project: Path) -> dict:
         "confirmed": sum(1 for a in arts if a["status"] == "confirmed"),
         "superseded": sum(1 for a in arts if a["status"] == "superseded"),
         "conclusion": sum(1 for a in arts if a["status"] == "conclusion"),
+        "expired": sum(1 for a in arts if a["status"] == "expired"),
         "modified": sum(1 for a in arts if a["fileState"] == "modified"),
         "missing": sum(1 for a in arts if a["fileState"] == "missing"),
         "staleDeps": sum(1 for a in arts if a["staleDeps"]),
