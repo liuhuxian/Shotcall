@@ -2711,11 +2711,12 @@ async function confirmFlow(key){
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
 }
 
-async function ackUpstream(key){
+async function ackUpstream(key, path){
   const ok = confirm('把这份成果的依赖改成上游最新版本？\n\n只改依赖指向，不改文件内容，确认状态保持不变。');
   if(!ok) return;
   const r = await fetch('/api/workflow/ack-upstream',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', episode:normEp(FLOW.episode)||normEp(state.ep)})});
+    body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path:path||undefined,
+      episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j = await r.json();
   if(!r.ok) return toast(j.error||'认可失败');
   const n = (j.changes||[]).length;
@@ -3075,8 +3076,10 @@ function sStageBody(no){
     const eff = (stale && a.status === 'confirmed') ? 'stale' : a.status;
     const c = ART_COLOR[eff]||"var(--dim)";
     const lo = (a.local&&a.local.local)||'none';
-    const localBadge = lo==='confirmed'?'<span class="badge b-ok" style="font-size:9.5px">本地已确认</span>'
-      : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'';
+    const localBadge = stale
+      ? '<span class="badge b-warn" style="font-size:9.5px">上游过期，需重认</span>'
+      : (lo==='confirmed'?'<span class="badge b-ok" style="font-size:9.5px">本地已确认</span>'
+        : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'');
     return `<tr>
       <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[eff]||eff}</span></td>
       <td><div style="font-size:12.5px">${esc(artName(a.kind))} ${localBadge}${artPicker(g)}</div>
@@ -3092,7 +3095,10 @@ function sStageBody(no){
       <td style="text-align:right">${a.status==='draft'
         ? `<button class="btn ok" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','pass')">确认 ${(()=>{const m=(a.path||'').match(/-v(\d{3})/);return m?'v'+m[1]:'当前版';})()} 为当前版</button>
            <button class="btn warn" style="font-size:11px;padding:3px 9px" onclick="confirmArt('${esc(a.path)}','revise')">退回</button>`
-        : `<span class="dim" style="font-size:11px">${a.confirmedAt?esc(String(a.confirmedAt).slice(0,16)):''}</span>`}</td>
+        : (stale
+            ? `<button class="btn ghost" style="font-size:11px;padding:3px 9px;border-color:var(--warn);color:var(--warn)"
+                 title="把依赖改成上游最新版本，文件内容与确认状态都不变" onclick="ackUpstream('${st.no}','${esc(a.path)}')">认可上游更新</button>`
+            : `<span class="dim" style="font-size:11px">${a.confirmedAt?esc(String(a.confirmedAt).slice(0,16)):''}</span>`)}</td>
     </tr>`;
   }).join("");
 
