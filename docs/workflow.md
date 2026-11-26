@@ -1,6 +1,6 @@
 # 导演工作台 · 工作流程说明
 
-> 生成时间：2026-11-25 16:05　·　数据来源：工作台流程定义 `app/flow.py`
+> 生成时间：2026-11-26 17:27　·　数据来源：工作台流程定义 `app/flow.py`
 
 > 本文只说明**流程本身**：有哪些阶段、每步用什么技能、产出什么文件、谁依赖谁。
 > 流程卡只负责给输入；产物清单、命名与验收标准由对应 skill 决定。
@@ -12,19 +12,56 @@
 至于“这一步产出哪些文件、怎么命名、版本怎么递增、验收看什么”，全部以对应 skill 为准，卡片不复述。
 这样技能更新时流程自动跟上，不会出现卡片和技能各说一套。
 
+## 〇·二、技能分层与版本
+
+技能分两层，职责不重叠：
+
+| 层 | 位置 | 管什么 | 会不会随上游变 |
+|---|---|---|---|
+| 流程层 | 项目内 `.agents/skills/`（如 `film-cinedance`） | 档位、门禁、依赖链、生成单元、时长预算、交付契约 | 由本项目维护 |
+| craft 层 | 项目内 `.agents/skills-upstream/` | 构图、运镜、光线、表演、H3 写法 | 固定上游 commit，手动升级 |
+
+流程层决定「交付什么、合不合规」，craft 层决定「写得好不好」；craft 层不产出文件。
+
+### craft 技能从哪来
+
+| 技能 | 上游仓库 | 固定 commit |
+|---|---|---|
+| `cinematography` | fal-ai-community/skills | `653a2b7955a8` |
+| `lighting-direction` | calesthio/generative-media-skills | `d5daa8a23514` |
+| `performance-direction` | calesthio/generative-media-skills | `d5daa8a23514` |
+| `minimax-h3-prompt-writing` | MiniMax-AI/MiniMax-H3 | `b731d8846cf7` |
+
+指针与校验放在工作台仓库 `skills-deps/`：`meta/skills.map.json` 记录仓库+commit+文件 sha1，
+`vendor/` 是三个上游仓库的 submodule，`scripts/verify.sh` 逐字节比对项目内副本。
+
+### 项目实测约束放哪
+
+上游技能不知道本机的帧数规则、数据块契约和音色挂法，这些写在项目自己的
+`00-项目管理/LOCAL-FACTS.md`，与上游同步互不覆盖。尚未验证的现象不写进规则，只列在「待观察」。
+
+### 升级方式
+
+```text
+改 skills.map.json 的 commit → 更新 submodule 指针 → verify.sh 校验
+  → 同步项目副本 → 跑一条测试片确认没退化 → 提交
+```
+
+不跟随上游 main：技能一改，出片行为就变。
+
 ## 一、阶段总览
 
-| 阶段 | 卡片 | skill | 范围 | 这一阶段决定什么 |
-|---|---|---|---|---|
-| 01 | 概念锚定 | `film-synopsis` | 全项目 | 主题、类型、基调、篇幅、核心冲突 |
-| 02 | 角色圣经 | `film-characters` | 全项目 | 人物身份、年龄、体态、关系、说话方式 |
-| 03 | 世界观（可选） | `film-worldbuilding` | 全项目 | 时代、地域、制度、行业口径（可跳过） |
-| 04 | 分场大纲 | `film-treatment` | 全项目 | 分场表：场号、地点、时间、事件、预算 |
-| 05 | 正式剧本 | `film-screenplay` | 单集 | 可拍摄剧本、成稿时长复核、小说改编对账、生产拆解（同一集同一版本） |
-| 06 | 剧本压力测试（可选） | `film-stress-test` | 单集 | 结构、节奏、逻辑压力测试（可跳过） |
-| 07 | Lira 图像资产 | `film-lira-assets` | 全项目 | 角色/场景/道具的资产清单与图片提示词 |
-| 08 | ACTING 表演 | `film-acting` | 单场 | 逐场表演设计：目标、障碍、节拍、视线 |
-| 09 | 镜头与视频提示词 | `film-cinedance` | 单场 | 镜头规划（镜表/时长/空间/连续性/生成单元）与视频提示词 |
+| 阶段 | 卡片 | 流程技能 | 附带 craft 技能 | 范围 | 这一阶段决定什么 |
+|---|---|---|---|---|---|
+| 01 | 概念锚定 | `film-synopsis` | — | 全项目 | 主题、类型、基调、篇幅、核心冲突 |
+| 02 | 角色圣经 | `film-characters` | — | 全项目 | 人物身份、年龄、体态、关系、说话方式 |
+| 03 | 世界观（可选） | `film-worldbuilding` | — | 全项目 | 时代、地域、制度、行业口径（可跳过） |
+| 04 | 分场大纲 | `film-treatment` | — | 全项目 | 分场表：场号、地点、时间、事件、预算 |
+| 05 | 正式剧本 | `film-screenplay` | — | 单集 | 可拍摄剧本、成稿时长复核、小说改编对账、生产拆解（同一集同一版本） |
+| 06 | 剧本压力测试（可选） | `film-stress-test` | — | 单集 | 结构、节奏、逻辑压力测试（可跳过） |
+| 07 | Lira 图像资产 | `film-lira-assets` | — | 全项目 | 角色/场景/道具的资产清单与图片提示词 |
+| 08 | ACTING 表演 | `film-acting` | `performance-direction`（表演方法论） | 单场 | 逐场表演设计：目标、障碍、节拍、视线 |
+| 09 | 镜头与视频提示词 | `film-cinedance` | `minimax-h3-prompt-writing`（官方 H3 写法）、`cinematography`（镜头语言）、`lighting-direction`（光线） | 单场 | 镜头规划（镜表/时长/空间/连续性/生成单元）与视频提示词 |
 
 ## 二、每步产出什么文件
 
@@ -57,6 +94,8 @@
 
 ### 09 镜头规划下的配套文件
 
+视频提示词按官方 H3 六段式（`subject_definitions` → `summary` → `retention_analysis` → `detailed_description`
+ → `overall_soundscape` → `non_diegetic_music`），末尾附 yoko-shots 数据块；
 这些文件由 `film-cinedance` 技能定义（“拍法、镜头与生成单元确认门”三个内部门禁），
 流程卡不逐一列举，只保证它们能进入登记与确认流程。
 
@@ -127,7 +166,8 @@
 
 ```bash
 cd ~/gen_v/Shotcall
-python3 app/docgen_workflow.py -o docs/workflow.md
+python3 app/docgen_workflow.py -o docs/workflow.md   # 重生成本文
+./skills-deps/scripts/verify.sh                   # 校验技能副本与上游一致
 ```
 
 流程卡（阶段、技能、产出路径、上游依赖）改了就重跑一次；

@@ -24,6 +24,11 @@ STAGE_DESC = {
     "09": ("单场", "镜头规划（镜表/时长/空间/连续性/生成单元）与视频提示词"),
 }
 
+STAGE_CRAFT = {
+    "08": "`performance-direction`（表演方法论）",
+    "09": "`minimax-h3-prompt-writing`（官方 H3 写法）、`cinematography`（镜头语言）、`lighting-direction`（光线）",
+}
+
 EXTRA_09 = [
     ("09-…/镜头规划/<场次>/scene-registry.md", "场次登记（每场一份，不升版本）"),
     ("09-…/镜头规划/<场次>/scene-timing-vNNN.md", "逐镜时长表"),
@@ -61,6 +66,17 @@ OUTPUT_DESC = {
     ("09", "视频提示词"): "可直接投产的六段式提示词，末尾附 yoko-shots 数据块",
 }
 
+def craft_skills():
+    """读 skills-deps/meta/skills.map.json，拿到每个技能的上游仓库与固定 commit。"""
+    import json
+    f = Path(__file__).resolve().parent.parent / "skills-deps/meta/skills.map.json"
+    try:
+        m = json.loads(f.read_text(encoding="utf-8"))
+        return [(k, v.get("repo", ""), str(v.get("commit", ""))[:12]) for k, v in m["skills"].items()]
+    except Exception:
+        return []
+
+
 def steps():
     sys.path.insert(0, str(Path(__file__).parent))
     import flow
@@ -81,12 +97,44 @@ def build() -> str:
     out.append("至于“这一步产出哪些文件、怎么命名、版本怎么递增、验收看什么”，全部以对应 skill 为准，卡片不复述。")
     out.append("这样技能更新时流程自动跟上，不会出现卡片和技能各说一套。\n")
 
+    out.append("## 〇·二、技能分层与版本\n")
+    out.append("技能分两层，职责不重叠：\n")
+    out.append("| 层 | 位置 | 管什么 | 会不会随上游变 |")
+    out.append("|---|---|---|---|")
+    out.append("| 流程层 | 项目内 `.agents/skills/`（如 `film-cinedance`） | 档位、门禁、依赖链、生成单元、时长预算、交付契约 | 由本项目维护 |")
+    out.append("| craft 层 | 项目内 `.agents/skills-upstream/` | 构图、运镜、光线、表演、H3 写法 | 固定上游 commit，手动升级 |")
+    out.append("")
+    out.append("流程层决定「交付什么、合不合规」，craft 层决定「写得好不好」；craft 层不产出文件。\n")
+    out.append("### craft 技能从哪来\n")
+    out.append("| 技能 | 上游仓库 | 固定 commit |")
+    out.append("|---|---|---|")
+    craft = craft_skills()
+    if craft:
+        for name, repo, sha in craft:
+            short = repo.replace("https://github.com/", "")
+            out.append(f"| `{name}` | {short} | `{sha}` |")
+    else:
+        out.append("| （未找到 skills-deps/meta/skills.map.json） | — | — |")
+    out.append("")
+    out.append("指针与校验放在工作台仓库 `skills-deps/`：`meta/skills.map.json` 记录仓库+commit+文件 sha1，")
+    out.append("`vendor/` 是三个上游仓库的 submodule，`scripts/verify.sh` 逐字节比对项目内副本。\n")
+    out.append("### 项目实测约束放哪\n")
+    out.append("上游技能不知道本机的帧数规则、数据块契约和音色挂法，这些写在项目自己的")
+    out.append("`00-项目管理/LOCAL-FACTS.md`，与上游同步互不覆盖。尚未验证的现象不写进规则，只列在「待观察」。\n")
+    out.append("### 升级方式\n")
+    out.append("```text")
+    out.append("改 skills.map.json 的 commit → 更新 submodule 指针 → verify.sh 校验")
+    out.append("  → 同步项目副本 → 跑一条测试片确认没退化 → 提交")
+    out.append("```\n")
+    out.append("不跟随上游 main：技能一改，出片行为就变。\n")
+
     out.append("## 一、阶段总览\n")
-    out.append("| 阶段 | 卡片 | skill | 范围 | 这一阶段决定什么 |")
-    out.append("|---|---|---|---|---|")
+    out.append("| 阶段 | 卡片 | 流程技能 | 附带 craft 技能 | 范围 | 这一阶段决定什么 |")
+    out.append("|---|---|---|---|---|---|")
     for s in steps():
         scope, desc = STAGE_DESC.get(s["key"], (s["scope"], ""))
-        out.append(f"| {s['no']} | {s['name']} | `{s['skill']}` | {scope} | {desc} |")
+        craft = STAGE_CRAFT.get(s["key"], "—")
+        out.append(f"| {s['no']} | {s['name']} | `{s['skill']}` | {craft} | {scope} | {desc} |")
     out.append("")
 
     out.append("## 二、每步产出什么文件\n")
@@ -104,6 +152,8 @@ def build() -> str:
     out.append("> 05 与 06 按集管理：路径里的 `{episode}` 是集号（E001），一集一组文件；切集时 05/06 卡片随之切换。\n")
 
     out.append("### 09 镜头规划下的配套文件\n")
+    out.append("视频提示词按官方 H3 六段式（`subject_definitions` → `summary` → `retention_analysis` → `detailed_description`")
+    out.append(" → `overall_soundscape` → `non_diegetic_music`），末尾附 yoko-shots 数据块；")
     out.append("这些文件由 `film-cinedance` 技能定义（“拍法、镜头与生成单元确认门”三个内部门禁），")
     out.append("流程卡不逐一列举，只保证它们能进入登记与确认流程。\n")
     out.append("| 文件 | 作用 |")
@@ -163,7 +213,8 @@ def build() -> str:
     out.append("## 七、如何更新本文\n")
     out.append("```bash")
     out.append("cd ~/gen_v/Shotcall")
-    out.append("python3 app/docgen_workflow.py -o docs/workflow.md")
+    out.append("python3 app/docgen_workflow.py -o docs/workflow.md   # 重生成本文")
+    out.append("./skills-deps/scripts/verify.sh                   # 校验技能副本与上游一致")
     out.append("```\n")
     out.append("流程卡（阶段、技能、产出路径、上游依赖）改了就重跑一次；")
     out.append("它只读 `app/flow.py`，不读任何项目数据。")
