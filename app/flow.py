@@ -74,8 +74,6 @@ def _prompt_09():
 - 提示词文件末尾必须有 ```shotcall-units JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
 - chainFrom 默认填 null（各单元独立生成）；只有已确认的生成单元规划明确要求依赖前置单元结果时才填。
   不得因编号连续、剧情连续或共用参考图就自动串联。
-- 无对白单元（规划写「无新对白/净对白 0 字」）必须在 overall_soundscape 写 "No spoken words"，
-  且不得再出现 voices；否则 H3 会自行发明人声（常是听不懂的语言）。
 
 边界：只做本阶段，不自行确认，不调用生成接口。
 完成后只汇报：产出的文件清单（含版本）、单元清单（时长/帧数）、需要导演拍板的点（≤3 条）。
@@ -692,15 +690,6 @@ def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
             for pth in u.get(key) or []:
                 if not (project / pth).exists():
                     problems.append(f"{uid}: {key} 文件不存在 {pth}")
-        # 无对白单元必须显式静音：H3 是音视频联合生成，不写就会自由发声（常出现听不懂的人声）
-        body = (u.get("prompt") or "")
-        has_dialogue = bool(re.search(r"[\u4e00-\u9fa5]{2,}[。！？]", body))
-        has_silence = bool(re.search(r"no spoken words|no dialogue|silent throughout|without spoken words",
-                                     body, re.I))
-        if not has_dialogue and not has_silence:
-            problems.append(f"{uid}: 无对白单元必须写明确静音约束（no spoken words），否则模型会自行发明人声")
-        if re.search(r"\bvoices?\b", body, re.I) and has_silence:
-            problems.append(f"{uid}: 已声明静音却又出现 voices，语义冲突")
         if u.get("promptStatus") not in STATUS_ENUM:
             problems.append(f"{uid}: promptStatus 非法 {u.get('promptStatus')}")
         if u.get("promptFormat") not in FORMAT_ENUM:
