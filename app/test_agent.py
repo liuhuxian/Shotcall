@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Agent 派发：无命令时只落任务单；任务单可列回。"""
+import json
 import os
 import tempfile
 import time
@@ -33,6 +34,16 @@ def main():
     check("任务可列出", any(x["id"] == t["id"] for x in items), items)
     # 配置命令时真的启动并完成（用 sh 接收 stdin 验证）
     out = p / "agent-stdin.txt"
+    # 02 依赖 01；先造一条假的 01 已确认记录，才能通过上游门禁
+    (p / "01-概念锚定").mkdir(exist_ok=True)
+    (p / "01-概念锚定/synopsis-v001.md").write_text("# fake\n", encoding="utf-8")
+    reg = p / "00-项目管理/artifact-state.json"
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_text(json.dumps({"schema_version": "3.4", "artifacts": [{
+        "kind": "01 概念锚定", "scope": "全项目", "model": "",
+        "path": "01-概念锚定/synopsis-v001.md", "status": "已确认-当前", "depends_on": [], "sha256": ""
+    }], "current": {"01 概念锚定::全项目::": {"confirmed": "01-概念锚定/synopsis-v001.md", "draft": None}}},
+        ensure_ascii=False), encoding="utf-8")
     with mock.patch.dict(os.environ, {"SHOTCALL_AGENT_CMD": '["sh","-c","cat > ' + str(out) + '"]'}):
         r2 = agentrunner.dispatch(p, "02", "N001")
         check("配置命令会启动", r2["started"] is True, r2)

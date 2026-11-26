@@ -543,6 +543,23 @@ def _outputs(project: Path, step, scene, episode=None):
     return rows
 
 
+def _dep_gate(project: Path, step, scene: str, episode: str = None):
+    """返回 (blocked, warnings)：声明的上游一张都没有 → 阻塞；有但还没确认 → 警告。"""
+    blocked, warns = [], []
+    for k in step.get("deps") or []:
+        dep = BY_KEY.get(k)
+        if not dep:
+            continue
+        sc = scene if dep["scope"] == "{scene}" else None
+        ep = episode if dep["scope"] == "{episode}" else None
+        a = _latest(project, dep, sc, episode=ep)
+        if not a:
+            blocked.append(f"{k} {dep['name']} 还没有任何成果")
+        elif STATUS.get(a.get("statusText")) != "confirmed":
+            warns.append(f"{k} {dep['name']} 当前是「{a.get('statusText')}」，尚未确认")
+    return blocked, warns
+
+
 def steps_payload(project: Path, scene: str = "N001", episode: str = None):
     episode = episode or (scene_episode(project, scene) if scene else None)
     out = []
@@ -569,6 +586,8 @@ def steps_payload(project: Path, scene: str = "N001", episode: str = None):
             "skipped": _last_for(project, "flow-skips.jsonl", s["key"]),
             "canConfirm": bool(a and STATUS.get(a.get("statusText")) == "draft"),
             "canRegister": True,
+            "blocked": _dep_gate(project, s, scene, episode)[0],
+            "depWarnings": _dep_gate(project, s, scene, episode)[1],
             "outputs": _outputs(project, step_obj, scene, episode),
         })
     eps = episodes_of(project)

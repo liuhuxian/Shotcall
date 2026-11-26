@@ -209,6 +209,8 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     st = next((x for x in data.get("steps") or [] if x["key"] == step_key), None)
     if not st:
         raise ValueError("未知流程")
+    if st.get("blocked"):
+        raise ValueError("上游还没完成，不能派单：" + "；".join(st["blocked"]))
     cfg = load_config(project)
     if not cfg.get("configured"):
         # 没有显式配置时：默认 Agent 的本机命令存在就直接跑，避免点了「派给 Agent」毫无反应
