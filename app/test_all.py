@@ -21,6 +21,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 os.environ.setdefault("WORKBENCH_STATE", tempfile.mkdtemp(prefix="wb-test-state-"))
+os.environ.setdefault("SHOTCALL_AGENT_AUTORUN", "0")   # 测试不真的拉起模型
 os.environ.setdefault("SHOTCALL_NO_BACKGROUND", "1")
 
 import dataset

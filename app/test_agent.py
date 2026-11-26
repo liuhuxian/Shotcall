@@ -17,13 +17,16 @@ def check(name, ok, detail=""):
     print(("  ✓ " if ok else "  ✗ ") + name + ("" if ok else f"  ← {detail}"))
 
 
+os.environ.setdefault("SHOTCALL_AGENT_AUTORUN", "0")
+
+
 def main():
     p = Path(tempfile.mkdtemp(prefix="agent-test-"))
     r = agentrunner.dispatch(p, "01", "N001")
     t = r["task"]
     check("任务单已生成", (p / t["promptFile"]).is_file(), t)
     # 未显式配置时：本机默认 Agent 可用就自动执行（否则点「派给 Agent」毫无反应）
-    auto_ok = agentrunner.AGENT_BY_ID["dsh"]["available"]
+    auto_ok = agentrunner.AGENT_BY_ID["dsh"]["available"] and os.environ.get("SHOTCALL_AGENT_AUTORUN", "1") != "0"
     check("未配置时按默认 Agent 自动执行", r["started"] is auto_ok, r)
     check("任务单含下一版路径", t["output"].endswith("synopsis-v001.md"), t)
     items = agentrunner.list_tasks(p)

@@ -200,8 +200,10 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     cfg = load_config(project)
     if not cfg.get("configured"):
         # 没有显式配置时：默认 Agent 的本机命令存在就直接跑，避免点了「派给 Agent」毫无反应
+        # 测试或自动化场景可用 SHOTCALL_AGENT_AUTORUN=0 关掉自动执行，避免测试真的拉起模型
         auto = AGENT_BY_ID.get(cfg.get("agent") or "dsh") or {}
-        if auto.get("available"):
+        allow_auto = os.environ.get("SHOTCALL_AGENT_AUTORUN", "1") not in ("0", "false", "no")
+        if auto.get("available") and allow_auto:
             cfg = dict(cfg)
             cfg["configured"] = True
             cfg["source"] = "auto"
