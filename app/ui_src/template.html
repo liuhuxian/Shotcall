@@ -2711,7 +2711,18 @@ async function confirmFlow(key){
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
 }
 
-async function dispatchFlow(key){
+async function dispatchFlow(key, nextPath){
+  let who='本机默认 Agent';
+  try{
+    const c=await (await fetch('/api/agent/config')).json();
+    const cur=c.current||{};
+    const agent=(c.agents||[]).find(a=>a.id===(cur.agent||'dsh'))||{};
+    const model=cur.model||agent.default_model||'默认模型';
+    who=(cur.agent||agent.id||'dsh')+' / '+model;
+  }catch(e){}
+  const msg='将启动 '+who+' 执行第 '+key+' 步'+(nextPath?('\n产出：'+nextPath):'')+
+    '\n\n会真实调用模型、消耗额度，并在项目目录写文件。确认继续？';
+  if(!confirm(msg)) return;
   const r=await fetch('/api/agent/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({step:key,scene:FLOW.scene||'N001',episode:normEp(FLOW.episode)||normEp(state.ep)})});
   const j=await r.json(); if(!r.ok) return toast(j.error||'派发失败');
@@ -2832,7 +2843,7 @@ function sFlow(onlyStage){
         </div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <button class="btn acc" style="font-size:11px;padding:3px 10px" onclick="copyFlow('${st.key}',this)">复制提示词</button>
-          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="dispatchFlow('${st.key}')">派给 Agent</button>
+          <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="dispatchFlow('${st.key}','${esc(st.nextPath||'')}')">派给 Agent</button>
           ${is06?`<select id="flow-outcome-06" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:3px 6px;font-size:11px">
             <option value="passed">结论：通过</option><option value="revision-required">结论：需修订</option><option value="uncertain">结论：不确定</option>
           </select>`:''}
