@@ -158,7 +158,7 @@ STEPS = [
              dict(label="生成单元规划", kind="09 generation-units-minimax-h3", deps=["primary"],
                   pattern=r"^09-镜头与视频提示词/镜头规划/(N\d{3})/generation-units-minimax-h3-v(\d{3})(?:-\d+)?\.md$",
                   output="09-镜头与视频提示词/镜头规划/{scene}/generation-units-minimax-h3-{v}.md"),
-             dict(label="视频提示词", kind="09 视频提示词", deps=["primary"],
+             dict(label="视频提示词", kind="09 视频提示词", deps=["units", "primary"],
                   pattern=r"^09-镜头与视频提示词/视频提示词/(N\d{3})/minimax-h3(?:-ref2va)?-v(\d{3})(?:-\d+)?\.md$",
                   output="09-镜头与视频提示词/视频提示词/{scene}/minimax-h3-{v}.md"),
          ],
@@ -643,10 +643,15 @@ FORMAT_ENUM = {"MiniMax H3", "Seedance 2.5", "Seedance 2.0"}
 
 
 def _headings(txt: str):
-    """正文里的单元标题：id -> (时长, 镜号)"""
+    """正文里的单元标题：id -> (时长, 镜号)。
+
+    允许小数秒与附加列，例如 `### U001｜8.00秒｜SH001｜192帧`；
+    统一按"秒"取整，与数据块里的整数 duration 比较。
+    """
     out = {}
-    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+)秒｜([^\n]+)", txt, re.M):
-        out[m.group(1)] = (int(m.group(2)), m.group(3).strip())
+    for m in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)｜(\d+(?:\.\d+)?)秒｜([^｜\n]+)(?:｜[^\n]*)?",
+                         txt, re.M):
+        out[m.group(1)] = (float(m.group(2)), m.group(3).strip())
     return out
 
 
@@ -671,7 +676,11 @@ def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
         uid = u.get("id")
         h = heads.get(uid)
         if h:
-            if u.get("duration") != h[0]:
+            try:
+                ok_dur = abs(float(u.get("duration")) - float(h[0])) <= 0.15   # 一帧≈0.042s，允许取整误差
+            except Exception:
+                ok_dur = False
+            if not ok_dur:
                 problems.append(f"{uid}: duration={u.get('duration')} 与标题 {h[0]} 秒不一致")
             if [str(x) for x in (u.get("shotIds") or [])] != [h[1]]:
                 problems.append(f"{uid}: shotIds={u.get('shotIds')} 与标题镜号 {h[1]} 不一致")
@@ -734,6 +743,21 @@ def _extra_deps(step, rel: str, project: Path, scene: str) -> list:
                 a = _latest(project, step, scene if step["scope"] == "{scene}" else None)
                 if a:
                     out.append(a["path"])
+            elif spec == "units":
+                # 提示词必须直接依赖同场、同模型的生成单元
+                units_def = next((x for x in (step.get("extra") or [])
+                                  if (x.get("label") or "").startswith("生成单元")), None)
+                best = None
+                if units_def:
+                    for a in _all(project):
+                        mm = re.search(units_def["pattern"], a.get("path", "") or "")
+                        if not mm:
+                            continue
+                        v = int(mm.group(2))
+                        if best is None or v > best[0]:
+                            best = (v, a["path"])
+                if best:
+                    out.append(best[1])
             elif spec == "acting":
                 a = _latest(project, BY_KEY["08"], scene)
                 if a:
