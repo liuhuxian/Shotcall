@@ -1827,6 +1827,16 @@ class Handler(BaseHTTPRequestHandler):
             for a in d.get("assets", []):
                 a["reviewPath"] = d.get("doc")
                 a["approval"] = approvals.state(PROJECT, "asset", f"asset:{a['id']}")
+            # 正在出图（本机 + Codex，统一来自图片任务队列）
+            live = []
+            for j in imgjobs.list_jobs(project=PROJECT):
+                if j.get("status") in ("running", "queued", "dispatched"):
+                    live.append({"id": j.get("id"), "asset": j.get("asset"), "name": j.get("name"),
+                                 "channel": j.get("channel") or "local", "status": j.get("status"),
+                                 "card": j.get("card"), "startedAt": j.get("startedAt"),
+                                 "queuedAt": j.get("queuedAt"), "error": j.get("error")})
+            d["running"] = live
+            d["summary"]["running"] = len(live)
             self._send(200, json.dumps(d, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
         elif path == "/api/stages":
