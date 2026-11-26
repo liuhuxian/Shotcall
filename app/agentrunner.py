@@ -178,14 +178,26 @@ def _run(project: Path, task: dict, prompt: str, cfg: dict):
                      "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
         # 自动登记：只登记，不确认；导演仍要在流程页点确认
         if p.returncode == 0:
+            step = flow.BY_KEY[task["step"]]
+            scene = task.get("scene") or "N001" if step["scope"] == "{scene}" else None
             try:
-                files = flow._new_files(project, flow.BY_KEY[task["step"]],
-                                        task.get("scene") if flow.BY_KEY[task["step"]]["scope"] == "{scene}" else None)
-                if files:
-                    reg = flow.register(project, task["step"], task.get("scene") or "N001", path=files[0])
-                    task["registered"] = reg
+                files = flow._new_files(project, step, scene)
             except Exception as e:
-                task["registerWarning"] = str(e)[-400:]
+                files = []
+                task["registerWarning"] = "列新文件失败：" + str(e)[-300:]
+            done, failed = [], []
+            for rel in files:
+                try:
+                    flow.register(project, task["step"], task.get("scene") or "N001", path=rel)
+                    done.append(rel)
+                except Exception as e:
+                    failed.append({"path": rel, "error": str(e)[-300:]})
+            if done:
+                task["registered"] = done
+            if failed:
+                task["registerFailed"] = failed
+            if not done and not failed:
+                task["registerWarning"] = "没有发现新的 vNNN 文件，可能被写到了别的路径"
     except Exception as e:
         task.update({"status": "failed", "error": str(e)[-400:],
                      "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
@@ -211,7 +223,10 @@ def dispatch(project: Path, step_key: str, scene: str = "N001") -> dict:
     tid = "AG-" + time.strftime("%Y%m%d-%H%M%S") + "-" + step_key + "-" + uuid.uuid4().hex[:4]
     d = _dir(project)
     md = d / (tid + ".md")
-    prompt = st["prompt"] + "\n\n完成后把成果写到：" + st["nextPath"] + "\n不要覆盖旧版；写完后回导演台点「登记成果」。\n"
+    prompt = (st["prompt"]
+              + "\n\n完成后把成果写到：" + st["nextPath"]
+              + "\n不要覆盖旧版。写完后在最后逐行列出本次产出的全部文件相对路径，"
+                "每行以「文件：」开头，方便导演台核对；不需要自己去登记。\n")
     md.write_text(prompt, encoding="utf-8")
     task = {"id": tid, "step": step_key, "scene": scene, "status": "queued",
             "promptFile": str(md.relative_to(project)) if str(md).startswith(str(project)) else str(md),

@@ -28,7 +28,8 @@ def main():
     s09 = data['steps'][-1]
     cur_v = int(str(s09.get('version') or 'v000')[1:])
     nxt_v = int(str(s09.get('nextVersion') or 'v000')[1:])
-    check("09 下一版已递增", nxt_v == cur_v + 1, (s09.get('version'), s09.get('nextVersion')))
+    # 磁盘上若有未登记的更高版本，下一版会跳过它们，所以只要求严格大于当前版
+    check("09 下一版已递增", nxt_v > cur_v, (s09.get('version'), s09.get('nextVersion')))
     check("09 依赖包含表演与资产", any("表演设计" in x or "图像资产" in x
           for x in (s09.get('inputs') or [])), s09.get('inputs'))
     check("09 一次产出 10 个文件", len(s09.get("outputs") or []) == 10, len(s09.get("outputs") or []))

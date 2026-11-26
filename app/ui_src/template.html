@@ -2711,6 +2711,26 @@ async function confirmFlow(key){
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
 }
 
+async function registerAllPending(key){
+  const st = (FLOW.data&&FLOW.data.steps||[]).find(x=>x.key===key);
+  if(!st) return;
+  const files = st.newFiles||[];
+  if(!files.length) return toast('没有待登记的新版本');
+  const ok=[], bad=[];
+  for(const f of files){
+    try{
+      const r = await fetch('/api/workflow/register',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({step:key, scene:FLOW.scene||'N001', path:f, episode:normEp(FLOW.episode)||normEp(state.ep)})});
+      const j = await r.json();
+      if(r.ok) ok.push(f); else bad.push({f, err:j.error||'失败'});
+    }catch(e){ bad.push({f, err:String(e)}); }
+  }
+  if(ok.length) toast('已登记 '+ok.length+' 个'+(bad.length?('，失败 '+bad.length+' 个'):''));
+  else toast('登记失败：'+(bad[0]&&bad[0].err||'未知'));
+  FLOW.data=null; await loadFlow(FLOW.scene||'N001',true); render();
+  if(bad.length) console.warn('登记失败', bad);
+}
+
 async function dispatchFlow(key, nextPath){
   let who='本机默认 Agent';
   try{
@@ -2822,8 +2842,12 @@ function sFlow(onlyStage){
           <span class="dim mono" style="font-size:10.5px">${esc(st.skill)}</span></span></div>
       <div class="pb">
         ${(st.newFiles||[]).length?`<div style="margin-bottom:8px;padding:6px 9px;border:1px solid var(--warn);border-radius:6px;
-            font-size:11px;color:var(--warn)">有 ${st.newFiles.length} 个未登记的新版本：${st.newFiles.map(f=>esc(f.split('/').pop())).join('、')}
-            · 先点「登记成果」，再点「确认」</div>`:''}
+            font-size:11px;color:var(--warn)">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span>有 ${st.newFiles.length} 个未登记的新版本：${st.newFiles.map(f=>esc(f.split('/').pop())).join('、')}</span>
+              <button class="btn acc" style="font-size:10.5px;padding:2px 10px" onclick="registerAllPending('${st.key}')">一键登记 ${st.newFiles.length} 个</button>
+            </div>
+            <div class="dim" style="font-size:10px;margin-top:2px">登记只是建档，登记完还要点「确认」才生效</div></div>`:''}
         <div class="dim" style="font-size:11.5px;line-height:1.8">
           当前：${st.path?`<span class="mono" style="cursor:pointer;text-decoration:underline dotted" onclick="viewInline('${esc(st.path)}')">${esc(st.path)}</span>`:'未登记'}
           · 下一版：<span class="mono">${esc(st.nextPath)}</span><br>
