@@ -3050,6 +3050,11 @@ function sStages(){
     </div>
     <div style="flex:1;min-width:0">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        ${sel==='09'?`<span class="dim" style="font-size:11px">场次</span>
+        <select onchange="pickScene9(this.value)" style="background:#0f1216;border:1px solid var(--line);color:#c9d2e0;
+          border-radius:5px;padding:3px 7px;font-size:11px">
+          ${['all'].concat(stageScenes9()).map(v=>`<option value="${v}" ${(state.scene9||'all')===v?'selected':''}>${v==='all'?'全部场次':v}</option>`).join('')}
+        </select>`:''}
         <span style="flex:1"></span>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('register')">批量登记新文件</button>
         <button class="btn ghost" style="font-size:11px;padding:3px 10px" onclick="batchFlow('confirm')">批量确认草稿</button>
@@ -3107,11 +3112,35 @@ function artPicker(g){
 }
 
 /* ---------- 阶段详情主体（供工作流右侧复用） ---------- */
+function stageScenes9(){
+  const d = STG.data || {};
+  const set = new Set();
+  for(const a of (d.artifacts||[])){
+    if(a.stage!=='09') continue;
+    const sc = a.scope || '';
+    if(/^N\d{3}$/.test(sc)) set.add(sc);
+    else { const m=/\/(N\d{3})\//.exec(a.path||''); if(m) set.add(m[1]); }
+  }
+  return [...set].sort();
+}
+function pickScene9(v){
+  state.scene9 = v;
+  if(v && v!=='all' && v!==state.scene){
+    state.scene = v; FLOW.data=null;
+    loadFlow(v, true).then(()=>render());
+    return;
+  }
+  render();
+}
 function sStageBody(no){
   const d = STG.data;
   if(!d) return '';
   const st = (d.stages||[]).find(x=>x.no===no) || (d.stages||[])[0] || {};
-  const items = (d.artifacts||[]).filter(a=>a.stage===no);
+  let items = (d.artifacts||[]).filter(a=>a.stage===no);
+  const scn9 = no==='09' ? (state.scene9||'all') : 'all';
+  if(scn9!=='all'){
+    items = items.filter(a => (a.scope===scn9) || (a.path||'').includes('/'+scn9+'/'));
+  }
   const rows = artGrouped(items).map(g=>{
     const a = g.selected;
     const stale = (a.staleDeps||[]).length;
