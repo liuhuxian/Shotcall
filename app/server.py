@@ -1827,7 +1827,24 @@ class Handler(BaseHTTPRequestHandler):
             for a in d.get("assets", []):
                 a["reviewPath"] = d.get("doc")
                 a["approval"] = approvals.state(PROJECT, "asset", f"asset:{a['id']}")
-            # 正在出图（本机 + Codex，统一来自图片任务队列）
+            # 文档里的绑定总表 vs 绑定表：不一致要能看见
+            try:
+                docs = assetsdb.doc_bindings(PROJECT)
+            except Exception:
+                docs = {}
+            mism = []
+            if docs:
+                bmap = assetsdb.parse_bindings(PROJECT)
+                for aid, dpath in docs.items():
+                    rec = bmap.get(aid) or {}
+                    b = rec.get("image") or ""
+                    if (dpath or "") != b:
+                        mism.append({"id": aid, "name": rec.get("name") or "",
+                                     "doc": dpath, "table": b})
+            d["bindingMismatch"] = mism
+            d["summary"]["bindingMismatch"] = len(mism)
+            d["summary"]["hasBindingsBlock"] = bool(docs)
+            # 正在出图（本机 + Codex）
             live = []
             for j in imgjobs.list_jobs(project=PROJECT):
                 if j.get("status") in ("running", "queued", "dispatched"):
@@ -2963,6 +2980,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 import traceback as _tb
                 _tb.print_exc()
+                self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            return
+        if path == "/api/assets/sync-bindings":
+            try:
+                out = assetsdb.sync_bindings_doc(PROJECT)
+                self._send(200, json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            except Exception as e:
                 self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             return

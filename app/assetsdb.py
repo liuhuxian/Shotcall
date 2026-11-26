@@ -254,6 +254,114 @@ def _next_asset_ver(project: Path) -> int:
     return (max(nums) + 1) if nums else 1
 
 
+BIND_BEGIN = "<!-- BINDINGS:BEGIN 由工作台生成，勿手改 -->"
+BIND_END = "<!-- BINDINGS:END -->"
+
+
+def all_cards(project: Path) -> list:
+    """文档里所有 ### 卡片（不分段）+ 绑定表里的资产，取并集。
+
+    parse_assets 只认「角色/场景/道具/辅助」四类段落，像「工作台已增辅助项」
+    这类段落里的 C06 会被漏掉；绑定总表必须覆盖全部资产，所以单独扫一遍。
+    """
+    f = latest_asset_doc(project)
+    cards = {}
+    if f:
+        txt = f.read_text(encoding="utf-8")
+        for m in ENTRY.finditer(txt):
+            aid = m.group(1).split("／")[0].strip()
+            cards[aid] = m.group(2).strip()
+    bmap = parse_bindings(project)
+    for key, rec in bmap.items():
+        aid = rec.get("stateId") or rec.get("id", "").split("--")[-1]
+        if aid and aid not in cards:
+            cards[aid] = rec.get("name") or ""
+    return [{"id": k, "name": v} for k, v in sorted(cards.items())]
+
+
+def _bindings_rows(project: Path) -> list:
+    """当前绑定表：资产 -> 图 / 版本 / 来源。未绑定的资产也要出现。"""
+    bmap = parse_bindings(project)
+    rows = []
+    for a in all_cards(project):
+        rec = bmap.get(a["id"]) or {}
+        rows.append({
+            "id": a["id"], "name": a["name"],
+            "image": rec.get("image") or "", "version": rec.get("version") or "",
+            "scenes": rec.get("scenes") or "",
+        })
+    return rows
+
+
+def bindings_block(project: Path) -> str:
+    """生成「当前绑定」总表（机器写）。无图资产写 —，让 Agent 一眼看出谁没有图。"""
+    rows = _bindings_rows(project)
+    lines = [BIND_BEGIN, "## 当前绑定（机器生成，勿手改）", "",
+             "| 资产 | 名称 | 当前图 | 版本 | 场次 |",
+             "|---|---|---|---|---|"]
+    for r in rows:
+        img = f"`{r['image']}`" if r["image"] else "—"
+        lines.append(f"| {r['id']} | {r['name']} | {img} | {r['version'] or '—'} | {r['scenes'] or '—'} |")
+    lines += ["", "> 这段由工作台按绑定表生成；卡片正文里的文字规范与提示词仍由 07 阶段维护。",
+              BIND_END]
+    return "\n".join(lines)
+
+
+def apply_bindings_block(project: Path, text: str) -> str:
+    """把绑定总表插入/替换到文档标题之后。"""
+    block = bindings_block(project)
+    if BIND_BEGIN in text and BIND_END in text:
+        start = text.index(BIND_BEGIN)
+        end = text.index(BIND_END) + len(BIND_END)
+        return text[:start] + block + text[end:]
+    lines = text.splitlines()
+    # 插在第一个标题行之后（跳过可能的状态行）
+    insert_at = 0
+    for i, ln in enumerate(lines[:8]):
+        if ln.startswith("# "):
+            insert_at = i + 1
+            break
+    head = lines[:insert_at]
+    tail = lines[insert_at:]
+    return "\n".join(head + ["", block, ""] + tail)
+
+
+def doc_bindings(project: Path) -> dict:
+    """解析文档里的绑定总表：资产 -> 图片路径。用于和绑定表比对。"""
+    latest = latest_asset_doc(project)
+    if not latest:
+        return {}
+    text = latest.read_text(encoding="utf-8")
+    if BIND_BEGIN not in text:
+        return {}
+    seg = text[text.index(BIND_BEGIN): text.index(BIND_END) if BIND_END in text else len(text)]
+    out = {}
+    for ln in seg.splitlines():
+        m = re.match(r"\|\s*([A-Z]\d{2}(?:-[A-Z])?)\s*\|[^|]*\|\s*(.*?)\s*\|", ln)
+        if not m:
+            continue
+        img = m.group(2).strip().strip("`")
+        out[m.group(1)] = "" if img in ("—", "-", "") else img
+    return out
+
+
+def sync_bindings_doc(project: Path) -> dict:
+    """按绑定表重写文档里的绑定总表，产出新的 assets 版本（草稿）。"""
+    latest = latest_asset_doc(project)
+    if not latest:
+        raise ValueError("没有 assets-v*.md")
+    text = latest.read_text(encoding="utf-8")
+    new_text = apply_bindings_block(project, text)
+    if new_text.strip() == text.strip():
+        return {"ok": True, "changed": False, "doc": str(latest.relative_to(project))}
+    nv = _next_asset_ver(project)
+    out = latest.with_name(f"assets-v{nv:03d}.md")
+    new_text = re.sub(r"(?m)^状态：.*$", "状态：草稿待确认", new_text)
+    out.write_text(new_text, encoding="utf-8")
+    _ALL_CACHE.clear() if "_ALL_CACHE" in globals() else None
+    return {"ok": True, "changed": True, "doc": str(out.relative_to(project)), "version": nv}
+
+
 def _update_asset_doc(project: Path, asset: dict, image_rel: str, binding_rel: str,
                       version: int, sha: str) -> Path:
     """从最新 assets-v*.md 复制下一版，只改本资产的“图片状态”和状态行。"""
@@ -279,6 +387,10 @@ def _update_asset_doc(project: Path, asset: dict, image_rel: str, binding_rel: s
         else:
             sec = sec.rstrip() + "\n" + line + "\n"
         text = text[:m.end()] + sec + text[end:]
+    try:
+        text = apply_bindings_block(project, text)
+    except Exception:
+        pass
     out.write_text(text, encoding="utf-8")
     return out
 

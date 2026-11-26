@@ -790,6 +790,25 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     deps += _extra_deps(step, rel, project, scene)
     deps = list(dict.fromkeys(deps))
     kind = _kind_for(step, rel)
+    if kind == "09 参考图映射":
+        # 有绑定图却在映射里写"无图/仅用文字"，等于静默排除已生成的素材
+        import assetsdb as _adb
+        bmap = _adb.parse_bindings(project)
+        text = (project / rel).read_text(encoding="utf-8")
+        excluded = []
+        for aid, rec in bmap.items():
+            img = rec.get("image")
+            if not img:
+                continue
+            for line in text.splitlines():
+                if aid not in line:
+                    continue
+                if ("无图" in line) or ("仅用" in line and "文字" in line):
+                    excluded.append(aid)
+                    break
+        if excluded:
+            raise ValueError("参考图映射排除了已有绑定图的资产：" + "、".join(sorted(set(excluded))) +
+                             "；如确需排除，先解除绑定或在卡片里写明理由并改为人工确认")
     if kind == PROMPT_KIND:
         problems = validate_prompt_file(project, rel, scene)
         if problems:

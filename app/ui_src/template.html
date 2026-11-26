@@ -1810,6 +1810,17 @@ function sAssetsPage(){
       <div class="pb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div></div>`;
   }).join("");
   return `
+  ${(AST.data&&AST.data.bindingMismatch||[]).length?`<div style="margin-bottom:12px;padding:9px 11px;border:1px solid var(--bad);border-radius:8px;
+      font-size:11.5px;color:var(--bad);line-height:1.7">
+      <b>文档里的绑定总表和实际绑定不一致：</b>${AST.data.bindingMismatch.length} 个资产
+      <div class="dim" style="font-size:10.5px;margin-top:2px">${AST.data.bindingMismatch.slice(0,3).map(x=>esc(x.id+'：文档 '+(x.doc?x.doc.split('/').pop():'无图')+' / 绑定 '+(x.table?x.table.split('/').pop():'无图'))).join('；')}${AST.data.bindingMismatch.length>3?'…':''}</div>
+      <button class="btn ghost" style="font-size:10.5px;padding:2px 9px;margin-top:6px;border-color:var(--bad);color:var(--bad)"
+        onclick="syncBindingsDoc()">按绑定表回写文档总表</button>
+    </div>`:''}
+  ${(AST.data&&AST.data.summary&&AST.data.summary.hasBindingsBlock===false)?`<div style="margin-bottom:12px;padding:9px 11px;border:1px solid var(--warn);border-radius:8px;
+      font-size:11.5px;color:var(--warn)">资产文档还没有「当前绑定」总表——下游 Agent 看不到哪张图已采用。
+      <button class="btn ghost" style="font-size:10.5px;padding:2px 9px;margin-left:6px;border-color:var(--warn);color:var(--warn)"
+        onclick="syncBindingsDoc()">生成总表</button></div>`:''}
   <div class="grid5" style="margin-bottom:14px">
     <div class="card"><div class="muted" style="font-size:12px">资产</div><div class="kpi">${s.total||0}<small>项</small></div></div>
     <div class="card"><div class="muted" style="font-size:12px">已绑定</div><div class="kpi" style="color:var(--ok)">${s.bound||0}</div></div>
@@ -2731,6 +2742,14 @@ async function ackUpstream(key, path){
   toast(n ? ('已把 '+n+' 项依赖指向最新版本') : (j.note||'依赖已是最新'));
   STG.data=null; FLOW.data=null;
   await loadFlow(FLOW.scene||'N001', true); await loadStages(true); render();
+}
+
+async function syncBindingsDoc(){
+  const r = await fetch('/api/assets/sync-bindings',{method:'POST'});
+  const j = await r.json();
+  if(!r.ok) return toast(j.error||'同步失败');
+  toast(j.changed ? ('已生成新的资产文档：'+String(j.doc||'').split('/').pop()) : '绑定总表已是最新');
+  AST.data=null; await loadAssets(); render();
 }
 
 async function registerAllPending(key){
