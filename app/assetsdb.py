@@ -317,6 +317,7 @@ def adopt_image(project: Path, asset_id: str, image_rel: str) -> dict:
                     "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
             cands.append(cand)
         slot["bindingVersion"] = ver
+        slot["lastAdoptFile"] = image_rel
         slot["currentCandidateId"] = cand["id"]
         slot["preferredCandidateId"] = cand["id"]
         hist = slot.setdefault("history", [])
