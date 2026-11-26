@@ -13,6 +13,24 @@ skills-deps/
 
 `vendor/` 是 submodule，仓库里只记录「哪个仓库、哪个 commit」。
 
+## 本地占用：稀疏 + 无 blob
+
+三个上游仓库直接用完整 submodule 会有 240 MB 左右（MiniMax-H3 一个就 230 MB）。
+所以本地按「稀疏检出 + 无 blob 克隆」初始化，只物化用到的那几个目录：
+
+```bash
+git -c http.proxy=socks5h://127.0.0.1:1080 clone \
+    --filter=blob:none --sparse --no-checkout <url> <name>
+git -C <name> sparse-checkout set <技能目录>
+git -C <name> checkout <commit>
+```
+
+实测占用：`skills 348K`、`generative-media-skills 404K`、`MiniMax-H3 344K`，合计约 1.1 MB。
+需要完整历史做 diff 时再 `git submodule update --init`（会重新拉全量）。
+
+> 本机访问 github.com 的 HTTPS 不稳定，加 `http.proxy=socks5h://127.0.0.1:1080` 才稳；
+> `raw.githubusercontent.com` 的下载一般不需要代理。
+
 ## 当前固定版本
 
 | 技能 | 上游仓库 | commit |
