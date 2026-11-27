@@ -132,6 +132,44 @@ def shot_details(project: Path, scene: str) -> list:
     return out
 
 
+def unit_details(project: Path, scene: str) -> dict:
+    """镜头页「按单元」视图：单元 → 内部镜号、时长、帧数、切点、素材、生成状态。"""
+    import vjobs
+    plan_units = {}
+    d = project / PLAN_DIR / scene
+    f = next(iter(sorted(d.glob("shot-plan*.md"))), None) if d.is_dir() else None
+    if f:
+        txt = f.read_text(encoding="utf-8")
+        sec = txt.split("## 生成单元定义", 1)
+        if len(sec) == 2:
+            for m in re.finditer(r"^\|\s*(U\d{3})\s*\|([^\n]*)$", sec[1].split("## ", 1)[0], re.M):
+                cells = [c.strip() for c in m.group(2).split("|")]
+                plan_units[m.group(1)] = {
+                    "inner": cells[0] if len(cells) > 0 else "",
+                    "frames": cells[2] if len(cells) > 2 else "",
+                    "cut": cells[-1] if cells else "",
+                }
+    units = vjobs.parse_units(project, scene)
+    jobs = [j for j in vjobs.list_jobs(project=project) if j.get("scene") == scene]
+    out = []
+    for u in units:
+        mine = [j for j in jobs if j.get("unit") == u["id"]]
+        done = [j for j in mine if j.get("status") == "done" and j.get("file")]
+        run = [j for j in mine if j.get("status") in ("running", "dispatched", "queued")]
+        pu = plan_units.get(u["id"], {})
+        out.append({
+            "id": u["id"], "shots": u.get("shots", ""), "seconds": u.get("seconds"),
+            "frames": pu.get("frames") or (round((u.get("seconds") or 0) * 24) if u.get("seconds") else ""),
+            "cut": pu.get("cut", ""), "inner": pu.get("inner", ""),
+            "refs": [r for r in (u.get("refs") or []) if r.get("exists")],
+            "audios": [a for a in (u.get("audios") or []) if a.get("exists")],
+            "chainFrom": u.get("chainFrom"),
+            "done": len(done), "running": bool(run),
+            "zh": (u.get("zh") or "").strip(),
+        })
+    return {"scene": scene, "source": (str(f.relative_to(project)) if f else ""), "units": out}
+
+
 def scene_status(project: Path, scene: str) -> dict:
     plan_dir = project / PLAN_DIR / scene
     vp = list((project / VP_DIR / scene).glob("*.md")) if (project / VP_DIR / scene).is_dir() else []

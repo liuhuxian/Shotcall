@@ -1441,6 +1441,14 @@ function sScenes(){
 
 /* ---------- 镜头 ---------- */
 let SHOTS = {};
+async function loadUnits(scene, force){
+  if(UNITS[scene] && !force) return UNITS[scene];
+  try{
+    UNITS[scene] = await (await fetch('/api/scenes/units?scene='+encodeURIComponent(scene))).json();
+  }catch(e){ UNITS[scene] = {units:[]}; }
+  return UNITS[scene];
+}
+
 async function loadShots(scene, force){
   if(SHOTS[scene] && !force) return SHOTS[scene];
   try{
@@ -1449,6 +1457,7 @@ async function loadShots(scene, force){
   return SHOTS[scene];
 }
 
+const UNITS = {};
 let SBALL = null;   // 全项目分镜图（资产页管理用）
 async function loadStoryboardsAll(force){
   if(SBALL && !force) return SBALL;
@@ -1623,15 +1632,58 @@ function sShots(){
   const scene = state.scene && d.scenes.some(s=>s.id===state.scene) ? state.scene : (d.scenes[0]||{}).id;
   state.scene = scene;
   if(!SHOTS[scene]){ loadShots(scene).then(()=>render()); }
+  if(!UNITS[scene]){ loadUnits(scene).then(()=>render()); }
   if(!PICK.data[scene]){ loadPicks(scene).then(()=>render()); }
   const sh = (SHOTS[scene]||{}).shots || [];
+  const uv = state.shotView === 'unit';
+  const un = (UNITS[scene]||{}).units || [];
   const tabs = (d.scenes||[]).map(s=>`<span onclick="go('shots',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
     border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
 
+  const viewSwitch = `<div style="display:flex;gap:6px;margin-left:auto">
+    <button class="btn ghost" style="font-size:11px;padding:3px 10px;${uv?'':';border-color:var(--acc);color:var(--acc)'}"
+      onclick="state.shotView='shot';state.shotOpen=null;render()">按镜头</button>
+    <button class="btn ghost" style="font-size:11px;padding:3px 10px;${uv?';border-color:var(--acc);color:var(--acc)':''}"
+      onclick="state.shotView='unit';state.shotOpen=null;render()">按单元</button>
+  </div>`;
   if(!sh.length){
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}${viewSwitch}</div>
       <div class="panel"><div class="ph"><span>镜头审核</span><span class="dim">${scene}</span></div>
       <div class="pb"><div class="dim" style="font-size:12.5px">这个场次还没有 08 镜头规划。先在工作流跑 08，产出 shot-plan 后就能在这里逐镜看。</div></div></div>`;
+  }
+  if(uv){
+    const urows = un.map(u=>{
+      const open = state.shotOpen === 'unit:'+u.id;
+      const st = u.done ? `<span class="badge b-ok" style="font-size:9.5px">已出片 ${u.done}</span>`
+        : u.running ? '<span class="badge b-warn" style="font-size:9.5px">生成中</span>'
+        : '<span class="dim" style="font-size:9.5px">未生成</span>';
+      return `<tr style="cursor:pointer" onclick="toggleShot('unit:${esc(u.id)}')">
+        <td class="mono" style="color:var(--acc)">${u.id}</td>
+        <td class="mono" style="font-size:11.5px">${esc(u.shots||'')}</td>
+        <td class="dim mono" style="text-align:center">${u.seconds}s</td>
+        <td class="dim mono" style="text-align:center">${esc(String(u.frames||''))}</td>
+        <td class="dim" style="font-size:11px">${esc(u.cut||'无')}</td>
+        <td style="white-space:nowrap">${st}</td>
+        <td class="dim" style="text-align:right;font-size:10px">${open?'收起 ▴':'展开 ▾'}</td>
+      </tr>
+      ${open?`<tr><td colspan="7" style="background:#0c1015;border-left:2px solid var(--acc)">
+        <div style="padding:10px 12px;font-size:11.5px;line-height:1.8">
+          <div><span class="dim">内部镜号与时间：</span>${esc(u.inner||u.shots||'')}</div>
+          <div><span class="dim">参考图：</span>${(u.refs||[]).map(r=>esc(r.file.split('/').pop())).join('、')||'无'}</div>
+          <div><span class="dim">音色：</span>${(u.audios||[]).map(a=>esc(a.file.split('/').pop())).join('、')||'无'}</div>
+          <div><span class="dim">接续：</span>${u.chainFrom?esc(u.chainFrom):'独立生成（chainFrom=null）'}</div>
+          <div style="margin-top:6px"><span class="dim">中文审核稿：</span>
+            <div style="background:#0f1216;border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-top:3px">${esc((u.zh||'（还没有中文审核稿）').slice(0,600))}</div></div>
+        </div></td></tr>`:''}`;
+    }).join("");
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}${viewSwitch}</div>
+      <div class="panel"><div class="ph"><span>生成单元 · 08 镜头规划</span>
+        <span class="dim">${un.length} 个单元 · ${esc((UNITS[scene]||{}).source||'')} · 点一行看单元细节</span></div>
+      <div class="pb"><table>
+        <thead><tr><th style="width:70px">单元</th><th style="width:120px">内部镜号</th>
+          <th style="width:70px;text-align:center">时长</th><th style="width:64px;text-align:center">帧数</th>
+          <th style="width:70px">切点</th><th style="width:96px">状态</th><th style="width:64px"></th></tr></thead>
+        <tbody>${urows}</tbody></table></div></div>`;
   }
   const rows = sh.map(x=>{
     const open = state.shotOpen === x.id;
@@ -1666,7 +1718,7 @@ function sShots(){
   }).join("");
 
   return `
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}${viewSwitch}</div>
   <div class="panel">
     <div class="ph"><span>镜头审核 · 08 镜头规划</span>
       <span class="dim">${sh.length} 镜 · ${esc((sh[0]||{}).source||'')} · 点一行展开细节</span></div>

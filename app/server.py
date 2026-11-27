@@ -1842,6 +1842,14 @@ class Handler(BaseHTTPRequestHandler):
                 sc["approval"] = approvals.state(PROJECT, "scene", f"scene:{sc['id']}")
             self._send(200, json.dumps(d, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+        elif path == "/api/scenes/units":
+            q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
+            sid = q3.get("scene", ["N001"])[0]
+            if not re.fullmatch(r"N\d{3}", sid):
+                self._send(400, b'{"error":"scene must be Nxxx"}', "application/json; charset=utf-8")
+                return
+            self._send(200, json.dumps(scenes.unit_details(PROJECT, sid), ensure_ascii=False).encode("utf-8"),
+                       "application/json; charset=utf-8")
         elif path == "/api/scenes/shots":
             q3 = urllib.parse.parse_qs(urllib.parse.urlparse(self.query_path).query)
             sid = q3.get("scene", ["N001"])[0]
