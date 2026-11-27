@@ -118,11 +118,12 @@ def _prompt_09():
 产出：09-镜头与视频提示词/视频提示词/{{SCOPE}}/minimax-h3-{{v}}.md
 文件末尾必须有 ```shotcall-units JSON 块（单元 id、时长、镜号、参考图、音色、接续）；生成台靠它读单元，缺了就读不到。
 
-同时在同一文件里写一份**中文审核稿**（导演要能直接读，不读英文）：
-- 放在 `## 中文审核稿` 一节，逐单元写，不要用 `###` 标题（避免和单元标题混淆）
+同时另写一份**中文审核稿**，文件名 = 主文件把 `.md` 换成 `.zh.md`：
+`{{SCOPE}}/minimax-h3-{{v}}.zh.md`
+- 逐单元写（U001、U002…），不用 `###` 标题
 - 每个单元写清：这一镜画面怎么演（动作与节拍）、谁说什么台词、声音里有什么、参考图各自承担什么
-- 只做翻译与复述，不得在这里新增或改动任何内容；与英文正文冲突时以英文正文为准
-- 写完自查：中文审核稿的单元数、时长、台词必须与数据和英文正文一致
+- 只做翻译与复述，不得新增或改动内容；与英文正文冲突时以英文正文为准
+- 导演台会把这两个文件当成一个组合：审核一次、确认一次，两个一起生效
 
 编译后自检并写进文件末尾：
 - 自动可查：单元数 / id / 镜号 / 时长 / 帧数与规划一致；参考图文件存在
@@ -868,8 +869,20 @@ def register(project: Path, step_key: str, scene: str = "N001", path: str = None
     for d in deps:
         args += ["--depends-on", d]
     out = _run_guard(project, args)
+    # 中文审核稿：作为配套件一起登记，确认主文件时一起确认
+    companion = None
+    if step.get("key") == "09" and rel.endswith(".md") and ".zh.md" not in rel:
+        zh = rel[:-3] + ".zh.md"
+        if (project / zh).is_file():
+            try:
+                _run_guard(project, ["register-draft", "--project", str(project),
+                                     "--kind", "09 中文审核稿", "--scope", scope, "--path", zh]
+                           + sum([["--depends-on", d] for d in deps], []))
+                companion = zh
+            except Exception:
+                companion = None
     _all_drop()
-    return {"ok": True, "path": rel, "output": out}
+    return {"ok": True, "path": rel, "output": out, "companion": companion}
 
 
 def _family_latest(project: Path, dep_path: str) -> str:
@@ -950,8 +963,20 @@ def confirm_path(project: Path, path: str):
     if rec.get("model"):
         args += ["--model", rec["model"]]
     out = _run_guard(project, args)
+    companion = None
+    if rel.endswith(".md") and ".zh.md" not in rel:
+        zh = rel[:-3] + ".zh.md"
+        zrec = next((a for a in (reg.get("artifacts") or []) if a.get("path") == zh), None)
+        if zrec:
+            try:
+                _run_guard(project, ["confirm", "--project", str(project),
+                                     "--kind", zrec.get("kind", ""), "--scope", zrec.get("scope", ""),
+                                     "--path", zh])
+                companion = zh
+            except Exception:
+                companion = None
     return {"ok": True, "path": rel, "output": out,
-            "kind": rec.get("kind"), "scope": rec.get("scope")}
+            "kind": rec.get("kind"), "scope": rec.get("scope"), "companion": companion}
 
 
 def confirm(project: Path, step_key: str, scene: str = "N001", path: str = None, episode: str = None):

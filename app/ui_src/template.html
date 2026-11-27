@@ -3204,6 +3204,9 @@ function sStageBody(no){
       <td><div style="font-size:12.5px">${esc(artName(a.kind))} ${localBadge}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
+          ${(/minimax-h3/.test(a.path||'') && /-v\d{3}\.md$/.test(a.path||''))
+            ? `<div class="dim" style="font-size:10px">中文审核稿：<span style="cursor:pointer;text-decoration:underline dotted"
+                 onclick="viewInline('${esc((a.path||'').replace(/\.md$/, '.zh.md'))}')">${esc((a.path||'').split('/').pop().replace(/\.md$/, '.zh.md'))}</span>（与提示词同一组合，确认一次即可）</div>` : ''}
           ${g.versions.length>1?`<div class="dim" style="font-size:10px">同族 ${g.versions.length} 个版本；先在下拉选择，只确认选中的一版</div>`:''}</td>
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>

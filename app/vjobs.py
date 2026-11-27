@@ -252,11 +252,34 @@ def write_zh(scene: str, unit_id: str, source: str, zh: str) -> dict:
     return table[scene][unit_id]
 
 
-def attach_zh(units: list, scene: str) -> list:
+def _zh_from_companion(project_scene_dir, prompt_file):
+    """从 <主文件>.zh.md 读逐单元中文；返回 (map, stale)。"""
+    if prompt_file is None:
+        return {}, False
+    zh_file = prompt_file.with_suffix(".zh.md")
+    if not zh_file.is_file():
+        return {}, False
+    try:
+        txt = zh_file.read_text(encoding="utf-8")
+    except Exception:
+        return {}, False
+    out = {}
+    for m in re.finditer(r"\*\*(U\d{3})[^\n]*\n(.*?)(?=\n\*\*U|\n## |\Z)", txt, re.S):
+        out[m.group(1)] = m.group(2).strip()
+    stale = zh_file.stat().st_mtime < prompt_file.stat().st_mtime
+    return out, stale
+
+
+def attach_zh(units: list, scene: str, prompt_file=None) -> list:
     """给每个单元挂中文审核稿；英文原文变了就标 zhStale。"""
     table = (load_zh() or {}).get(scene, {})
+    comp, comp_stale = _zh_from_companion(None, prompt_file)
     for u in units:
         rec = table.get(u["id"])
+        # 配套 .zh.md 优先（新流程）；没有才退回 prompt_zh.json（旧机制）
+        if comp.get(u["id"]):
+            u["zh"], u["zhStale"] = comp[u["id"]] + "\n", comp_stale
+            continue
         if not rec:
             u["zh"], u["zhStale"] = "", False
             continue
@@ -396,7 +419,7 @@ def parse_units(project: Path, scene: str) -> list:
             "row": sb.get("row"),
             "panels": sb.get("panels") or [],
         } if sb.get("path") else None)
-    return attach_zh(out, scene)
+    return attach_zh(out, scene, f)
 
 
 def resume(project: Path) -> list:
