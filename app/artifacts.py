@@ -236,9 +236,10 @@ def build(project: Path) -> dict:
             "no": s["no"], "name": s["name"], "dir": s["dir"], "desc": s["desc"],
             "exists": d.exists(),
             "fileCount": sum(1 for _ in d.rglob("*") if _.is_file()) if d.exists() else 0,
-            "artifacts": len(items),
+            "artifacts": len({(a.get("kind", ""), a.get("model", "")) for a in items}),
             "counts": counts,
-            "staleDeps": sum(1 for a in items if a["staleDeps"]),
+            "staleDeps": sum(1 for a in items
+                             if a["staleDeps"] and a["status"] != "superseded"),
             "modifiedFiles": sum(1 for a in items if a["fileState"] == "modified"),
             "missingFiles": sum(1 for a in items if a["fileState"] == "missing"),
             # 阶段状态：有确认就算推进过；有草稿未确认则"待确认"
@@ -260,7 +261,8 @@ def build(project: Path) -> dict:
         "expired": sum(1 for a in arts if a["status"] == "expired"),
         "modified": sum(1 for a in arts if a["fileState"] == "modified"),
         "missing": sum(1 for a in arts if a["fileState"] == "missing"),
-        "staleDeps": sum(1 for a in arts if a["staleDeps"]),
+        "staleDeps": sum(1 for a in arts
+                         if a["staleDeps"] and a["status"] != "superseded"),
     }
     return {"exists": reg["exists"], "registryPath": STATE_FILE,
             "stages": out_stages, "artifacts": arts,

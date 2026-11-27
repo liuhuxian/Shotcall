@@ -1230,8 +1230,11 @@ function sGen(){
           style="width:64px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
         <span class="dim" style="font-size:11.5px">种子</span>
         <input type="number" min="0" placeholder="留空=随机" value="${esc(GEN.seed||"")}"
-          onchange="GEN.seed=this.value"
+          onchange="GEN.seed=this.value;render()"
           style="width:130px;background:#0f1216;border:1px solid var(--line);color:#c9d2e0;border-radius:5px;padding:4px 8px;font-size:12px">
+        <span class="badge ${String(GEN.seed||'').trim()?'b-warn':'b-mut'}" style="font-size:10px"
+          title="留空时每条任务用随机种子；填了就固定用它，重复提交会得到相同的片子">
+          ${String(GEN.seed||'').trim()?('本次固定种子 '+esc(String(GEN.seed).trim())):'本次随机种子'}</span>
         ${(GEN.confirm&&GEN.confirm.local==='confirmed')
           ? `<button class="btn acc" ${picked.length?'':'disabled'} onclick="submitGen()">提交生成${(GEN.units&&(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).length)?`（${(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).reduce((a,u)=>a+((GEN.count||{})[u.id]||1),0)} 条${(GEN.units||[]).filter(u=>GEN.draft[u.id]!==false).length<(GEN.units||[]).length?` / 共 ${(GEN.units||[]).length} 单元`:''}）`:''}</button>`
           : `<button class="btn acc" disabled title="该提示词版本尚未确认">提交生成</button>
@@ -1321,12 +1324,20 @@ async function submitGen(){
   if(!units.length) return toast("没有选中单元");
   const total = units.reduce((a,b)=>a+b.count,0);
   const seedRaw = String(GEN.seed||"").trim();
-  const r = await fetch('/api/gen/submit', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({scene: GEN.scene, units, seed: seedRaw||null,
-                          steps: GEN.steps||20, size: GEN.size||'1344x768'})});
-  const j = await r.json();
+  const doSubmit = async (force) => {
+    const r = await fetch('/api/gen/submit', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({scene: GEN.scene, units, seed: seedRaw||null, force: !!force,
+                            steps: GEN.steps||20, size: GEN.size||'1344x768'})});
+    return {r, j: await r.json()};
+  };
+  let {r, j} = await doSubmit(false);
+  if(!r.ok && /已经用种子/.test(j.error||"")){
+    if(!confirm(j.error + "\n\n要再跑一次吗？")) return;
+    ({r, j} = await doSubmit(true));
+  }
   if(!r.ok) return toast(j.error||"提交失败");
-  toast("已提交 "+j.jobs.length+" 条（共 "+total+" 次）：" + j.batch);
+  toast("已提交 "+j.jobs.length+" 条（共 "+total+" 次）：" + j.batch + (seedRaw?"（固定种子 "+seedRaw+"）":"（随机种子）"));
+  if(seedRaw){ GEN.seed = ""; }          // 固定种子用一次就清，避免下次又出一样的片子
   setTimeout(()=>loadGen(GEN.scene,true).then(()=>render()), 3000);
 }
 
@@ -2693,7 +2704,7 @@ function normEp(v){ return /^E\d{3}$/.test(String(v||'')) ? String(v) : ''; }
 let AGCFG = null;
 let ART_PICK = {};      // 成果家族 -> 选中的版本路径（同族只显示一条，先选后确认）
 const FLOW_STATUS = {confirmed:['b-ok','已确认'], draft:['b-warn','草稿待确认'],
-  conclusion:['b-acc','已完成-结论'], superseded:['b-mut','历史已替代'],
+  conclusion:['b-acc','已完成-结论'], superseded:['b-mut','历史版本'],
   empty:['b-mut','未开始'], missing:['b-bad','缺文件'], invalid:['b-bad','作废']};
 
 async function loadAgentConfig(force){
@@ -3189,14 +3200,15 @@ function artFamily(p){
   return norm.replace(/-v\d{3}(?:-\d+)?\.md$/, '');
 }
 function artVersion(a){ const m=/-v(\d{3})(?:-\d+)?\.md$/.exec(a.path||''); return m?parseInt(m[1],10):0; }
-function artVersionLabel(a){ return 'v'+String(artVersion(a)).padStart(3,'0')+' · '+artName(a.kind)+' · '+(ART_LABEL[a.status]||a.status); }
+function artVersionLabel(a){ return 'v'+String(artVersion(a)).padStart(3,'0')+(a.scope?' · '+a.scope:'')+' · '+artName(a.kind)+(a.model?' · '+a.model:'')+' · '+(ART_LABEL[a.status]||a.status); }
 function artPick(fam,path){ ART_PICK[fam]=path; render(); }
 function artGrouped(items){
   const g={};
-  (items||[]).forEach(a=>{ const f=artFamily(a.path); (g[f]||(g[f]=[])).push(a); });
+  (items||[]).forEach(a=>{ const f=(a.kind||artFamily(a.path))+(a.model?'::'+a.model:''); (g[f]||(g[f]=[])).push(a); });
   return Object.keys(g).map(f=>{
     const vs=g[f].slice().sort((a,b)=>artVersion(b)-artVersion(a));
-    const conf=vs.find(a=>a.status==='confirmed');
+    const confs=vs.filter(a=>a.status==='confirmed');
+    const conf=confs.length?confs.slice().sort((a,b)=>String(a.confirmedAt||'').localeCompare(String(b.confirmedAt||''))).pop():null;
     const drafts=vs.filter(a=>a.status==='draft');
     let sel=vs.find(a=>a.path===ART_PICK[f]);
     if(!sel) sel=conf||drafts[0]||vs[0];
@@ -3241,7 +3253,8 @@ function sStageBody(no){
   if(scn9!=='all'){
     items = items.filter(a => (a.scope===scn9) || (a.path||'').includes('/'+scn9+'/'));
   }
-  const rows = artGrouped(items).map(g=>{
+  const groups = artGrouped(items);
+  const rows = groups.map(g=>{
     const a = g.selected;
     const stale = (a.staleDeps||[]).length;
     const eff = (stale && a.status === 'confirmed') ? 'stale' : a.status;
@@ -3253,13 +3266,13 @@ function sStageBody(no){
         : lo==='stale'?'<span class="badge b-bad" style="font-size:9.5px">确认失效</span>':'');
     return `<tr>
       <td><span class="badge" style="font-size:10px;border-color:${c};color:${c}">${ART_LABEL[eff]||eff}</span></td>
-      <td><div style="font-size:12.5px">${esc(artName(a.kind))} ${localBadge}${artPicker(g)}</div>
+      <td><div style="font-size:12.5px">${esc(artName(a.kind))}${a.scope?' <span class="dim">· '+esc(a.scope)+'</span>':''} ${localBadge}${artPicker(g)}</div>
           <div class="mono dim" style="font-size:10.5px;cursor:pointer;text-decoration:underline dotted"
             onclick="viewInline('${esc(a.path)}')">${esc(a.path)}</div>
           ${(/minimax-h3/.test(a.path||'') && /-v\d{3}\.md$/.test(a.path||''))
             ? `<div class="dim" style="font-size:10px">中文审核稿：<span style="cursor:pointer;text-decoration:underline dotted"
                  onclick="viewInline('${esc((a.path||'').replace(/\.md$/, '.zh.md'))}')">${esc((a.path||'').split('/').pop().replace(/\.md$/, '.zh.md'))}</span>（与提示词同一组合，确认一次即可）</div>` : ''}
-          ${g.versions.length>1?`<div class="dim" style="font-size:10px">同族 ${g.versions.length} 个版本；先在下拉选择，只确认选中的一版</div>`:''}</td>
+          ${g.versions.length>1?`<div class="dim" style="font-size:10px">同组 ${g.versions.length} 个版本/范围；先在下拉选择</div>`:''}</td>
       <td class="dim" style="font-size:11px">${esc(a.scope||"—")}</td>
       <td class="dim mono" style="font-size:11px;text-align:right">${a.sizeKB} KB</td>
       <td style="text-align:center">${a.fileState==='ok'?'<span class="badge b-ok" style="font-size:10px">一致</span>'
@@ -3278,9 +3291,9 @@ function sStageBody(no){
 
   return `<div class="panel">
     <div class="ph"><span><span class="mono dim">${st.no}</span> ${esc(st.name)}</span>
-      <span class="dim">${esc(st.desc)} · ${st.fileCount} 个文件 · ${items.length} 项成果</span></div>
+      <span class="dim">${esc(st.desc)} · ${st.fileCount} 个文件 · ${groups.length} 项成果</span></div>
     <div class="pb">
-      ${items.length?`<table>
+      ${groups.length?`<table>
         <thead><tr><th style="width:64px">状态</th><th>成果</th><th style="width:140px">范围</th>
           <th style="width:64px;text-align:right">大小</th><th style="width:64px;text-align:center">哈希</th>
           <th style="width:64px;text-align:center">依赖</th><th style="width:140px;text-align:right">操作</th></tr></thead>
@@ -3441,7 +3454,7 @@ async function confirmArt(path, verdict){
     j = await r.json();
   }catch(e){ return toast('确认请求失败：'+e); }
   if(!r.ok) return toast(j.error||"记录失败");
-  ART_PICK[artFamily(path)] = path;
+  ART_PICK[((art&&art.kind)||artFamily(path))+((art&&art.model)?'::'+art.model:'')] = path;
   toast(verdict==='pass' ? ((j.flow && !j.flow.already) ? ("已确认并登记："+path) : ("已确认："+path)) : ("已退回："+path));
   await loadStages(true);
   if(typeof GEN !== 'undefined' && GEN.scene){ await loadGen(GEN.scene, true); }
@@ -4105,10 +4118,10 @@ function stageOf(no){
 const STAGE_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", blocked:"var(--bad)",
                      conclusion:"var(--acc)", superseded:"#5c6474", empty:"#3a4655"};
 const STAGE_LABEL = {confirmed:"已确认", draft:"有待确认", blocked:"文件缺失",
-                     conclusion:"已出结论", superseded:"已替代", empty:"未开始"};
+                     conclusion:"已出结论", superseded:"历史版本", empty:"未开始"};
 const ART_COLOR = {confirmed:"var(--ok)", draft:"var(--warn)", superseded:"#5c6474",
                    conclusion:"var(--acc)", expired:"var(--bad)", stale:"var(--bad)", unknown:"var(--dim)"};
-const ART_LABEL = {confirmed:"已确认", draft:"草稿", superseded:"已替代",
+const ART_LABEL = {confirmed:"已确认", draft:"草稿", superseded:"历史版本",
                    conclusion:"结论", expired:"已过期", stale:"上游过期", unknown:"未知"};
 
 let IMGST = {items:null, cards:null, night:null, defCards:[], draft:{}, jobs:[], open:{}, timer:null, err:null,

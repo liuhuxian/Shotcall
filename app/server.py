@@ -2939,6 +2939,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("生成门禁未通过：" + "；".join(gate["missing"]))
                 seed = body.get("seed")
                 seed = int(seed) if str(seed).strip().isdigit() else None
+                if seed is not None and not body.get("force"):
+                    dups = [x["unit"]["id"] for x in units
+                            if vjobs.seed_used(PROJECT, scene, x["unit"]["id"], int(seed))]
+                    if dups:
+                        raise ValueError("这些单元已经用种子 %d 生成过：%s。确认要再跑一次就带 force，或把种子清空换随机"
+                                         % (int(seed), "、".join(dups)))
                 steps = body.get("steps")
                 steps = int(steps) if str(steps).isdigit() else vjobs.current_recipe()["steps"]
                 size = str(body.get("size") or "1344x768")

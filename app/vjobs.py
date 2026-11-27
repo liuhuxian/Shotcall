@@ -983,6 +983,15 @@ def _api(port, path, payload=None, timeout=120):
     return json.loads(raw) if raw.strip() else {}
 
 
+def seed_used(project: Path, scene: str, unit: str, seed: int) -> bool:
+    """同场同单元同种子是否已经跑过（用于提交前的重复提醒）。"""
+    for j in list_jobs(project=project):
+        if j.get("scene") == scene and j.get("unit") == unit and j.get("seed") == seed:
+            if j.get("status") in ("done", "running", "dispatched", "queued"):
+                return True
+    return False
+
+
 def submit(project: Path, scene: str, units: list, seed: int = None,
            width=1344, height=768, steps=20, batch: str = None) -> dict:
     """units: [{"unit": {...}, "count": n, "chain": bool, "prevUnit": id}]
