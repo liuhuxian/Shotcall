@@ -1622,41 +1622,66 @@ function sShots(){
   if(!d){ loadScenes().then(()=>render()); return `<div class="dim">读取中…</div>`; }
   const scene = state.scene && d.scenes.some(s=>s.id===state.scene) ? state.scene : (d.scenes[0]||{}).id;
   state.scene = scene;
-  const info = (d.scenes||[]).find(s=>s.id===scene) || {};
   if(!SHOTS[scene]){ loadShots(scene).then(()=>render()); }
   if(!PICK.data[scene]){ loadPicks(scene).then(()=>render()); }
   const sh = (SHOTS[scene]||{}).shots || [];
   const tabs = (d.scenes||[]).map(s=>`<span onclick="go('shots',{scene:'${s.id}'})" style="cursor:pointer;padding:4px 10px;border-radius:6px;font-size:11.5px;
     border:1px solid ${s.id===scene?'var(--acc)':'var(--line)'};color:${s.id===scene?'var(--acc)':'#8b95a6'}">${s.id}</span>`).join(" ");
-  const rows = sh.map(x=>`<tr>
-    <td class="mono" style="color:var(--acc)">${x.id}</td>
-    <td class="dim mono" style="text-align:center">${x.duration}s</td>
-    <td style="font-size:12px">${esc((x.size||"").slice(0,40))}</td>
-    <td class="dim" style="font-size:11.5px">${esc((x.action||"").slice(0,60))}</td>
-    <td class="dim" style="font-size:11.5px">${esc((x.firstFrame||"").slice(0,40))}</td>
-    <td class="dim" style="font-size:11.5px">${esc((x.lastFrame||"").slice(0,40))}</td>
-    <td style="white-space:nowrap">
-      ${shotBadge(x)}
-      <div style="display:flex;gap:3px;margin-top:3px">
-        <button class="btn ok" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','pass')">通过</button>
-        <button class="btn warn" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','revise')">需修改</button>
-        <button class="btn ghost" style="font-size:10px;padding:1px 6px" onclick="approveShot('${scene}','${x.id}','hold')">待定</button>
-      </div>
-    </td>
-  </tr>`).join("");
+
+  if(!sh.length){
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
+      <div class="panel"><div class="ph"><span>镜头审核</span><span class="dim">${scene}</span></div>
+      <div class="pb"><div class="dim" style="font-size:12.5px">这个场次还没有 08 镜头规划。先在工作流跑 08，产出 shot-plan 后就能在这里逐镜看。</div></div></div>`;
+  }
+  const rows = sh.map(x=>{
+    const open = state.shotOpen === x.id;
+    const ap = (x.approval||{}).record ? x.approval.record.verdict : '';
+    const badge = ap==='pass'?'<span class="badge b-ok" style="font-size:9.5px">已通过</span>'
+      : ap==='revise'?'<span class="badge b-warn" style="font-size:9.5px">需修改</span>'
+      : ap==='hold'?'<span class="badge b-mut" style="font-size:9.5px">待定</span>'
+      : '<span class="dim" style="font-size:9.5px">未审核</span>';
+    return `<tr style="cursor:pointer" onclick="toggleShot('${esc(x.id)}')">
+      <td class="mono" style="color:var(--acc);white-space:nowrap">${x.id}<div class="dim" style="font-size:9.5px">${esc(x.unit||'')}</div></td>
+      <td style="font-size:12px">${esc(x.title||'')}</td>
+      <td class="dim mono" style="text-align:center;white-space:nowrap">${esc(x.duration||'')}s</td>
+      <td class="dim" style="font-size:11px">${esc((x.size||'').slice(0,26))}</td>
+      <td class="dim" style="font-size:11px">${esc((x.action||'').slice(0,46))}${(x.action||'').length>46?'…':''}</td>
+      <td style="white-space:nowrap">${badge}</td>
+      <td class="dim" style="text-align:right;font-size:10px">${open?'收起 ▴':'展开 ▾'}</td>
+    </tr>
+    ${open?`<tr><td colspan="7" style="background:#0c1015;border-left:2px solid var(--acc)">
+      <div style="padding:10px 12px">
+        ${[['动作与节拍',x.action],['表演',x.performance],['构图与机位',x.composition],['光线',x.light],
+           ['首态',x.firstFrame],['尾态',x.lastFrame],['依据素材',x.assets]]
+          .filter(([k,v])=>v).map(([k,v])=>`<div style="margin-bottom:6px">
+            <span class="dim" style="font-size:10px">${k}</span>
+            <div style="font-size:11.5px;line-height:1.75">${esc(v)}</div></div>`).join('')}
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <span class="dim" style="font-size:10.5px">审核这一镜（只记录意见，不改变规划状态）：</span>
+          <button class="btn ok" style="font-size:10px;padding:2px 8px" onclick="event.stopPropagation();approveShot('${scene}','${x.id}','pass')">通过</button>
+          <button class="btn warn" style="font-size:10px;padding:2px 8px" onclick="event.stopPropagation();approveShot('${scene}','${x.id}','revise')">需修改</button>
+          <button class="btn ghost" style="font-size:10px;padding:2px 8px" onclick="event.stopPropagation();approveShot('${scene}','${x.id}','hold')">待定</button>
+        </div>
+      </div></td></tr>`:''}`;
+  }).join("");
+
   return `
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${tabs}</div>
-  ${shotApprovalBar(scene)}
-  ${candidateWall(scene)}
   <div class="panel">
-    <div class="ph"><span>${scene} ${esc(info.place||"")}</span>
-      <span class="dim">${esc(info.episode||"")} · ${esc(info.interior||"")} · ${esc(info.time||"")} · ${sh.length} 镜 · ${info.duration||0}s</span></div>
+    <div class="ph"><span>镜头审核 · 08 镜头规划</span>
+      <span class="dim">${sh.length} 镜 · ${esc((sh[0]||{}).source||'')} · 点一行展开细节</span></div>
     <div class="pb">
-      ${sh.length?`<table><thead><tr><th style="width:70px">镜头</th><th style="width:50px;text-align:center">时长</th>
-        <th style="width:200px">景别</th><th>动作与表演</th><th style="width:160px">首帧状态</th><th style="width:160px">尾帧状态</th>
-        <th style="width:150px">审核</th></tr></thead>
-        <tbody>${rows}</tbody></table>`:'<div class="dim" style="font-size:12.5px">该场尚未拆镜（需要 09 阶段生成镜头表）。</div>'}
-    </div></div>`;
+      <table><thead><tr><th style="width:76px">镜号</th><th>这一镜要做什么</th>
+        <th style="width:64px;text-align:center">时长</th><th style="width:180px">景别/机位</th>
+        <th>动作摘要</th><th style="width:78px">审核</th><th style="width:64px"></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+    </div>
+  </div>`;
+}
+
+function toggleShot(id){
+  state.shotOpen = state.shotOpen === id ? null : id;
+  render();
 }
 
 /* ---------- 资产 ---------- */

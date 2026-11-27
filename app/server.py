@@ -299,32 +299,64 @@ def _generation_gate(scene: str, units: list, rel: str) -> dict:
         asset_ids = {amap.get(str(x).split("／")[0], x) for x in asset_ids}
     except Exception:
         pass
+    # 资产：以“已绑定”为准（07 资产文档与绑定表是唯一事实源）
+    try:
+        bmap = assetsdb.parse_bindings(PROJECT)
+    except Exception:
+        bmap = {}
     for aid in sorted(asset_ids):
-        st = approvals.state(PROJECT, "asset", f"asset:{aid}")
-        rec = st.get("record")
-        if not rec or rec.get("verdict") != "pass" or st.get("stale"):
-            why = "已失效" if st.get("stale") else ("未确认" if not rec else "不是通过")
-            missing.append(f"资产{aid}：{why}")
-        else:
-            ids.append(rec["id"])
+        short = str(aid).split("／")[0]
+        rec = bmap.get(short) or bmap.get(aid) or {}
+        if short.endswith("-V"):
+            if not rec.get("version"):
+                missing.append(f"音色资产{aid}：未绑定")
+            continue
+        if not (rec.get("image") or "") or not (PROJECT / rec["image"]).is_file():
+            missing.append(f"资产{aid}：没有可用的绑定图")
+
+    # 镜头：由 08 镜头规划整体确认，不再逐镜审批
+    plan_rel = None
+    for item in units:
+        u = item.get("unit") or {}
+        src = str(u.get("source") or "")
+        f = PROJECT / "09-镜头与视频提示词/视频提示词" / scene / src
+        if f.is_file():
+            units_blk, _ = vjobs.shots_block(f.read_text(encoding="utf-8"))
+            for x in units_blk:
+                sp = x.get("sourceShotPlan")
+                if sp:
+                    plan_rel = sp
+                    break
+        if plan_rel:
+            break
+    if plan_rel:
+        st_map = _artifact_status(PROJECT)
+        if st_map.get(plan_rel) != "已确认-当前":
+            missing.append(f"镜头规划未确认：{plan_rel}")
+    else:
+        # 旧提示词没有 sourceShotPlan：退回逐镜审批检查（兼容历史文件）
+        for item in units:
+            u = item.get("unit") or {}
+            shots = _unit_shots(u)
+            if not shots:
+                missing.append(f"{u.get('id','?')}：无法解析覆盖镜头")
+                continue
+            for sid in shots:
+                st = approvals.state(PROJECT, "shot", f"{scene}/{sid}")
+                rec = st.get("record")
+                if not rec or rec.get("verdict") != "pass" or st.get("stale"):
+                    why = "已失效" if st.get("stale") else ("未确认" if not rec else "不是通过")
+                    missing.append(f"{sid}：镜头{why}")
+                else:
+                    ids.append(rec["id"])
 
     for item in units:
         u = item.get("unit") or {}
-        shots = _unit_shots(u)
-        if not shots:
+        if not _unit_shots(u):
             missing.append(f"{u.get('id','?')}：无法解析覆盖镜头")
-            continue
         for r in (u.get("refs") or []):
             if not r.get("exists"):
                 missing.append(f"{u.get('id','?')}：参考图缺失 {r.get('file','?')}")
-        for sid in shots:
-            st = approvals.state(PROJECT, "shot", f"{scene}/{sid}")
-            rec = st.get("record")
-            if not rec or rec.get("verdict") != "pass" or st.get("stale"):
-                why = "已失效" if st.get("stale") else ("未确认" if not rec else "不是通过")
-                missing.append(f"{sid}：镜头{why}")
-            else:
-                ids.append(rec["id"])
     return {"ok": not missing, "missing": missing, "approvalIds": ids}
 
 

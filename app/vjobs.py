@@ -334,7 +334,9 @@ def parse_sync_refs(project: Path, scene: str) -> dict:
                             "chainFrom": u.get("chainFrom"),
                             "continuation": u.get("continuation"),
                             "audios": audios,
-                            "audioAssetIds": [r.get("assetId") for r in (u.get("referenceAudioRoles") or [])],
+                            # roles 可能是对象（契约）也可能是旧文件里的字符串，两种都容忍
+                            "audioAssetIds": [r.get("assetId") if isinstance(r, dict) else None
+                                              for r in (u.get("referenceAudioRoles") or [])],
                             "storyboard": u.get("storyboardReference") or None}
     return out
 

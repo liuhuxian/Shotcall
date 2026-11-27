@@ -100,11 +100,21 @@ def shots_payload(project: Path, scene: str):
     amap = {a["id"]: a for a in data.get("assets") or []}
     acc = accepted_map(project)
     out = []
+    mmap = scenes.material_map(project, scene)
     for sh in scenes.shot_details(project, scene):
-        ids = []
-        for aid in ASSET_ID.findall(sh.get("assets") or ""):
+        ids, refs = [], []
+        raw = sh.get("assets") or ""
+        for aid in ASSET_ID.findall(raw):
             if aid not in ids:
                 ids.append(aid)
+        # 08 规划用 R## 编号引用素材，翻译回资产 ID 与图片路径
+        for label in re.findall(r"R\d{2}", raw):
+            hit = mmap.get(label) or {}
+            aid = (hit.get("asset") or "").split("／")[0].strip()
+            if aid and aid not in ids:
+                ids.append(aid)
+            if hit.get("file") and hit["file"] not in [r["file"] for r in refs]:
+                refs.append({"asset": aid, "file": hit["file"], "version": "R"})
         desc = []
         for aid in ids:
             a = amap.get(aid) or {}
@@ -134,7 +144,8 @@ def shots_payload(project: Path, scene: str):
             "id": sh["id"], "duration": sh["duration"], "size": sh.get("size", ""),
             "firstFrame": sh.get("firstFrame", ""), "action": sh.get("action", ""),
             "light": sh.get("light", ""), "assets": ids,
-            "prompt": prompt, "refs": _refs(project, ids),
+            "prompt": prompt,
+            "refs": refs + [r for r in _refs(project, ids) if r["file"] not in [x["file"] for x in refs]],
             "candidates": cands,
             "accepted": rec if rec and (project / rec.get("file", "")).is_file() else None,
         })
