@@ -112,6 +112,7 @@ def _prompt_09():
 - 单元内部有切点的，按时间轴在正文里写清切点时刻与切后内容
 - 声音按 shot-plan 的四类声明表达；不得新增未声明的人声或音效
 - 参考素材按 reference-map 的编号与顺序写 <Picture n> / <Audio n>；只用已经授权的素材
+- 机位侧与人物画左/画右，必须逐字使用空间图那张表的英文关键词（如 inner-wall side、Chen on the left of frame），不得改写或意译；参考图不提供成片机位
 - chainFrom 默认 null；只有 shot-plan 明确要求接续时才填
 - 帧数不合规或不一致时停下来报告，不要自行调整
 
@@ -704,6 +705,29 @@ def _headings(txt: str):
     return out
 
 
+def space_table(project: Path, scene: str) -> dict:
+    """解析空间图里的机位表：镜号 -> {camera, person, light}。
+
+    空间图压成表格后，机位侧是必填的英文关键词，提示词必须逐字使用。
+    没有表格（旧版散文空间图）时返回空字典，校验自动跳过。
+    """
+    d = project / "08-镜头规划" / scene
+    f = None
+    if d.is_dir():
+        cands = list(d.glob("scene-space-map*.md"))
+        cands.sort(key=lambda x: int(re.search(r"-v(\d+)", x.name).group(1)) if re.search(r"-v(\d+)", x.name) else 0)
+        f = cands[-1] if cands else None
+    if not f:
+        return {}
+    out = {}
+    for m in re.finditer(r"^\|\s*(SH\d{3})\s*\|([^\n]*)$", f.read_text(encoding="utf-8"), re.M):
+        cells = [c.strip() for c in m.group(2).split("|")]
+        if len(cells) < 3:
+            continue
+        out[m.group(1)] = {"camera": cells[0], "person": cells[1], "light": cells[2]}
+    return out
+
+
 def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
     """登记视频提示词前的校验。返回问题清单，空表示通过。"""
     import vjobs
@@ -714,6 +738,10 @@ def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
     units, err = vjobs.shots_block(txt)
     if err:
         return [err]
+    space = space_table(project, scene)
+    bodies = {}
+    for bm in re.finditer(r"^### (U\d{3}(?:-[A-Z])?)[^\n]*\n(.*?)(?=^### |\Z)", txt, re.S | re.M):
+        bodies[bm.group(1)] = bm.group(2)
     heads = _headings(txt)
     problems = []
     ids = [u.get("id") for u in units]
@@ -741,6 +769,18 @@ def validate_prompt_file(project: Path, rel: str, scene: str) -> list:
             problems.append(f"{uid}: promptStatus 非法 {u.get('promptStatus')}")
         if u.get("promptFormat") not in FORMAT_ENUM:
             problems.append(f"{uid}: promptFormat 非法 {u.get('promptFormat')}")
+        # 机位侧必须逐字引用空间图；人物位置有值时同样逐字
+        for sid in (u.get("shotIds") or []):
+            row = (space or {}).get(str(sid))
+            if not row:
+                continue
+            body_text = bodies.get(str(uid), "") or (u.get("prompt") or "")
+            cam = row.get("camera") or ""
+            if cam and cam not in ("—", "-") and cam.lower() not in body_text.lower():
+                problems.append(f"{uid}: 提示词没有逐字使用空间图的机位侧「{cam}」")
+            per = row.get("person") or ""
+            if per and per not in ("—", "-") and per.lower() not in body_text.lower():
+                problems.append(f"{uid}: 提示词没有逐字使用空间图的人物位置「{per}」")
         if u.get("control") and u.get("promptStatus") == "compiled":
             problems.append(f"{uid}: 实验单元不能是 compiled")
         cf = u.get("chainFrom")
